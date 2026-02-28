@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bogle"
+version = "0.1.0"
+description = "CLI tool for passive portfolio rebalancing"
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+bogle = "bogle.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bogle"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
