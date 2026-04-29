@@ -1,78 +1,14 @@
+"""Legacy data-access functions for transactions and holdings.
+
+The asset CRUD lives in :mod:`bogle.repositories.assets` (proper repository
++ domain dataclass + custom errors). The functions below will be migrated
+to the same layered structure when their consumer epics land
+(transactions in #8, holdings filtering in #9).
+"""
+
 from __future__ import annotations
 
 import psycopg
-
-
-# ---------------------------------------------------------------------------
-# Assets
-# ---------------------------------------------------------------------------
-
-def add_asset(
-    conn: psycopg.Connection,
-    ticker: str,
-    target_weight: float,
-) -> None:
-    """Insert a new asset. Raises ``psycopg.errors.UniqueViolation`` if the
-    ticker already exists."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO assets (ticker, target_weight) VALUES (%s, %s)",
-            (ticker.upper(), target_weight),
-        )
-    conn.commit()
-
-
-def get_asset(conn: psycopg.Connection, ticker: str) -> dict | None:
-    """Return a single asset row, or ``None`` if not found."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT ticker, target_weight FROM assets WHERE ticker = %s",
-            (ticker.upper(),),
-        )
-        return cur.fetchone()
-
-
-def list_assets(conn: psycopg.Connection) -> list[dict]:
-    """Return all assets ordered by ticker."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT ticker, target_weight FROM assets ORDER BY ticker"
-        )
-        return cur.fetchall()
-
-
-def update_asset(
-    conn: psycopg.Connection,
-    ticker: str,
-    target_weight: float,
-) -> bool:
-    """Update the target_weight of an existing asset.
-
-    Returns ``True`` if a row was updated.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE assets SET target_weight = %s WHERE ticker = %s",
-            (target_weight, ticker.upper()),
-        )
-        rowcount = cur.rowcount
-    conn.commit()
-    return rowcount > 0
-
-
-def delete_asset(conn: psycopg.Connection, ticker: str) -> bool:
-    """Delete an asset.
-
-    Raises ``psycopg.errors.ForeignKeyViolation`` if the asset still has
-    transactions (enforced by the foreign-key constraint).
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM assets WHERE ticker = %s", (ticker.upper(),)
-        )
-        rowcount = cur.rowcount
-    conn.commit()
-    return rowcount > 0
 
 
 # ---------------------------------------------------------------------------
