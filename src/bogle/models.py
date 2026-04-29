@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
 import psycopg
-
-_UNSET = object()
 
 
 # ---------------------------------------------------------------------------
@@ -15,14 +11,13 @@ def add_asset(
     conn: psycopg.Connection,
     ticker: str,
     target_weight: float,
-    name: str | None = None,
 ) -> None:
     """Insert a new asset. Raises ``psycopg.errors.UniqueViolation`` if the
     ticker already exists."""
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO assets (ticker, target_weight, name) VALUES (%s, %s, %s)",
-            (ticker.upper(), target_weight, name),
+            "INSERT INTO assets (ticker, target_weight) VALUES (%s, %s)",
+            (ticker.upper(), target_weight),
         )
     conn.commit()
 
@@ -31,7 +26,7 @@ def get_asset(conn: psycopg.Connection, ticker: str) -> dict | None:
     """Return a single asset row, or ``None`` if not found."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT ticker, target_weight, name FROM assets WHERE ticker = %s",
+            "SELECT ticker, target_weight FROM assets WHERE ticker = %s",
             (ticker.upper(),),
         )
         return cur.fetchone()
@@ -41,7 +36,7 @@ def list_assets(conn: psycopg.Connection) -> list[dict]:
     """Return all assets ordered by ticker."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT ticker, target_weight, name FROM assets ORDER BY ticker"
+            "SELECT ticker, target_weight FROM assets ORDER BY ticker"
         )
         return cur.fetchall()
 
@@ -49,32 +44,16 @@ def list_assets(conn: psycopg.Connection) -> list[dict]:
 def update_asset(
     conn: psycopg.Connection,
     ticker: str,
-    target_weight: float | None = None,
-    name: str | None = _UNSET,  # type: ignore[assignment]
+    target_weight: float,
 ) -> bool:
-    """Update mutable fields of an existing asset.
+    """Update the target_weight of an existing asset.
 
-    Only the supplied keyword arguments are changed. Returns ``True`` if a row
-    was updated.
+    Returns ``True`` if a row was updated.
     """
-    fields: list[str] = []
-    values: list[Any] = []
-
-    if target_weight is not None:
-        fields.append("target_weight = %s")
-        values.append(target_weight)
-    if name is not _UNSET:
-        fields.append("name = %s")
-        values.append(name)
-
-    if not fields:
-        return False
-
-    values.append(ticker.upper())
     with conn.cursor() as cur:
         cur.execute(
-            f"UPDATE assets SET {', '.join(fields)} WHERE ticker = %s",  # noqa: S608
-            values,
+            "UPDATE assets SET target_weight = %s WHERE ticker = %s",
+            (target_weight, ticker.upper()),
         )
         rowcount = cur.rowcount
     conn.commit()

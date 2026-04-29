@@ -1,42 +1,16 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
+from yoyo import read_migrations
+from yoyo.backends.core.postgresql import PostgresqlPsycopgBackend
+from yoyo.connections import parse_uri
 
 DEFAULT_DATABASE_URL = "postgresql://localhost/bogle"
 DEFAULT_TIMEZONE = "America/Sao_Paulo"
-
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS assets (
-    ticker        TEXT PRIMARY KEY,
-    target_weight NUMERIC(5, 4) NOT NULL,
-    name          TEXT
-);
-
-CREATE TABLE IF NOT EXISTS transactions (
-    id               BIGSERIAL    PRIMARY KEY,
-    ticker           TEXT         NOT NULL REFERENCES assets(ticker),
-    purchase_date    TIMESTAMPTZ  NOT NULL,
-    shares           NUMERIC(20, 8) NOT NULL,
-    unit_price       NUMERIC(20, 4) NOT NULL,
-    total_investment NUMERIC(20, 4) NOT NULL,
-    fees             NUMERIC(20, 4) NOT NULL DEFAULT 0,
-    total_cost       NUMERIC(20, 4) NOT NULL
-);
-
-CREATE OR REPLACE VIEW holdings AS
-SELECT
-    t.ticker,
-    a.target_weight,
-    SUM(t.shares)                      AS total_shares,
-    SUM(t.total_cost)                  AS total_cost,
-    SUM(t.total_cost) / SUM(t.shares)  AS avg_cost_per_share
-FROM transactions t
-JOIN assets a ON t.ticker = a.ticker
-GROUP BY t.ticker, a.target_weight;
-"""
 
 
 def get_database_url() -> str:
@@ -64,8 +38,72 @@ def get_connection(database_url: str | None = None) -> psycopg.Connection:
     return conn
 
 
-def init_db(conn: psycopg.Connection) -> None:
-    """Create tables and views if they don't already exist (idempotent)."""
-    with conn.cursor() as cur:
-        cur.execute(_SCHEMA_SQL)
-    conn.commit()
+def _migrations_path() -> Path:
+    return Path(__file__).parent / "migrations"
+
+
+def _yoyo_url(database_url: str) -> str:
+    # yoyo-migrations needs the explicit psycopg3 driver scheme.
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return database_url
+
+
+class _MigrationsSchemaBackend(PostgresqlPsycopgBackend):
+    """yoyo backend whose bookkeeping tables live in a dedicated
+    ``migrations`` schema, isolating them from the application tables in
+    ``public``."""
+
+    log_table = "migrations.yoyo_log"
+    version_table = "migrations.yoyo_version"
+    lock_table = "migrations.yoyo_lock"
+
+    def quote_identifier(self, s: str) -> str:
+        # PostgreSQL requires each part of a schema-qualified identifier
+        # to be quoted independently (`"schema"."table"`), not as a single
+        # identifier (`"schema.table"`) which the default implementation
+        # would produce.
+        if "." in s:
+            return ".".join(f'"{p}"' for p in s.split("."))
+        return f'"{s}"'
+
+    def list_tables(self, **kwargs) -> list[str]:
+        # Return schema-qualified names so the internal-schema bookkeeping
+        # logic in yoyo recognises tables we placed in the `migrations`
+        # schema. The default impl filters by ``current_schema`` only,
+        # which would always miss them.
+        cursor = self.execute(
+            "SELECT table_schema || '.' || table_name "
+            "FROM information_schema.tables "
+            "WHERE table_schema IN ('public', 'migrations')"
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
+def run_migrations(database_url: str | None = None) -> None:
+    """Apply any pending migrations from ``src/bogle/migrations/``.
+
+    yoyo bookkeeping tables (``yoyo_migration``, ``yoyo_log``,
+    ``yoyo_version``, ``yoyo_lock``) are created in a dedicated
+    ``migrations`` schema. The schema is created on the fly if missing.
+
+    Idempotent: yoyo records applied migrations and skips them on
+    subsequent runs.
+    """
+    if database_url is None:
+        database_url = get_database_url()
+
+    with psycopg.connect(database_url) as setup_conn:
+        with setup_conn.cursor() as cur:
+            cur.execute("CREATE SCHEMA IF NOT EXISTS migrations")
+        setup_conn.commit()
+
+    parsed = parse_uri(_yoyo_url(database_url))
+    backend = _MigrationsSchemaBackend(
+        parsed,
+        "migrations.yoyo_migration",
+    )
+    backend.init_database()
+    migrations = read_migrations(str(_migrations_path()))
+    with backend.lock():
+        backend.apply_migrations(backend.to_apply(migrations))
