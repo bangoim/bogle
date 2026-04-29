@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-bogle = "bogle.cli:app"
+bogle = "bogle.cli:_run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bogle"]
