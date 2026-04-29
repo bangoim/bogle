@@ -9,6 +9,7 @@ description = "CLI tool for passive portfolio rebalancing"
 requires-python = ">=3.10"
 dependencies = [
     "typer>=0.9",
+    "psycopg[binary]>=3.1",
 ]
 
 [project.optional-dependencies]
