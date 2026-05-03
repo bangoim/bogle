@@ -30,15 +30,10 @@ class AssetAlreadyExistsError(BogleError):
 class WeightSumExceededError(BogleError):
     def __init__(self, total: Decimal) -> None:
         self.total = total
-        super().__init__(
-            "Soma de target_weight ultrapassaria 1.0 "
-            f"(resultaria em {total:.4f}). Operacao revertida."
-        )
+        super().__init__(f"Soma de target_weight ultrapassaria 1.0 (resultaria em {total:.4f}). Operacao revertida.")
 
 
 class AssetHasTransactionsError(BogleError):
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
-        super().__init__(
-            f"Ativo '{ticker}' possui transacoes vinculadas e nao pode ser removido."
-        )
+        super().__init__(f"Ativo '{ticker}' possui transacoes vinculadas e nao pode ser removido.")

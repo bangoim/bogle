@@ -36,13 +36,23 @@ class Indexer(StrEnum):
 
 
 # Convenience groups used by validation logic.
-VARIABLE_INCOME_TYPES = frozenset({
-    AssetType.STOCK, AssetType.BDR, AssetType.FII, AssetType.ETF,
-})
-PRIVATE_FIXED_INCOME_TYPES = frozenset({
-    AssetType.CDB, AssetType.RDB, AssetType.LCI, AssetType.LCA,
-    AssetType.CAIXINHA,
-})
+VARIABLE_INCOME_TYPES = frozenset(
+    {
+        AssetType.STOCK,
+        AssetType.BDR,
+        AssetType.FII,
+        AssetType.ETF,
+    }
+)
+PRIVATE_FIXED_INCOME_TYPES = frozenset(
+    {
+        AssetType.CDB,
+        AssetType.RDB,
+        AssetType.LCI,
+        AssetType.LCA,
+        AssetType.CAIXINHA,
+    }
+)
 FIXED_INCOME_TYPES = PRIVATE_FIXED_INCOME_TYPES | {AssetType.TESOURO}
 
 

@@ -20,13 +20,9 @@ def _parse_weight(value: str) -> Decimal:
     try:
         weight = Decimal(value)
     except InvalidOperation:
-        raise ValidationError(
-            f"--weight deve ser um numero decimal, recebido {value!r}."
-        ) from None
+        raise ValidationError(f"--weight deve ser um numero decimal, recebido {value!r}.") from None
     if not (Decimal("0") < weight <= Decimal("1")):
-        raise ValidationError(
-            f"--weight deve estar em (0, 1], recebido {weight}."
-        )
+        raise ValidationError(f"--weight deve estar em (0, 1], recebido {weight}.")
     return weight
 
 
@@ -45,9 +41,7 @@ def add(
         asset = AssetRepository(conn).add(ticker, weight_dec)
     finally:
         conn.close()
-    typer.echo(
-        f"asset {asset.ticker} adicionado com peso {asset.target_weight:.2%}."
-    )
+    typer.echo(f"asset {asset.ticker} adicionado com peso {asset.target_weight:.2%}.")
 
 
 def update(
@@ -67,9 +61,7 @@ def update(
         asset = AssetRepository(conn).update_weight(ticker, weight_dec)
     finally:
         conn.close()
-    typer.echo(
-        f"asset {asset.ticker} atualizado para peso {asset.target_weight:.2%}."
-    )
+    typer.echo(f"asset {asset.ticker} atualizado para peso {asset.target_weight:.2%}.")
 
 
 def remove(

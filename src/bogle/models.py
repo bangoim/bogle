@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import psycopg
 
-
 # ---------------------------------------------------------------------------
 # Transactions
 # ---------------------------------------------------------------------------
+
 
 def add_transaction(
     conn: psycopg.Connection,
@@ -40,17 +40,14 @@ def add_transaction(
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (ticker.upper(), purchase_date, shares, unit_price,
-             total_investment, fees, total_cost),
+            (ticker.upper(), purchase_date, shares, unit_price, total_investment, fees, total_cost),
         )
         row = cur.fetchone()
     conn.commit()
     return row["id"]
 
 
-def list_transactions(
-    conn: psycopg.Connection, ticker: str | None = None
-) -> list[dict]:
+def list_transactions(conn: psycopg.Connection, ticker: str | None = None) -> list[dict]:
     """Return transactions, optionally filtered by ticker."""
     with conn.cursor() as cur:
         if ticker:
@@ -79,9 +76,7 @@ def list_transactions(
 def delete_transaction(conn: psycopg.Connection, transaction_id: int) -> bool:
     """Delete a transaction by id. Returns ``True`` if a row was deleted."""
     with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM transactions WHERE id = %s", (transaction_id,)
-        )
+        cur.execute("DELETE FROM transactions WHERE id = %s", (transaction_id,))
         rowcount = cur.rowcount
     conn.commit()
     return rowcount > 0
@@ -90,6 +85,7 @@ def delete_transaction(conn: psycopg.Connection, transaction_id: int) -> bool:
 # ---------------------------------------------------------------------------
 # Holdings (read-only, backed by the SQL view)
 # ---------------------------------------------------------------------------
+
 
 def get_holdings(conn: psycopg.Connection) -> list[dict]:
     """Return the consolidated position for every asset that has transactions."""
@@ -105,9 +101,7 @@ def get_holdings(conn: psycopg.Connection) -> list[dict]:
         return cur.fetchall()
 
 
-def get_holding(
-    conn: psycopg.Connection, ticker: str
-) -> dict | None:
+def get_holding(conn: psycopg.Connection, ticker: str) -> dict | None:
     """Return the consolidated position for a single ticker, or ``None``."""
     with conn.cursor() as cur:
         cur.execute(
