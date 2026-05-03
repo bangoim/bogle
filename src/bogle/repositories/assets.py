@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import psycopg
 from psycopg import errors as pg_errors
+from psycopg.rows import DictRow
 
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import (
@@ -44,7 +45,7 @@ class AssetRepository:
     back and a ``WeightSumExceededError`` is raised.
     """
 
-    def __init__(self, conn: psycopg.Connection) -> None:
+    def __init__(self, conn: psycopg.Connection[DictRow]) -> None:
         self._conn = conn
 
     # ------------------------------------------------------------------
@@ -161,8 +162,9 @@ class AssetRepository:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _guard_weight_sum(cur: psycopg.Cursor) -> None:
+    def _guard_weight_sum(cur: psycopg.Cursor[DictRow]) -> None:
         cur.execute("SELECT COALESCE(SUM(target_weight), 0) AS total FROM assets")
-        total = cur.fetchone()["total"]
-        if total > Decimal("1"):
-            raise WeightSumExceededError(total)
+        row = cur.fetchone()
+        assert row is not None  # COALESCE garante uma linha
+        if row["total"] > Decimal("1"):
+            raise WeightSumExceededError(row["total"])

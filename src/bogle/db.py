@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from yoyo import read_migrations
 from yoyo.backends.core.postgresql import PostgresqlPsycopgBackend
 from yoyo.connections import parse_uri
@@ -22,7 +22,7 @@ def get_database_url() -> str:
     return os.environ.get("BOGLE_DATABASE_URL", DEFAULT_DATABASE_URL)
 
 
-def get_connection(database_url: str | None = None) -> psycopg.Connection:
+def get_connection(database_url: str | None = None) -> psycopg.Connection[DictRow]:
     """Open a connection to PostgreSQL and configure the session.
 
     The session timezone is set to ``America/Sao_Paulo`` and rows are returned
@@ -31,7 +31,7 @@ def get_connection(database_url: str | None = None) -> psycopg.Connection:
     if database_url is None:
         database_url = get_database_url()
 
-    conn = psycopg.connect(database_url, row_factory=dict_row)
+    conn = psycopg.Connection[DictRow].connect(database_url, row_factory=dict_row)
     with conn.cursor() as cur:
         cur.execute(f"SET TIME ZONE '{DEFAULT_TIMEZONE}'")
     conn.commit()
