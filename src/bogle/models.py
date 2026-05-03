@@ -9,6 +9,7 @@ to the same layered structure when their consumer epics land
 from __future__ import annotations
 
 import psycopg
+from psycopg.rows import dict_row
 
 # ---------------------------------------------------------------------------
 # Transactions
@@ -31,7 +32,7 @@ def add_transaction(
     total_investment = shares * unit_price
     total_cost = total_investment + fees
 
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             INSERT INTO transactions
@@ -44,12 +45,13 @@ def add_transaction(
         )
         row = cur.fetchone()
     conn.commit()
+    assert row is not None  # INSERT ... RETURNING sempre devolve uma linha
     return row["id"]
 
 
 def list_transactions(conn: psycopg.Connection, ticker: str | None = None) -> list[dict]:
     """Return transactions, optionally filtered by ticker."""
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         if ticker:
             cur.execute(
                 """
@@ -75,7 +77,7 @@ def list_transactions(conn: psycopg.Connection, ticker: str | None = None) -> li
 
 def delete_transaction(conn: psycopg.Connection, transaction_id: int) -> bool:
     """Delete a transaction by id. Returns ``True`` if a row was deleted."""
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("DELETE FROM transactions WHERE id = %s", (transaction_id,))
         rowcount = cur.rowcount
     conn.commit()
@@ -89,7 +91,7 @@ def delete_transaction(conn: psycopg.Connection, transaction_id: int) -> bool:
 
 def get_holdings(conn: psycopg.Connection) -> list[dict]:
     """Return the consolidated position for every asset that has transactions."""
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT ticker, target_weight, total_shares, total_cost,
@@ -103,7 +105,7 @@ def get_holdings(conn: psycopg.Connection) -> list[dict]:
 
 def get_holding(conn: psycopg.Connection, ticker: str) -> dict | None:
     """Return the consolidated position for a single ticker, or ``None``."""
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT ticker, target_weight, total_shares, total_cost,
