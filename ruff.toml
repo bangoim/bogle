@@ -1,0 +1,51 @@
+line-length = 120
+
+[lint]
+select = [
+    # --- Essenciais (PEP 8 + erros logicos) ---
+    "E",      # pycodestyle errors — PEP 8 style
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes — imports nao usados, variaveis indefinidas
+    "N",      # pep8-naming — convencoes de nomes (snake_case, CamelCase, etc.)
+
+    # --- Organizacao ---
+    "I",      # isort — ordenacao de imports
+
+    # --- Modernizacao ---
+    "UP",     # pyupgrade — sintaxe moderna (ex: dict() -> {}, .format() -> f-string)
+
+    # --- Qualidade de codigo ---
+    "SIM",    # simplify — simplificacoes de codigo
+    "B",      # bugbear — bugs provaveis e design problems
+    "C4",     # comprehensions — simplificacao de list/dict/set comprehensions
+    "RET",    # return — padroes de return (early return, sem else apos return)
+    "PIE",    # misc — melhorias variadas
+    "PERF",   # perflint — problemas de performance
+
+    # --- Clean code ---
+    "ERA",    # eradicate — codigo comentado
+    "RUF",    # Ruff-specific — catches proprios do Ruff
+]
+
+ignore = [
+    # Comprimento de linha — deixar o formatter lidar
+    "E501",
+
+    # Assignment antes de return — as vezes melhora legibilidade
+    "RET504",
+
+    # Local dummy variables — conflito com padrao Looqbox
+    "RUF052",
+]
+
+[lint.per-file-ignores]
+# Scripts de producao (referencia, read-only)
+"responses/**" = ["ALL"]
+
+[lint.isort]
+known-first-party = ["looqbox"]
+
+
+[format]
+quote-style = "double"
+indent-style = "space"
