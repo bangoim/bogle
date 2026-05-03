@@ -15,7 +15,6 @@ from bogle.domain.errors import (
     WeightSumExceededError,
 )
 
-
 _SELECT_COLUMNS = (
     "ticker, target_weight, asset_type, issuer, indexer, rate, "
     "is_prefixed, daily_liquidity, purchase_date, maturity_date"
@@ -89,10 +88,9 @@ class AssetRepository:
     ) -> Asset:
         ticker = ticker.upper()
         try:
-            with self._conn.transaction():
-                with self._conn.cursor() as cur:
-                    cur.execute(
-                        """
+            with self._conn.transaction(), self._conn.cursor() as cur:
+                cur.execute(
+                    """
                         INSERT INTO assets (
                             ticker, target_weight, asset_type, issuer,
                             indexer, rate, is_prefixed, daily_liquidity,
@@ -103,14 +101,14 @@ class AssetRepository:
                             %s, %s
                         )
                         """,
-                        (
-                            ticker, target_weight, asset_type.value, issuer,
-                            indexer.value if indexer is not None else None,
-                            rate, is_prefixed, daily_liquidity,
-                            purchase_date, maturity_date,
-                        ),
-                    )
-                    self._guard_weight_sum(cur)
+                    (
+                        ticker, target_weight, asset_type.value, issuer,
+                        indexer.value if indexer is not None else None,
+                        rate, is_prefixed, daily_liquidity,
+                        purchase_date, maturity_date,
+                    ),
+                )
+                self._guard_weight_sum(cur)
         except pg_errors.UniqueViolation:
             raise AssetAlreadyExistsError(ticker) from None
         except pg_errors.CheckViolation as exc:
@@ -133,15 +131,14 @@ class AssetRepository:
 
     def update_weight(self, ticker: str, target_weight: Decimal) -> Asset:
         ticker = ticker.upper()
-        with self._conn.transaction():
-            with self._conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE assets SET target_weight = %s WHERE ticker = %s",
-                    (target_weight, ticker),
-                )
-                if cur.rowcount == 0:
-                    raise AssetNotFoundError(ticker)
-                self._guard_weight_sum(cur)
+        with self._conn.transaction(), self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE assets SET target_weight = %s WHERE ticker = %s",
+                (target_weight, ticker),
+            )
+            if cur.rowcount == 0:
+                raise AssetNotFoundError(ticker)
+            self._guard_weight_sum(cur)
         # Return the freshly updated row (need full state, not just weight).
         result = self.get(ticker)
         assert result is not None  # row existed (rowcount > 0).
@@ -150,13 +147,12 @@ class AssetRepository:
     def remove(self, ticker: str) -> None:
         ticker = ticker.upper()
         try:
-            with self._conn.transaction():
-                with self._conn.cursor() as cur:
-                    cur.execute(
-                        "DELETE FROM assets WHERE ticker = %s", (ticker,)
-                    )
-                    if cur.rowcount == 0:
-                        raise AssetNotFoundError(ticker)
+            with self._conn.transaction(), self._conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM assets WHERE ticker = %s", (ticker,)
+                )
+                if cur.rowcount == 0:
+                    raise AssetNotFoundError(ticker)
         except pg_errors.ForeignKeyViolation:
             raise AssetHasTransactionsError(ticker) from None
 
