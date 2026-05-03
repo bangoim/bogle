@@ -27,3 +27,17 @@ packages = ["src/bogle"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+exclude = [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "build",
+    "dist",
+    "**/migrations",
+]
+reportUnreachable = "warning"
+reportImplicitOverride = "warning"
