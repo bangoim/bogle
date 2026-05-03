@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import override
 
 import psycopg
 from psycopg.rows import DictRow, dict_row
@@ -58,6 +59,7 @@ class _MigrationsSchemaBackend(PostgresqlPsycopgBackend):
     version_table = "migrations.yoyo_version"
     lock_table = "migrations.yoyo_lock"
 
+    @override
     def quote_identifier(self, s: str) -> str:
         # PostgreSQL requires each part of a schema-qualified identifier
         # to be quoted independently (`"schema"."table"`), not as a single
@@ -67,6 +69,7 @@ class _MigrationsSchemaBackend(PostgresqlPsycopgBackend):
             return ".".join(f'"{p}"' for p in s.split("."))
         return f'"{s}"'
 
+    @override
     def list_tables(self, **kwargs) -> list[str]:
         # Return schema-qualified names so the internal-schema bookkeeping
         # logic in yoyo recognises tables we placed in the `migrations`
