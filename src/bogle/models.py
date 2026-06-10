@@ -1,88 +1,15 @@
-"""Legacy data-access functions for transactions and holdings.
+"""Legacy data-access functions for holdings.
 
-The asset CRUD lives in :mod:`bogle.repositories.assets` (proper repository
-+ domain dataclass + custom errors). The functions below will be migrated
-to the same layered structure when their consumer epics land
-(transactions in #8, holdings filtering in #9).
+Asset CRUD lives in :mod:`bogle.repositories.assets` and transactions in
+:mod:`bogle.repositories.transactions` (repository + domain dataclass +
+custom errors). The holdings functions below will be migrated to the
+same layered structure when the view is reworked for sales (#9).
 """
 
 from __future__ import annotations
 
 import psycopg
 from psycopg.rows import dict_row
-
-# ---------------------------------------------------------------------------
-# Transactions
-# ---------------------------------------------------------------------------
-
-
-def add_transaction(
-    conn: psycopg.Connection,
-    ticker: str,
-    purchase_date: str,
-    shares: float,
-    unit_price: float,
-    fees: float = 0.0,
-) -> int:
-    """Record a purchase and return the new transaction id.
-
-    ``total_investment`` (shares * unit_price) and ``total_cost``
-    (total_investment + fees) are computed automatically.
-    """
-    total_investment = shares * unit_price
-    total_cost = total_investment + fees
-
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(
-            """
-            INSERT INTO transactions
-                (ticker, purchase_date, shares, unit_price,
-                 total_investment, fees, total_cost)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (ticker.upper(), purchase_date, shares, unit_price, total_investment, fees, total_cost),
-        )
-        row = cur.fetchone()
-    conn.commit()
-    assert row is not None  # INSERT ... RETURNING sempre devolve uma linha
-    return row["id"]
-
-
-def list_transactions(conn: psycopg.Connection, ticker: str | None = None) -> list[dict]:
-    """Return transactions, optionally filtered by ticker."""
-    with conn.cursor(row_factory=dict_row) as cur:
-        if ticker:
-            cur.execute(
-                """
-                SELECT id, ticker, purchase_date, shares, unit_price,
-                       total_investment, fees, total_cost
-                FROM transactions
-                WHERE ticker = %s
-                ORDER BY purchase_date
-                """,
-                (ticker.upper(),),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT id, ticker, purchase_date, shares, unit_price,
-                       total_investment, fees, total_cost
-                FROM transactions
-                ORDER BY purchase_date
-                """
-            )
-        return cur.fetchall()
-
-
-def delete_transaction(conn: psycopg.Connection, transaction_id: int) -> bool:
-    """Delete a transaction by id. Returns ``True`` if a row was deleted."""
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("DELETE FROM transactions WHERE id = %s", (transaction_id,))
-        rowcount = cur.rowcount
-    conn.commit()
-    return rowcount > 0
-
 
 # ---------------------------------------------------------------------------
 # Holdings (read-only, backed by the SQL view)

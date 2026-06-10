@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import psycopg
 import pytest
+from psycopg.rows import DictRow
 
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import (
@@ -14,8 +15,8 @@ from bogle.domain.errors import (
     ValidationError,
     WeightSumExceededError,
 )
-from bogle.models import add_transaction
 from bogle.repositories.assets import AssetRepository
+from bogle.repositories.transactions import TransactionRepository
 
 
 class TestAdd:
@@ -176,10 +177,8 @@ class TestRemove:
         with pytest.raises(AssetNotFoundError):
             repo.remove("XYZ")
 
-    def test_with_transactions_raises(
-        self, conn: psycopg.Connection, repo: AssetRepository
-    ) -> None:
+    def test_with_transactions_raises(self, conn: psycopg.Connection[DictRow], repo: AssetRepository) -> None:
         repo.add("PETR4", Decimal("0.1"))
-        add_transaction(conn, "PETR4", "2025-01-15", 10, 30.0)
+        TransactionRepository(conn).add_buy("PETR4", datetime(2025, 1, 15, tzinfo=UTC), Decimal("10"), Decimal("30"))
         with pytest.raises(AssetHasTransactionsError):
             repo.remove("PETR4")
