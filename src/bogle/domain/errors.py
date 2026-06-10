@@ -37,3 +37,9 @@ class AssetHasTransactionsError(BogleError):
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
         super().__init__(f"Ativo '{ticker}' possui transacoes vinculadas e nao pode ser removido.")
+
+
+class TransactionNotFoundError(BogleError):
+    def __init__(self, transaction_id: int) -> None:
+        self.transaction_id = transaction_id
+        super().__init__(f"Transacao {transaction_id} nao encontrada.")
