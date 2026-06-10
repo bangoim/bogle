@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from bogle.db import get_connection
+from bogle.db import DEFAULT_TIMEZONE, get_connection
+from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import ValidationError
+from bogle.domain.validation import validate_asset_metadata
 from bogle.repositories.assets import AssetRepository
 
 
@@ -26,6 +31,50 @@ def _parse_weight(value: str) -> Decimal:
     return weight
 
 
+def _parse_rate(value: str) -> Decimal:
+    try:
+        rate = Decimal(value)
+    except InvalidOperation:
+        raise ValidationError(f"--rate deve ser um numero decimal, recebido {value!r}.") from None
+    # Limite espelha a coluna rate NUMERIC(10, 6): |valor| < 10^4.
+    if not (Decimal("0") < rate < Decimal("10000")):
+        raise ValidationError(f"--rate deve estar em (0, 10000), recebido {rate}.")
+    return rate
+
+
+def _parse_date(value: str, option: str) -> datetime:
+    """Parse an ISO date (YYYY-MM-DD) into an America/Sao_Paulo datetime."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise ValidationError(f"{option} deve ser uma data ISO (YYYY-MM-DD), recebido {value!r}.") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE))
+    return parsed
+
+
+def _parse_provided[T](
+    value: str | None,
+    parser: Callable[[str], T],
+    parse_errors: list[str],
+    placeholder: T,
+) -> T | None:
+    """Parse an optional CLI value, accumulating failures.
+
+    On parse failure the error is recorded and ``placeholder`` is returned
+    so the validator still sees the field as *provided* (and can report
+    missing/irrelevant fields in the same message). The placeholder is
+    never persisted: any accumulated error aborts before the database.
+    """
+    if value is None:
+        return None
+    try:
+        return parser(value)
+    except ValidationError as exc:
+        parse_errors.append(str(exc))
+        return placeholder
+
+
 def add(
     ticker: str = typer.Argument(..., help="Ticker do ativo (ex: VTI)."),
     weight: str = typer.Option(
@@ -34,14 +83,85 @@ def add(
         "-w",
         help="Peso-alvo em decimal entre 0 e 1 (ex: 0.6 = 60%).",
     ),
+    asset_type: AssetType = typer.Option(  # noqa: B008 — padrao do typer, OptionInfo e sentinela imutavel
+        AssetType.STOCK,
+        "--type",
+        "-t",
+        case_sensitive=False,
+        help="Tipo do ativo.",
+    ),
+    issuer: str | None = typer.Option(
+        None,
+        "--issuer",
+        help="Banco/emissor (renda fixa privada).",
+    ),
+    indexer: Indexer | None = typer.Option(  # noqa: B008 — padrao do typer, OptionInfo e sentinela imutavel
+        None,
+        "--indexer",
+        case_sensitive=False,
+        help="Indexador (renda fixa pos-fixada).",
+    ),
+    rate: str | None = typer.Option(
+        None,
+        "--rate",
+        help="Taxa contratada em decimal (ex: 1.10 = 110% do CDI).",
+    ),
+    prefixed: bool | None = typer.Option(
+        None,
+        "--prefixed/--no-prefixed",
+        help="Titulo prefixado (sem indexador). Default: pos-fixado.",
+    ),
+    daily_liquidity: bool | None = typer.Option(
+        None,
+        "--daily-liquidity/--no-daily-liquidity",
+        help="Liquidez diaria (renda fixa privada).",
+    ),
+    purchase_date: str | None = typer.Option(
+        None,
+        "--purchase-date",
+        help="Data da compra (YYYY-MM-DD).",
+    ),
+    maturity_date: str | None = typer.Option(
+        None,
+        "--maturity-date",
+        help="Data de vencimento (YYYY-MM-DD).",
+    ),
 ) -> None:
     weight_dec = _parse_weight(weight)
+    parse_errors: list[str] = []
+    placeholder_date = datetime(1970, 1, 1, tzinfo=UTC)
+    metadata = validate_asset_metadata(
+        asset_type,
+        issuer=issuer,
+        indexer=indexer,
+        rate=_parse_provided(rate, _parse_rate, parse_errors, Decimal("1")),
+        is_prefixed=prefixed,
+        daily_liquidity=daily_liquidity,
+        purchase_date=_parse_provided(
+            purchase_date, lambda v: _parse_date(v, "--purchase-date"), parse_errors, placeholder_date
+        ),
+        maturity_date=_parse_provided(
+            maturity_date, lambda v: _parse_date(v, "--maturity-date"), parse_errors, placeholder_date
+        ),
+        extra_errors=parse_errors,
+    )
     conn = get_connection()
     try:
-        asset = AssetRepository(conn).add(ticker, weight_dec)
+        asset = AssetRepository(conn).add(
+            ticker,
+            weight_dec,
+            asset_type=asset_type,
+            issuer=metadata.issuer,
+            indexer=metadata.indexer,
+            rate=metadata.rate,
+            is_prefixed=metadata.is_prefixed,
+            daily_liquidity=metadata.daily_liquidity,
+            purchase_date=metadata.purchase_date,
+            maturity_date=metadata.maturity_date,
+        )
     finally:
         conn.close()
-    typer.echo(f"asset {asset.ticker} adicionado com peso {asset.target_weight:.2%}.")
+    typer.echo(f"asset {asset.ticker} ({asset.asset_type}) adicionado com peso {asset.target_weight:.2%}.")
 
 
 def update(
@@ -53,6 +173,9 @@ def update(
         help="Novo peso-alvo em decimal entre 0 e 1.",
     ),
 ) -> None:
+    # `update` so toca target_weight por enquanto; quando passar a aceitar
+    # os campos de renda fixa, deve revalidar a combinacao resultante via
+    # bogle.domain.validation.validate_asset_metadata.
     if weight is None:
         raise ValidationError("Nada para atualizar. Informe --weight.")
     weight_dec = _parse_weight(weight)
