@@ -9,6 +9,7 @@ from psycopg.rows import DictRow
 
 from bogle.db import get_connection, run_migrations
 from bogle.repositories.assets import AssetRepository
+from bogle.repositories.transactions import TransactionRepository
 
 TEST_DATABASE_URL = "postgresql://localhost/bogle_test"
 
@@ -36,3 +37,8 @@ def conn() -> Iterator[psycopg.Connection[DictRow]]:
 @pytest.fixture
 def repo(conn: psycopg.Connection[DictRow]) -> AssetRepository:
     return AssetRepository(conn)
+
+
+@pytest.fixture
+def trepo(conn: psycopg.Connection[DictRow]) -> TransactionRepository:
+    return TransactionRepository(conn)
