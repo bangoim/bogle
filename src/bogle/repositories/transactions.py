@@ -16,12 +16,7 @@ from bogle.domain.transactions import Transaction, TransactionType
 
 _ZERO = Decimal("0")
 
-# purchase_date keeps its historical name in the schema; the domain calls
-# it ``date`` (see Transaction). Renaming the column is deferred to the
-# holdings rework in issue 3.2.
-_SELECT_COLUMNS = (
-    "id, ticker, transaction_type, purchase_date, shares, unit_price, total_investment, fees, total_cost, tax_withheld"
-)
+_SELECT_COLUMNS = "id, ticker, transaction_type, transaction_date, shares, unit_price, total_investment, fees, total_cost, tax_withheld"
 
 
 def _row_to_transaction(row: dict) -> Transaction:
@@ -29,7 +24,7 @@ def _row_to_transaction(row: dict) -> Transaction:
         id=row["id"],
         ticker=row["ticker"],
         transaction_type=TransactionType(row["transaction_type"]),
-        date=row["purchase_date"],
+        date=row["transaction_date"],
         shares=row["shares"],
         unit_price=row["unit_price"],
         total_investment=row["total_investment"],
@@ -62,12 +57,12 @@ class TransactionRepository:
                     f"""
                     SELECT {_SELECT_COLUMNS} FROM transactions
                     WHERE ticker = %s
-                    ORDER BY purchase_date, id
+                    ORDER BY transaction_date, id
                     """,
                     (ticker.upper(),),
                 )
             else:
-                cur.execute(f"SELECT {_SELECT_COLUMNS} FROM transactions ORDER BY purchase_date, id")
+                cur.execute(f"SELECT {_SELECT_COLUMNS} FROM transactions ORDER BY transaction_date, id")
             rows = cur.fetchall()
         return [_row_to_transaction(r) for r in rows]
 
@@ -245,7 +240,7 @@ class TransactionRepository:
                 cur.execute(
                     f"""
                     INSERT INTO transactions (
-                        ticker, transaction_type, purchase_date, shares,
+                        ticker, transaction_type, transaction_date, shares,
                         unit_price, total_investment, fees, total_cost,
                         tax_withheld
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
