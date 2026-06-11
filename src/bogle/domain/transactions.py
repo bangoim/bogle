@@ -25,9 +25,7 @@ class TransactionType(StrEnum):
 class Transaction:
     """A persisted row of ``transactions``.
 
-    ``date`` maps to the ``purchase_date`` column (the historical name
-    predates SELL/income support; renaming it is deferred to the
-    holdings rework in issue 3.2).
+    ``date`` maps to the ``transaction_date`` column.
 
     Field semantics per type:
 

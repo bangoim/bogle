@@ -69,7 +69,7 @@ class TestAddSale:
         tx = trepo.add_sale("PETR4", D2, Decimal("40"), Decimal("35"), fees=Decimal("2.5"))
         assert tx.transaction_type is TransactionType.SELL
         assert tx.shares == Decimal("40")  # quantidade vendida
-        assert tx.total_investment == Decimal("1400")  # proventos brutos
+        assert tx.total_investment == Decimal("1400")  # produto bruto da venda
         assert tx.total_cost == Decimal("2.5")  # custo da operacao = fees
 
     def test_dedo_duro_tax_withheld(self, trepo: TransactionRepository, petr4: None) -> None:
@@ -245,7 +245,7 @@ class TestMigration003:
             cur.execute(
                 """
                 INSERT INTO transactions
-                    (ticker, purchase_date, shares, unit_price,
+                    (ticker, transaction_date, shares, unit_price,
                      total_investment, fees, total_cost)
                 VALUES ('PETR4', %s, 10, 30, 300, 0, 300)
                 """,
@@ -261,7 +261,7 @@ class TestMigration003:
             cur.execute(
                 """
                 INSERT INTO transactions
-                    (ticker, transaction_type, purchase_date, shares,
+                    (ticker, transaction_type, transaction_date, shares,
                      unit_price, total_investment, fees, total_cost)
                 VALUES ('PETR4', 'DIVIDEND', %s, 10, 30, 300, 0, 0)
                 """,
