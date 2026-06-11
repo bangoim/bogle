@@ -116,6 +116,36 @@ bogle update VTI --weight 0.45   # change a target weight
 bogle remove VTI                 # only works while the asset has no transactions
 ```
 
+### Recording transactions
+
+Transactions reference a registered asset. `--date` is optional
+everywhere and defaults to today (America/Sao_Paulo); pass ISO dates
+(`YYYY-MM-DD`) to backfill history.
+
+```bash
+bogle add PETR4 --weight 0.2
+
+bogle buy PETR4 --shares 100 --price 30.50 --fees 5.20 --date 2026-01-15
+bogle sell PETR4 --shares 40 --price 35 --tax-withheld 0.07    # 0.005% "dedo-duro" on sales
+
+bogle income PETR4 --type DIVIDEND --amount 123.45
+bogle income PETR4 --type JCP --amount 200 --tax-withheld 30   # JCP requires the 15% withheld at source
+bogle income MXRF11 --type RENDIMENTO --amount 80              # FII income, tax-exempt (no --tax-withheld)
+
+bogle transactions          # list everything (or filter: bogle transactions PETR4)
+bogle transaction remove 7  # delete by ID (see the ID column in the listing)
+```
+
+**Fixed income without daily liquidity** (CDB, RDB, LCI, LCA): record
+the application as a single unit — BUY with `--shares 1` and `--price`
+equal to the invested amount. A full redemption is a SELL with
+`--shares 1` at the redeemed amount, which closes the position:
+
+```bash
+bogle buy CDB-XP-2027 --shares 1 --price 5000 --date 2026-04-01
+bogle sell CDB-XP-2027 --shares 1 --price 5310 --date 2027-04-01   # resgate total
+```
+
 ## Schema migrations
 
 Schema changes live in `src/bogle/migrations/` as numbered SQL files (`001_initial.sql`, `002_*.sql`, ...). They are applied by `yoyo-migrations`, which records progress in a `_yoyo_migration` table on the database side.

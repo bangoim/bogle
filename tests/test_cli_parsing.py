@@ -8,25 +8,37 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bogle.cli.assets import _parse_date, _parse_rate, _parse_weight
+from bogle.cli.assets import _parse_rate, _parse_weight
+from bogle.cli.parsing import parse_date, parse_decimal
 from bogle.domain.errors import ValidationError
+
+
+class TestParseDecimal:
+    def test_valid(self) -> None:
+        assert parse_decimal("10.5", "--shares") == Decimal("10.5")
+
+    @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "inf"])
+    def test_non_finite_rejected(self, value: str) -> None:
+        # NaN/Infinity parseiam como Decimal mas estouram em comparacoes e no banco.
+        with pytest.raises(ValidationError, match="--shares deve ser um numero decimal"):
+            parse_decimal(value, "--shares")
 
 
 class TestParseDate:
     def test_naive_date_gets_sao_paulo_timezone(self) -> None:
-        parsed = _parse_date("2026-04-01", "--purchase-date")
+        parsed = parse_date("2026-04-01", "--purchase-date")
         # Wall time preservado (meia-noite local), nao convertido.
         assert parsed == datetime(2026, 4, 1, tzinfo=ZoneInfo("America/Sao_Paulo"))
         assert parsed.hour == 0
         assert parsed.tzinfo == ZoneInfo("America/Sao_Paulo")
 
     def test_aware_input_keeps_its_timezone(self) -> None:
-        parsed = _parse_date("2026-04-01T12:00:00+00:00", "--purchase-date")
+        parsed = parse_date("2026-04-01T12:00:00+00:00", "--purchase-date")
         assert parsed == datetime(2026, 4, 1, 12, tzinfo=UTC)
 
     def test_invalid_format_mentions_the_option(self) -> None:
         with pytest.raises(ValidationError, match="--maturity-date deve ser uma data ISO"):
-            _parse_date("01/04/2026", "--maturity-date")
+            parse_date("01/04/2026", "--maturity-date")
 
 
 class TestParseRate:

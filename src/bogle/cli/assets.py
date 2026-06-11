@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
-from zoneinfo import ZoneInfo
+from decimal import Decimal
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from bogle.db import DEFAULT_TIMEZONE, get_connection
+from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.db import get_connection
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import ValidationError
 from bogle.domain.validation import validate_asset_metadata
@@ -17,40 +17,19 @@ from bogle.repositories.assets import AssetRepository
 
 
 def _parse_weight(value: str) -> Decimal:
-    """Parse a CLI weight argument, validating the (0, 1] range.
-
-    The argument arrives as a string so we get exact decimal handling
-    instead of going through ``float`` (and its 0.1 + 0.2 surprises).
-    """
-    try:
-        weight = Decimal(value)
-    except InvalidOperation:
-        raise ValidationError(f"--weight deve ser um numero decimal, recebido {value!r}.") from None
+    """Parse a CLI weight argument, validating the (0, 1] range."""
+    weight = parse_decimal(value, "--weight")
     if not (Decimal("0") < weight <= Decimal("1")):
         raise ValidationError(f"--weight deve estar em (0, 1], recebido {weight}.")
     return weight
 
 
 def _parse_rate(value: str) -> Decimal:
-    try:
-        rate = Decimal(value)
-    except InvalidOperation:
-        raise ValidationError(f"--rate deve ser um numero decimal, recebido {value!r}.") from None
+    rate = parse_decimal(value, "--rate")
     # Limite espelha a coluna rate NUMERIC(10, 6): |valor| < 10^4.
     if not (Decimal("0") < rate < Decimal("10000")):
         raise ValidationError(f"--rate deve estar em (0, 10000), recebido {rate}.")
     return rate
-
-
-def _parse_date(value: str, option: str) -> datetime:
-    """Parse an ISO date (YYYY-MM-DD) into an America/Sao_Paulo datetime."""
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        raise ValidationError(f"{option} deve ser uma data ISO (YYYY-MM-DD), recebido {value!r}.") from None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE))
-    return parsed
 
 
 def _parse_provided[T](
@@ -138,10 +117,10 @@ def add(
         is_prefixed=prefixed,
         daily_liquidity=daily_liquidity,
         purchase_date=_parse_provided(
-            purchase_date, lambda v: _parse_date(v, "--purchase-date"), parse_errors, placeholder_date
+            purchase_date, lambda v: parse_date(v, "--purchase-date"), parse_errors, placeholder_date
         ),
         maturity_date=_parse_provided(
-            maturity_date, lambda v: _parse_date(v, "--maturity-date"), parse_errors, placeholder_date
+            maturity_date, lambda v: parse_date(v, "--maturity-date"), parse_errors, placeholder_date
         ),
         extra_errors=parse_errors,
     )
