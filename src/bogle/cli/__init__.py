@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 
+import psycopg
 import typer
 
 from bogle.cli import assets as assets_cli
@@ -38,4 +39,11 @@ def _run() -> None:  # pragma: no cover - tiny shim for the console_script
         app()
     except BogleError as exc:
         typer.echo(f"erro: {exc}", err=True)
+        sys.exit(1)
+    except psycopg.OperationalError:
+        typer.echo(
+            "erro: nao foi possivel conectar ao banco de dados. "
+            "Verifique BOGLE_DATABASE_URL e se o PostgreSQL esta rodando.",
+            err=True,
+        )
         sys.exit(1)

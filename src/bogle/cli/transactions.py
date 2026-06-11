@@ -29,14 +29,14 @@ class IncomeType(StrEnum):
 
 
 def _resolve_date(value: str | None) -> datetime:
-    """``--date`` informado (ISO) ou agora em America/Sao_Paulo."""
+    """Return the given ISO ``--date`` or now in America/Sao_Paulo."""
     if value is not None:
         return parse_date(value, "--date")
     return datetime.now(tz=ZoneInfo(DEFAULT_TIMEZONE))
 
 
 def _fmt(value: Decimal) -> str:
-    """Exibe sem a escala crua do NUMERIC (100.00000000 -> 100)."""
+    """Render without the raw NUMERIC scale (100.00000000 -> 100)."""
     return format(value.normalize(), "f")
 
 
@@ -51,15 +51,14 @@ def buy(
     fees: str = typer.Option("0", "--fees", help="Taxas/corretagem da operacao."),
     date: str | None = typer.Option(None, "--date", help="Data da operacao (YYYY-MM-DD). Default: hoje."),
 ) -> None:
+    # Parse antes de abrir conexao (erro de formato nao precisa de banco).
+    when = _resolve_date(date)
+    shares_dec = parse_decimal(shares, "--shares")
+    price_dec = parse_decimal(price, "--price")
+    fees_dec = parse_decimal(fees, "--fees")
     conn = get_connection()
     try:
-        tx = TransactionRepository(conn).add_buy(
-            ticker,
-            _resolve_date(date),
-            shares=parse_decimal(shares, "--shares"),
-            unit_price=parse_decimal(price, "--price"),
-            fees=parse_decimal(fees, "--fees"),
-        )
+        tx = TransactionRepository(conn).add_buy(ticker, when, shares=shares_dec, unit_price=price_dec, fees=fees_dec)
     finally:
         conn.close()
     _echo_recorded(tx)
@@ -76,15 +75,16 @@ def sell(
     tax_withheld: str = typer.Option("0", "--tax-withheld", help="IR retido na fonte (dedo-duro de 0,005% em vendas)."),
     date: str | None = typer.Option(None, "--date", help="Data da operacao (YYYY-MM-DD). Default: hoje."),
 ) -> None:
+    # Parse antes de abrir conexao (erro de formato nao precisa de banco).
+    when = _resolve_date(date)
+    shares_dec = parse_decimal(shares, "--shares")
+    price_dec = parse_decimal(price, "--price")
+    fees_dec = parse_decimal(fees, "--fees")
+    tax_dec = parse_decimal(tax_withheld, "--tax-withheld")
     conn = get_connection()
     try:
         tx = TransactionRepository(conn).add_sale(
-            ticker,
-            _resolve_date(date),
-            shares=parse_decimal(shares, "--shares"),
-            unit_price=parse_decimal(price, "--price"),
-            fees=parse_decimal(fees, "--fees"),
-            tax_withheld=parse_decimal(tax_withheld, "--tax-withheld"),
+            ticker, when, shares=shares_dec, unit_price=price_dec, fees=fees_dec, tax_withheld=tax_dec
         )
     finally:
         conn.close()
@@ -154,13 +154,13 @@ def list_transactions(
     table = Table(title="Transacoes", title_style="bold")
     table.add_column("ID", justify="right")
     table.add_column("Data", no_wrap=True)
-    table.add_column("Tipo")
+    table.add_column("Tipo", no_wrap=True)
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Qtd", justify="right")
     table.add_column("Preco", justify="right")
     table.add_column("Valor", justify="right")
     table.add_column("Fees", justify="right")
-    table.add_column("IR retido", justify="right")
+    table.add_column("IR", justify="right")
     for tx in transactions:
         is_trade = tx.transaction_type in (TransactionType.BUY, TransactionType.SELL)
         table.add_row(
