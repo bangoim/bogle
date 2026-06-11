@@ -9,8 +9,19 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from bogle.cli.assets import _parse_rate, _parse_weight
-from bogle.cli.parsing import parse_date
+from bogle.cli.parsing import parse_date, parse_decimal
 from bogle.domain.errors import ValidationError
+
+
+class TestParseDecimal:
+    def test_valid(self) -> None:
+        assert parse_decimal("10.5", "--shares") == Decimal("10.5")
+
+    @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "inf"])
+    def test_non_finite_rejected(self, value: str) -> None:
+        # NaN/Infinity parseiam como Decimal mas estouram em comparacoes e no banco.
+        with pytest.raises(ValidationError, match="--shares deve ser um numero decimal"):
+            parse_decimal(value, "--shares")
 
 
 class TestParseDate:
