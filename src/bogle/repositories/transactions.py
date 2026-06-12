@@ -133,7 +133,9 @@ class TransactionRepository:
         amount: Decimal,
         tax_withheld: Decimal = _ZERO,
     ) -> Transaction:
-        """Record a stock dividend (currently tax-exempt for individuals)."""
+        """Record a stock dividend. Since 2026 (Lei 15.270/2025) a 10% IRRF
+        applies above R$50k/month from the same payer; ``tax_withheld`` carries
+        any tax retained at source."""
         return self._insert_income(ticker, TransactionType.DIVIDEND, date, amount, tax_withheld)
 
     def add_jcp(
