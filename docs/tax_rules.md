@@ -146,6 +146,58 @@ entre a aplicacao e o resgate:
 
 ---
 
+## IOF — tabela regressiva (renda fixa)
+
+O IOF sobre renda fixa so importa para **resgates nos primeiros 30 dias** corridos
+apos a aplicacao. Base para `src/bogle/tax/iof.py` (issue 4.4).
+
+### Aplicacao
+
+- Incide **apenas sobre o rendimento** (nunca sobre o principal).
+- Aplica-se **somente se o resgate ocorrer ate o 30o dia corrido** desde a compra.
+- A partir do **30o dia a aliquota e zero** (e, portanto, do 31o em diante).
+- **No mesmo dia** (`dias <= 0`): zero — ainda nao ha rendimento.
+- O `dia` e contado como `(data_resgate - data_compra).days` (dias corridos), onde a
+  data de compra e a `transaction_date` do `BUY` correspondente.
+
+### Tabela (Decreto 6.306/2007, Anexo)
+
+| Dia | Aliquota | Dia | Aliquota |
+|---|---|---|---|
+| 1 | 96% | 16 | 46% |
+| 2 | 93% | 17 | 43% |
+| 3 | 90% | 18 | 40% |
+| 4 | 86% | 19 | 36% |
+| 5 | 83% | 20 | 33% |
+| 6 | 80% | 21 | 30% |
+| 7 | 76% | 22 | 26% |
+| 8 | 73% | 23 | 23% |
+| 9 | 70% | 24 | 20% |
+| 10 | 66% | 25 | 16% |
+| 11 | 63% | 26 | 13% |
+| 12 | 60% | 27 | 10% |
+| 13 | 56% | 28 | 6% |
+| 14 | 53% | 29 | **3%** |
+| 15 | 50% | 30 | **0%** |
+
+> A tabela oficial decresce ate **3% no dia 29** e **zera no dia 30**. Esta versao
+> bate, dia a dia, com o dict `IOF_RATES` da issue 4.4.
+
+- Fonte: Decreto 6.306/2007, Anexo (Tabela de aliquotas do IOF).
+
+### Ativos
+
+- **Sujeitos a IOF (primeiros 30 dias):** `CDB`, `RDB`, `LCI`, `LCA`, `TESOURO`,
+  `CAIXINHA`.
+- **Isentos de IOF:** renda variavel — `STOCK`, `BDR`, `FII`, `ETF`.
+
+### Observacao pratica
+
+A maioria das `LCI`/`LCA` tem **carencia minima > 90 dias**, o que torna o IOF
+irrelevante na pratica (o resgate nunca cai dentro dos 30 dias).
+
+---
+
 ## Apendice informativo — instrumentos fora do `AssetType`
 
 Citados nas fontes, mas **nao representaveis** no schema atual (`AssetType` nao tem o
@@ -178,3 +230,5 @@ valor correspondente). Listados so para referencia; o `bogle` nao os calcula.
   <https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12431.htm>
 - **Lei 15.270/2025** — tributacao de dividendos e IRPFM a partir de 2026:
   <https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm>
+- **Decreto 6.306/2007** — Regulamento do IOF; tabela regressiva de renda fixa (Anexo):
+  <https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2007/decreto/d6306.htm>
