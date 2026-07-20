@@ -4,6 +4,7 @@ import sys
 
 import psycopg
 import typer
+from dotenv import load_dotenv
 
 from bogle.cli import assets as assets_cli
 from bogle.cli import transactions as transactions_cli
@@ -35,6 +36,7 @@ def _main() -> None:
 
 
 def _run() -> None:  # pragma: no cover - tiny shim for the console_script
+    load_dotenv()  # picks up BRAPI_TOKEN (and future secrets) from a local .env
     try:
         app()
     except BogleError as exc:
