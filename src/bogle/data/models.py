@@ -9,7 +9,7 @@ the rest of the app never sees a provider's wire format. Monetary values are
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 
@@ -51,3 +51,17 @@ class HistPoint:
     close: Decimal
     volume: int
     adjusted_close: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SeriesPoint:
+    """One observation of a macro time series (CDI, IPCA, SELIC, ...).
+
+    ``date`` is a calendar day at the series' own periodicity (daily rates are
+    dated per business day; monthly ones fall on the first of the month).
+    ``value`` is a fraction (0.0053 for 0.53%), unless the caller asked the client
+    for raw values.
+    """
+
+    date: date
+    value: Decimal
