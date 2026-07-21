@@ -1,6 +1,16 @@
 # bogle
 
-CLI tool for passive portfolio rebalancing.
+A command-line tool for **passive portfolio rebalancing**, Bogle-style
+(long-term, low-cost, buy-and-hold), focused on the Brazilian market — stocks,
+FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
+
+## Features
+
+- **Portfolio registry** — assets with target weights; the total can never exceed 100%.
+- **Transaction ledger** — buys, sells and income (dividends, JCP, FII distributions, interest), with fees and tax withheld.
+- **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker.
+- **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices from Tesouro Transparente, cached on disk. Private fixed income is marked to present value.
+- **Brazilian taxes** — income tax per operation and regressive IOF on fixed-income redemptions.
 
 ## Setup
 
@@ -42,6 +52,19 @@ export BOGLE_DATABASE_URL="postgresql://user:password@host:5432/bogle"
 ```bash
 pip install -e .
 ```
+
+### 5. (Optional) brapi token for live B3 quotes
+
+Live quotes for B3 tickers and indices come from [brapi](https://brapi.dev). Put
+your token in a `.env` file at the repo root (git-ignored); the CLI loads it
+automatically:
+
+```bash
+echo 'BRAPI_TOKEN=your-token-here' > .env
+```
+
+Without a token you can still run `bogle position --no-prices`, and the other
+sources (yfinance, Banco Central, Tesouro Transparente) need no token.
 
 ## Usage
 
@@ -150,8 +173,8 @@ bogle sell CDB-XP-2027 --shares 1 --price 5310 --date 2027-04-01   # resgate tot
 
 `bogle position` prices the portfolio on the fly and shows, per ticker: current
 price, quantity, market value, current weight, drift vs target, invested capital,
-nominal PnL (R$ and %) and time-weighted return (TWR) — with portfolio totals, the
-price source and the latest quote timestamp in the footer.
+nominal PnL (R$ and %) and time-weighted return (TWR). The footer carries the
+portfolio totals, the price source(s) and the latest quote timestamp.
 
 ```bash
 bogle position               # live prices
@@ -159,21 +182,42 @@ bogle position --no-prices   # base data only, no API calls
 bogle position --json        # machine-readable output for scripts
 ```
 
-Prices come from: brapi (B3 quotes and indices), yfinance (long history + fallback
-quotes), the Banco Central SGS API (CDI/IPCA/SELIC) and the Tesouro Transparente
-open data (Tesouro Direto, D-1 prices). Private fixed income is marked to its gross
-corrected value via the present-value engine. Quotes are cached under
-`~/.cache/bogle` for a few minutes.
-
-Live B3 quotes need a **brapi token**. Put it in a `.env` file at the repo root
-(git-ignored); the CLI loads it automatically:
-
-```bash
-echo 'BRAPI_TOKEN=your-token-here' > .env
+```text
+                                                Posicao
+┏━━━━━━━━┳━━━━━━━┳━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┓
+┃ Ticker ┃ Tipo  ┃ Qtd ┃  Preco ┃   Valor ┃ Peso atual ┃ Target ┃  Drift ┃  PnL R$ ┃  PnL % ┃     TWR ┃
+┡━━━━━━━━╇━━━━━━━╇━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━┩
+│ PETR4  │ STOCK │ 100 │  41.15 │ 4115.00 │     52.30% │ 50.00% │ +2.30% │ +365.00 │ +9.74% │ +12.75% │
+│ MXRF11 │ FII   │ 300 │   9.80 │ 2940.00 │     37.36% │ 40.00% │ -2.64% │ +140.00 │ +5.00% │  +6.10% │
+│ CDB01  │ CDB   │   1 │ 811.20 │  811.20 │     10.31% │ 10.00% │ +0.31% │  +11.20 │ +1.40% │  +1.40% │
+└────────┴───────┴─────┴────────┴─────────┴────────────┴────────┴────────┴─────────┴────────┴─────────┘
+Total investido: 7350.00
+Patrimonio total: 7866.20
+Variacao: +516.20 (+7.02%)
+Fonte(s) de preco: brapi, calculado
+Cotacao mais recente: 2026-07-20 18:28
 ```
 
-Without a token, `bogle position` still works with `--no-prices`, and non-brapi
-sources (yfinance, BCB, Tesouro) do not require one.
+Live B3 quotes need a brapi token — see [Setup step 5](#5-optional-brapi-token-for-live-b3-quotes).
+
+### Market data & sources
+
+| Source | Used for |
+|--------|----------|
+| [brapi](https://brapi.dev) | Current B3 quotes (stocks, FIIs, ETFs, BDRs) and indices (IBOV, IFIX, …) |
+| yfinance | Long price history (`.SA` tickers) for TWR, plus a fallback quote |
+| Banco Central (SGS) | CDI / IPCA / SELIC series |
+| [Tesouro Transparente](https://www.tesourotransparente.gov.br) | Tesouro Direto prices (D-1, from the official open-data CSV) |
+
+Private fixed income (CDB/RDB/LCI/LCA/CAIXINHA) has no market price: it is marked
+to its **gross corrected value**, capitalizing the principal from the purchase date
+with the contracted indexer/rate (ANBIMA 252-business-day convention for prefixed
+and the real leg of IPCA+). Quotes are cached under `~/.cache/bogle` for a few
+minutes; the slower-moving macro and Tesouro data for longer.
+
+> **Note:** TWR for Tesouro Direto is shown as N/A — there is no free source of
+> historical Tesouro prices (the direct API is behind a bot challenge; only the
+> current snapshot is available). Variable income and private fixed income do have TWR.
 
 ## Schema migrations
 
