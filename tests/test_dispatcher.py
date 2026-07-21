@@ -46,6 +46,9 @@ class FakeQuoteClient:
             raise QuoteNotFoundError(index, provider="fake")
         return Quote(symbol=index, requested_symbol=index, price=value, currency="BRL", time=_DT)
 
+    def get_history(self, symbol: str, **_kwargs: Any) -> list[Any]:
+        return []
+
 
 class FakeTesouro:
     def __init__(self, quote: TesouroQuote | None) -> None:
