@@ -146,6 +146,35 @@ bogle buy CDB-XP-2027 --shares 1 --price 5000 --date 2026-04-01
 bogle sell CDB-XP-2027 --shares 1 --price 5310 --date 2027-04-01   # resgate total
 ```
 
+### Viewing your position
+
+`bogle position` prices the portfolio on the fly and shows, per ticker: current
+price, quantity, market value, current weight, drift vs target, invested capital,
+nominal PnL (R$ and %) and time-weighted return (TWR) — with portfolio totals, the
+price source and the latest quote timestamp in the footer.
+
+```bash
+bogle position               # live prices
+bogle position --no-prices   # base data only, no API calls
+bogle position --json        # machine-readable output for scripts
+```
+
+Prices come from: brapi (B3 quotes and indices), yfinance (long history + fallback
+quotes), the Banco Central SGS API (CDI/IPCA/SELIC) and the Tesouro Transparente
+open data (Tesouro Direto, D-1 prices). Private fixed income is marked to its gross
+corrected value via the present-value engine. Quotes are cached under
+`~/.cache/bogle` for a few minutes.
+
+Live B3 quotes need a **brapi token**. Put it in a `.env` file at the repo root
+(git-ignored); the CLI loads it automatically:
+
+```bash
+echo 'BRAPI_TOKEN=your-token-here' > .env
+```
+
+Without a token, `bogle position` still works with `--no-prices`, and non-brapi
+sources (yfinance, BCB, Tesouro) do not require one.
+
 ## Schema migrations
 
 Schema changes live in `src/bogle/migrations/` as numbered SQL files (`001_initial.sql`, `002_*.sql`, ...). They are applied by `yoyo-migrations`, which records progress in a `_yoyo_migration` table on the database side.

@@ -7,6 +7,7 @@ import typer
 from dotenv import load_dotenv
 
 from bogle.cli import assets as assets_cli
+from bogle.cli import position as position_cli
 from bogle.cli import transactions as transactions_cli
 from bogle.domain.errors import BogleError
 
@@ -24,6 +25,8 @@ app.command("buy", help="Registrar uma compra.")(transactions_cli.buy)
 app.command("sell", help="Registrar uma venda (parcial ou total).")(transactions_cli.sell)
 app.command("income", help="Registrar um provento (dividendo, JCP, rendimento, juros).")(transactions_cli.income)
 app.command("transactions", help="Listar transacoes registradas.")(transactions_cli.list_transactions)
+
+app.command("position", help="Mostrar a posicao atual da carteira (precos ao vivo).")(position_cli.position)
 
 transaction_app = typer.Typer(help="Operacoes sobre uma transacao individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transacao pelo ID.")(transactions_cli.remove)

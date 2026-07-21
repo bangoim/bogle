@@ -23,9 +23,10 @@ network.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from bogle.data.cache import DiskCache
 from bogle.data.fixed_income import present_value
@@ -100,6 +101,28 @@ def _latest_on_or_before(points: Sequence[SeriesPoint], on: date) -> Decimal | N
     return best.value if best is not None else None
 
 
+@dataclass(frozen=True, slots=True)
+class PriceInfo:
+    """A price plus its provenance, for the position footer.
+
+    ``source`` is ``"brapi"`` / ``"yfinance"`` / ``"tesouro"`` / ``"calculado"``;
+    ``as_of`` is the quote's timestamp (``None`` for a computed fixed-income value).
+    """
+
+    price: Decimal
+    source: str
+    as_of: datetime | None = None
+
+
+def _price_info_to_cache(info: PriceInfo) -> dict[str, Any]:
+    return {"price": str(info.price), "source": info.source, "as_of": info.as_of.isoformat() if info.as_of else None}
+
+
+def _price_info_from_cache(data: dict[str, Any]) -> PriceInfo:
+    raw = data.get("as_of")
+    return PriceInfo(Decimal(data["price"]), data["source"], datetime.fromisoformat(raw) if raw else None)
+
+
 class PriceDispatcher:
     def __init__(
         self,
@@ -123,33 +146,40 @@ class PriceDispatcher:
     # --- prices ---------------------------------------------------------
 
     def get_price(self, asset: Asset, *, principal: Decimal | None = None, on_date: date | None = None) -> Decimal:
+        return self.get_price_info(asset, principal=principal, on_date=on_date).price
+
+    def get_price_info(
+        self, asset: Asset, *, principal: Decimal | None = None, on_date: date | None = None
+    ) -> PriceInfo:
         if asset.asset_type in VARIABLE_INCOME_TYPES:
-            return self._variable_income_price(asset.ticker)
+            return self._variable_income_info(asset.ticker)
         if asset.asset_type is AssetType.TESOURO:
-            return self._tesouro_price(asset.ticker)
+            return self._tesouro_info(asset.ticker)
         if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
-            return self._fixed_income_value(asset, principal, on_date)
+            return PriceInfo(self._fixed_income_value(asset, principal, on_date), "calculado", None)
         raise ValueError(f"tipo de ativo sem preco: {asset.asset_type}")
 
-    def _variable_income_price(self, ticker: str) -> Decimal:
+    def _variable_income_info(self, ticker: str) -> PriceInfo:
         key = f"quote:{ticker}"
         cached = self._cache.get(key)
         if cached is not None:
-            return Decimal(cached)
+            return _price_info_from_cache(cached)
         try:
-            price = self._brapi.get_quote(ticker).price
+            quote, source = self._brapi.get_quote(ticker), "brapi"
         except MarketDataError:
             # brapi failed (not found / network / plan limit) -> Yahoo fallback.
-            price = self._yfinance.get_quote(_yahoo_symbol(ticker)).price
-        self._cache.set(key, str(price), self._quote_ttl)
-        return price
+            quote, source = self._yfinance.get_quote(_yahoo_symbol(ticker)), "yfinance"
+        info = PriceInfo(quote.price, source, quote.time)
+        self._cache.set(key, _price_info_to_cache(info), self._quote_ttl)
+        return info
 
-    def _tesouro_price(self, title: str) -> Decimal:
+    def _tesouro_info(self, title: str) -> PriceInfo:
         quote = self._tesouro.get_quote(title)
         price = quote.pu_venda or quote.pu_base  # mark-to-market = redemption price
         if price is None:
             raise QuoteNotFoundError(title, provider="tesouro")
-        return price
+        base = quote.base_date
+        return PriceInfo(price, "tesouro", datetime(base.year, base.month, base.day))
 
     def _fixed_income_value(self, asset: Asset, principal: Decimal | None, on_date: date | None) -> Decimal:
         if principal is None:
