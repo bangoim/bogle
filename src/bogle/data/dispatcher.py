@@ -22,14 +22,19 @@ network.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from bogle.data.cache import DiskCache
 from bogle.data.fixed_income import present_value
-from bogle.data.models import Quote, SeriesPoint, TesouroQuote
+from bogle.data.models import HistPoint, Quote, SeriesPoint, TesouroQuote
+
+if TYPE_CHECKING:
+    # Imported lazily at call time to avoid an import cycle (analytics.twr imports
+    # data.models, which triggers this package's __init__).
+    from bogle.analytics.twr import Valuator
 from bogle.domain.assets import (
     PRIVATE_FIXED_INCOME_TYPES,
     VARIABLE_INCOME_TYPES,
@@ -39,6 +44,7 @@ from bogle.domain.assets import (
 )
 from bogle.domain.errors import MarketDataError, QuoteNotFoundError
 
+_ZERO = Decimal("0")
 _QUOTE_TTL = 5 * 60  # intraday quotes: 5 minutes
 _SERIES_LOOKBACK_DAYS = 120  # enough recent BCB history for an index point-in-time read
 
@@ -50,6 +56,13 @@ _INDEX_SYMBOLS = {"IBOV": "^BVSP", "IBOVESPA": "^BVSP", "IFIX": "IFIX", "SMLL": 
 
 class QuoteSource(Protocol):
     def get_quote(self, symbol: str) -> Quote: ...
+
+
+class HistorySource(Protocol):
+    def get_quote(self, symbol: str) -> Quote: ...
+    def get_history(
+        self, symbol: str, *, range_: str = ..., interval: str = ..., start: str | None = ..., end: str | None = ...
+    ) -> list[HistPoint]: ...
 
 
 class IndexSource(Protocol):
@@ -92,7 +105,7 @@ class PriceDispatcher:
         self,
         *,
         brapi: BrapiLike,
-        yfinance: QuoteSource,
+        yfinance: HistorySource,
         tesouro: TesouroSource,
         bcb: SeriesSource,
         quote_cache: DiskCache | None = None,
@@ -186,3 +199,70 @@ class PriceDispatcher:
                 raise QuoteNotFoundError(index, provider="bcb")
             return value
         return self._brapi.get_index_quote(_INDEX_SYMBOLS.get(key, index)).price
+
+    # --- historical valuation (for TWR) --------------------------------
+
+    def build_twr_valuator(self, asset: Asset, *, unit_principal: Decimal, start: date, end: date) -> Valuator | None:
+        """A valuator ``(holdings, on_date) -> Decimal`` for the TWR engine, or None.
+
+        Variable income marks to the ticker's historical close (long history via
+        yfinance); private fixed income marks to its present value on each date
+        (BCB series fetched once for the whole window). Returns ``None`` for
+        TESOURO — no free historical price series is wired — so the caller reports
+        TWR as unavailable.
+        """
+        from bogle.analytics.twr import price_history_valuator
+
+        if asset.asset_type in VARIABLE_INCOME_TYPES:
+            history = self._variable_income_history(asset.ticker, start, end)
+            return price_history_valuator({asset.ticker: history}) if history else None
+        if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
+            return self._fixed_income_valuator(asset, unit_principal, end)
+        return None
+
+    def _variable_income_history(self, ticker: str, start: date, end: date) -> list[HistPoint]:
+        # Long history via yfinance (.SA for B3); brapi's free plan only covers ~3 months.
+        try:
+            return self._yfinance.get_history(
+                _yahoo_symbol(ticker), start=start.isoformat(), end=(end + timedelta(days=1)).isoformat()
+            )
+        except MarketDataError:
+            return []
+
+    def _fixed_income_valuator(self, asset: Asset, unit_principal: Decimal, end: date) -> Valuator | None:
+        if asset.purchase_date is None or asset.rate is None:
+            return None
+        purchase = _as_date(asset.purchase_date)
+        cdi: Sequence[SeriesPoint] = ()
+        selic: Sequence[SeriesPoint] = ()
+        ipca: Sequence[SeriesPoint] = ()
+        if not asset.is_prefixed:
+            if asset.indexer in (Indexer.CDI, Indexer.CDI_PLUS):
+                cdi = self._bcb.get_cdi(purchase, end)
+            elif asset.indexer is Indexer.SELIC:
+                selic = self._bcb.get_selic(purchase, end)
+            elif asset.indexer is Indexer.IPCA_PLUS:
+                ipca = self._bcb.get_ipca(date(purchase.year, purchase.month, 1), end)
+        rate = asset.rate
+        is_prefixed = bool(asset.is_prefixed)
+        indexer = asset.indexer
+        ticker = asset.ticker
+
+        def valuate(holdings: Mapping[str, Decimal], on_date: date) -> Decimal:
+            shares = holdings.get(ticker, _ZERO)
+            if shares == _ZERO:
+                return _ZERO
+            pv_per_unit = present_value(
+                unit_principal,
+                indexer=indexer,
+                rate=rate,
+                is_prefixed=is_prefixed,
+                purchase_date=purchase,
+                on_date=on_date,
+                cdi=cdi,
+                selic=selic,
+                ipca=ipca,
+            )
+            return shares * pv_per_unit
+
+        return valuate
