@@ -65,3 +65,25 @@ class SeriesPoint:
 
     date: date
     value: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class TesouroQuote:
+    """A Tesouro Direto title priced from the Tesouro Transparente open data.
+
+    ``title`` is the canonical name (``"Tesouro IPCA+ 2035"``). Prices are the
+    "manhã" (morning) unit prices for ``base_date`` — typically D-1, not intraday.
+    All three unit prices are kept so callers pick their convention: mark-to-market
+    (what a redemption pays today) uses ``pu_venda``; ``pu_compra`` is the
+    investment price and ``pu_base`` the reference. Rates are annual, as fractions.
+    """
+
+    title: str
+    bond_type: str
+    maturity: date
+    base_date: date
+    pu_compra: Decimal | None = None
+    pu_venda: Decimal | None = None
+    pu_base: Decimal | None = None
+    rate_compra: Decimal | None = None
+    rate_venda: Decimal | None = None
