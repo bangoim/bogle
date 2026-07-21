@@ -1,0 +1,188 @@
+"""Price dispatcher (issue #18): one entry point that prices any asset.
+
+``get_price(asset)`` routes by ``asset_type`` and returns a ``Decimal``:
+
+- STOCK/BDR/FII/ETF -> brapi quote (per share), falling back to yfinance (``.SA``
+  for B3) when brapi fails.
+- TESOURO -> the redemption unit price (``pu_venda``, mark-to-market).
+- CDB/RDB/LCI/LCA/CAIXINHA -> the gross corrected value of ``principal`` via the
+  fixed-income present-value engine (BCB series fetched for the period).
+
+The first two return a *per-unit* price (multiply by the holding's shares); the
+fixed-income branch returns the value of the given ``principal`` — and since a
+private fixed-income holding uses the ``shares = 1`` convention, ``shares *
+get_price(...)`` stays uniform across every type.
+
+Quotes are cached on disk with a short TTL (5 min) so repeated runs within a
+window do not re-hit the quote APIs; BCB/Tesouro already cache internally.
+
+Clients are accepted as structural protocols so tests inject fakes without a
+network.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from typing import Protocol
+
+from bogle.data.cache import DiskCache
+from bogle.data.fixed_income import present_value
+from bogle.data.models import Quote, SeriesPoint, TesouroQuote
+from bogle.domain.assets import (
+    PRIVATE_FIXED_INCOME_TYPES,
+    VARIABLE_INCOME_TYPES,
+    Asset,
+    AssetType,
+    Indexer,
+)
+from bogle.domain.errors import MarketDataError, QuoteNotFoundError
+
+_QUOTE_TTL = 5 * 60  # intraday quotes: 5 minutes
+_SERIES_LOOKBACK_DAYS = 120  # enough recent BCB history for an index point-in-time read
+
+# Macro rate series served by the BCB client.
+_BCB_INDEXES = frozenset({"CDI", "SELIC", "IPCA"})
+# Market index name -> brapi symbol (see #18 notes: ^BVSP with caret, others without).
+_INDEX_SYMBOLS = {"IBOV": "^BVSP", "IBOVESPA": "^BVSP", "IFIX": "IFIX", "SMLL": "SMLL", "IDIV": "IDIV"}
+
+
+class QuoteSource(Protocol):
+    def get_quote(self, symbol: str) -> Quote: ...
+
+
+class IndexSource(Protocol):
+    def get_index_quote(self, index: str) -> Quote: ...
+
+
+class TesouroSource(Protocol):
+    def get_quote(self, title: str) -> TesouroQuote: ...
+
+
+class BrapiLike(QuoteSource, IndexSource, Protocol):
+    """brapi exposes both quote and index-quote lookups."""
+
+
+class SeriesSource(Protocol):
+    def get_cdi(self, start: date | None = None, end: date | None = None) -> list[SeriesPoint]: ...
+    def get_selic(self, start: date | None = None, end: date | None = None) -> list[SeriesPoint]: ...
+    def get_ipca(self, start: date | None = None, end: date | None = None) -> list[SeriesPoint]: ...
+
+
+def _yahoo_symbol(ticker: str) -> str:
+    """brapi ticker -> yfinance symbol (B3 tickers need the ``.SA`` suffix)."""
+    return ticker if "." in ticker else f"{ticker}.SA"
+
+
+def _as_date(value: date) -> date:
+    return value.date() if isinstance(value, datetime) else value
+
+
+def _latest_on_or_before(points: Sequence[SeriesPoint], on: date) -> Decimal | None:
+    best: SeriesPoint | None = None
+    for point in points:
+        if point.date <= on and (best is None or point.date > best.date):
+            best = point
+    return best.value if best is not None else None
+
+
+class PriceDispatcher:
+    def __init__(
+        self,
+        *,
+        brapi: BrapiLike,
+        yfinance: QuoteSource,
+        tesouro: TesouroSource,
+        bcb: SeriesSource,
+        quote_cache: DiskCache | None = None,
+        quote_ttl: float = _QUOTE_TTL,
+        clock: Callable[[], date] | None = None,
+    ) -> None:
+        self._brapi = brapi
+        self._yfinance = yfinance
+        self._tesouro = tesouro
+        self._bcb = bcb
+        self._cache = quote_cache if quote_cache is not None else DiskCache("quotes")
+        self._quote_ttl = quote_ttl
+        self._today = clock if clock is not None else date.today
+
+    # --- prices ---------------------------------------------------------
+
+    def get_price(self, asset: Asset, *, principal: Decimal | None = None, on_date: date | None = None) -> Decimal:
+        if asset.asset_type in VARIABLE_INCOME_TYPES:
+            return self._variable_income_price(asset.ticker)
+        if asset.asset_type is AssetType.TESOURO:
+            return self._tesouro_price(asset.ticker)
+        if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
+            return self._fixed_income_value(asset, principal, on_date)
+        raise ValueError(f"tipo de ativo sem preco: {asset.asset_type}")
+
+    def _variable_income_price(self, ticker: str) -> Decimal:
+        key = f"quote:{ticker}"
+        cached = self._cache.get(key)
+        if cached is not None:
+            return Decimal(cached)
+        try:
+            price = self._brapi.get_quote(ticker).price
+        except MarketDataError:
+            # brapi failed (not found / network / plan limit) -> Yahoo fallback.
+            price = self._yfinance.get_quote(_yahoo_symbol(ticker)).price
+        self._cache.set(key, str(price), self._quote_ttl)
+        return price
+
+    def _tesouro_price(self, title: str) -> Decimal:
+        quote = self._tesouro.get_quote(title)
+        price = quote.pu_venda or quote.pu_base  # mark-to-market = redemption price
+        if price is None:
+            raise QuoteNotFoundError(title, provider="tesouro")
+        return price
+
+    def _fixed_income_value(self, asset: Asset, principal: Decimal | None, on_date: date | None) -> Decimal:
+        if principal is None:
+            raise ValueError("principal e obrigatorio para precificar renda fixa privada.")
+        if asset.purchase_date is None or asset.rate is None:
+            raise ValueError(f"ativo de renda fixa '{asset.ticker}' sem purchase_date/rate.")
+        start = _as_date(asset.purchase_date)
+        end = on_date if on_date is not None else self._today()
+        cdi: Sequence[SeriesPoint] = ()
+        selic: Sequence[SeriesPoint] = ()
+        ipca: Sequence[SeriesPoint] = ()
+        if not asset.is_prefixed:
+            if asset.indexer in (Indexer.CDI, Indexer.CDI_PLUS):
+                cdi = self._bcb.get_cdi(start, end)
+            elif asset.indexer is Indexer.SELIC:
+                selic = self._bcb.get_selic(start, end)
+            elif asset.indexer is Indexer.IPCA_PLUS:
+                ipca = self._bcb.get_ipca(date(start.year, start.month, 1), end)
+        return present_value(
+            principal,
+            indexer=asset.indexer,
+            rate=asset.rate,
+            is_prefixed=bool(asset.is_prefixed),
+            purchase_date=start,
+            on_date=end,
+            cdi=cdi,
+            selic=selic,
+            ipca=ipca,
+        )
+
+    # --- indices --------------------------------------------------------
+
+    def get_index_value(self, index: str, on_date: date | None = None) -> Decimal:
+        """Point-in-time value of an index.
+
+        CDI/SELIC/IPCA return the BCB series value (a fraction) on or before
+        ``on_date``; market indices (IBOV/IFIX/SMLL/IDIV) return the brapi quote
+        price. Accumulation for benchmark comparisons is a later concern (epic 8).
+        """
+        key = index.upper()
+        if key in _BCB_INDEXES:
+            end = on_date if on_date is not None else self._today()
+            fetch = {"CDI": self._bcb.get_cdi, "SELIC": self._bcb.get_selic, "IPCA": self._bcb.get_ipca}[key]
+            points = fetch(end - timedelta(days=_SERIES_LOOKBACK_DAYS), end)
+            value = _latest_on_or_before(points, end)
+            if value is None:
+                raise QuoteNotFoundError(index, provider="bcb")
+            return value
+        return self._brapi.get_index_quote(_INDEX_SYMBOLS.get(key, index)).price
