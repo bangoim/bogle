@@ -45,6 +45,24 @@ class TransactionNotFoundError(BogleError):
         super().__init__(f"Transacao {transaction_id} nao encontrada.")
 
 
+class MissingPriceError(BogleError):
+    """A rebalancing computation needs every position priced; degrading
+    silently (like the position view does) would distort all the weights."""
+
+    def __init__(self, tickers: list[str]) -> None:
+        self.tickers = tickers
+        super().__init__(
+            f"Sem preco atual para: {', '.join(tickers)}. "
+            "Rebalanceamento exige todas as posicoes precificadas; tente novamente mais tarde."
+        )
+
+
+class UnknownSettingError(BogleError):
+    def __init__(self, key: str, known_keys: list[str]) -> None:
+        self.key = key
+        super().__init__(f"Configuracao '{key}' nao reconhecida. Chaves suportadas: {', '.join(known_keys)}.")
+
+
 class MarketDataError(BogleError):
     """Base for failures fetching market data from an external provider.
 
