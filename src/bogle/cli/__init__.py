@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from bogle.cli import assets as assets_cli
 from bogle.cli import config as config_cli
+from bogle.cli import dividends as dividends_cli
 from bogle.cli import position as position_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
@@ -36,6 +37,7 @@ app.command("transactions", help="Listar transacoes registradas.")(transactions_
 app.command("position", help="Mostrar a posicao atual da carteira (precos ao vivo).")(position_cli.position)
 app.command("suggest", help="Sugerir a divisao de um aporte para reduzir o drift.")(suggest_cli.suggest)
 app.command("status", help="Mostrar em que pe esta o ciclo de avaliacao de rebalanceamento.")(status_cli.status)
+app.command("dividends", help="Proventos recebidos, por mes ou por ticker.")(dividends_cli.dividends)
 
 transaction_app = typer.Typer(help="Operacoes sobre uma transacao individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transacao pelo ID.")(transactions_cli.remove)
