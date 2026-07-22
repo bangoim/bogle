@@ -19,7 +19,9 @@ weights, so both raise :class:`MissingPriceError` instead.
 
 from __future__ import annotations
 
+from calendar import monthrange
 from dataclasses import dataclass
+from datetime import date
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
@@ -242,3 +244,18 @@ def suggest_allocation(summary: PortfolioSummary, amount: Decimal) -> AporteSugg
         leftover=amount - total_allocated,
         warnings=warnings,
     )
+
+
+# ---------------------------------------------------------------------------
+# Evaluation cycle (issue #24)
+# ---------------------------------------------------------------------------
+
+
+def next_evaluation_date(last_evaluation: date, period_months: int) -> date:
+    """The date the rebalance cycle completes: ``last_evaluation`` plus the
+    period, clamping the day to the target month's length (Aug 31 + 6m -> Feb 28/29)."""
+    month_index = last_evaluation.month - 1 + period_months
+    year = last_evaluation.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(last_evaluation.day, monthrange(year, month)[1])
+    return date(year, month, day)

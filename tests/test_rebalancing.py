@@ -1,7 +1,8 @@
-"""Tests for the Buy-vs-Hold classifier (issue #22)."""
+"""Tests for the Buy-vs-Hold classifier and the evaluation cycle (issues #22/#24)."""
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -9,7 +10,7 @@ import pytest
 from bogle.domain.assets import AssetType
 from bogle.domain.errors import MissingPriceError
 from bogle.position import Position
-from bogle.rebalancing import Recommendation, classify_positions
+from bogle.rebalancing import Recommendation, classify_positions, next_evaluation_date
 
 
 def make_position(ticker: str, current: str | None, target: str) -> Position:
@@ -89,3 +90,16 @@ class TestReasonFormatting:
         [rec] = classify_positions([make_position("VWRA11", "0.6375", "0.70")])
         assert rec.reason == "Peso atual 63.8% esta 6.3 p.p. abaixo do target de 70%."
 
+
+class TestNextEvaluationDate:
+    def test_six_months(self) -> None:
+        assert next_evaluation_date(date(2026, 1, 15), 6) == date(2026, 7, 15)
+
+    def test_twelve_months(self) -> None:
+        assert next_evaluation_date(date(2026, 7, 1), 12) == date(2027, 7, 1)
+
+    def test_clamps_to_month_end(self) -> None:
+        assert next_evaluation_date(date(2026, 8, 31), 6) == date(2027, 2, 28)
+
+    def test_leap_day(self) -> None:
+        assert next_evaluation_date(date(2024, 2, 29), 12) == date(2025, 2, 28)
