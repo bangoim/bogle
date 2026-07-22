@@ -29,7 +29,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol
 
 from bogle.data.cache import DiskCache
-from bogle.data.fixed_income import present_value
+from bogle.data.fixed_income import accumulated_ipca_factor, accumulated_rate_factor, present_value
 from bogle.data.models import HistPoint, Quote, SeriesPoint, TesouroQuote
 
 if TYPE_CHECKING:
@@ -53,6 +53,10 @@ _SERIES_LOOKBACK_DAYS = 120  # enough recent BCB history for an index point-in-t
 _BCB_INDEXES = frozenset({"CDI", "SELIC", "IPCA"})
 # Market index name -> brapi symbol (see #18 notes: ^BVSP with caret, others without).
 _INDEX_SYMBOLS = {"IBOV": "^BVSP", "IBOVESPA": "^BVSP", "IFIX": "IFIX", "SMLL": "SMLL", "IDIV": "IDIV"}
+# Market index name -> yfinance symbol, for long history (accumulated returns).
+# B3 sector indices (IFIX/SMLL/IDIV) have no reliable free history: unmapped
+# names fall back to the ticker rule (``.SA``) and fail with a friendly error.
+_YAHOO_INDEX_SYMBOLS = {"IBOV": "^BVSP", "IBOVESPA": "^BVSP"}
 
 
 class QuoteSource(Protocol):
@@ -99,6 +103,17 @@ def _latest_on_or_before(points: Sequence[SeriesPoint], on: date) -> Decimal | N
         if point.date <= on and (best is None or point.date > best.date):
             best = point
     return best.value if best is not None else None
+
+
+def _close_on_or_before(history: Sequence[HistPoint], on: date) -> Decimal | None:
+    """Close of the latest bar dated on or before ``on`` (weekend/holiday rule)."""
+    best_close: Decimal | None = None
+    best_date: date | None = None
+    for point in history:
+        point_date = _as_date(point.date)
+        if point_date <= on and (best_date is None or point_date > best_date):
+            best_date, best_close = point_date, point.close
+    return best_close
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +244,87 @@ class PriceDispatcher:
                 raise QuoteNotFoundError(index, provider="bcb")
             return value
         return self._brapi.get_index_quote(_INDEX_SYMBOLS.get(key, index)).price
+
+    # --- accumulated index returns (issue #67) --------------------------
+
+    def get_index_return(self, index: str, start: date, end: date) -> Decimal:
+        """Accumulated return of an index over ``[start, end]``, as a fraction.
+
+        CDI/SELIC compound the daily BCB series; IPCA composes the monthly
+        variation (same engine as the fixed-income present value). Market
+        indices/tickers use the first and last close of the yfinance history —
+        indices without free history (IFIX/SMLL/IDIV) raise a friendly error.
+        """
+        key = index.upper()
+        if key == "IPCA":
+            points = self._bcb.get_ipca(date(start.year, start.month, 1), end)
+            if not points:
+                raise QuoteNotFoundError(index, provider="bcb")
+            return accumulated_ipca_factor(points, start, end) - Decimal("1")
+        if key in _BCB_INDEXES:
+            fetch = self._bcb.get_cdi if key == "CDI" else self._bcb.get_selic
+            points = fetch(start, end)
+            if not points:
+                raise QuoteNotFoundError(index, provider="bcb")
+            return accumulated_rate_factor(points, start, end, name=key) - Decimal("1")
+        history = self._index_history(key, start, end)
+        first = _close_on_or_before(history, start)
+        last = _close_on_or_before(history, end)
+        if first is None or last is None or first == _ZERO:
+            raise MarketDataError(
+                f"Sem historico de '{key}' no inicio do periodo ({start.isoformat()}); "
+                "as fontes gratuitas nao cobrem esse indice/janela.",
+                provider="yfinance",
+            )
+        return last / first - Decimal("1")
+
+    def get_index_series(self, index: str, grid: Sequence[date]) -> list[Decimal]:
+        """Index level at each grid date (for base-100 charts).
+
+        Rate indices (CDI/SELIC/IPCA) return the growth factor accumulated from
+        the first grid date (base 1); market indices return the close on or
+        before each date.
+        """
+        if not grid:
+            return []
+        key = index.upper()
+        start, end = grid[0], grid[-1]
+        if key == "IPCA":
+            points = self._bcb.get_ipca(date(start.year, start.month, 1), end)
+            if not points:
+                raise QuoteNotFoundError(index, provider="bcb")
+            return [accumulated_ipca_factor(points, start, on) for on in grid]
+        if key in _BCB_INDEXES:
+            fetch = self._bcb.get_cdi if key == "CDI" else self._bcb.get_selic
+            points = fetch(start, end)
+            if not points:
+                raise QuoteNotFoundError(index, provider="bcb")
+            return [accumulated_rate_factor(points, start, on, name=key) for on in grid]
+        history = self._index_history(key, start, end)
+        levels = []
+        for on in grid:
+            close = _close_on_or_before(history, on)
+            if close is None:
+                raise MarketDataError(
+                    f"Sem historico de '{key}' em {on.isoformat()}; as fontes gratuitas nao cobrem esse indice/janela.",
+                    provider="yfinance",
+                )
+            levels.append(close)
+        return levels
+
+    def _index_history(self, key: str, start: date, end: date) -> list[HistPoint]:
+        # Pad the fetch a week back so "close on or before start" has a bar even
+        # when the window opens on a weekend/holiday.
+        symbol = _YAHOO_INDEX_SYMBOLS.get(key, _yahoo_symbol(key))
+        try:
+            history = self._yfinance.get_history(
+                symbol, start=(start - timedelta(days=7)).isoformat(), end=(end + timedelta(days=1)).isoformat()
+            )
+        except MarketDataError:
+            history = []
+        if not history:
+            raise MarketDataError(f"Sem historico gratuito para '{key}' (simbolo {symbol}).", provider="yfinance")
+        return history
 
     # --- historical valuation (for TWR) --------------------------------
 

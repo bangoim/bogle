@@ -93,6 +93,12 @@ def price_history_valuator(price_history: Mapping[str, Sequence[HistPoint]]) -> 
     return valuate
 
 
+def shares_held(transactions: Sequence[Transaction], on: date) -> dict[str, Decimal]:
+    """Shares held per ticker at end of day ``on`` (BUY - SELL, trades on the day
+    included). Shared with the reports epic (#67) for patrimony reconstruction."""
+    return _shares_as_of(transactions, on, inclusive=True)
+
+
 def _shares_as_of(txns: Sequence[Transaction], on: date, *, inclusive: bool) -> dict[str, Decimal]:
     holdings: dict[str, Decimal] = defaultdict(lambda: _ZERO)
     for txn in txns:
