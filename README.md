@@ -9,6 +9,8 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Portfolio registry** — assets with target weights; the total can never exceed 100%.
 - **Transaction ledger** — buys, sells and income (dividends, JCP, FII distributions, interest), with fees and tax withheld.
 - **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker.
+- **No-sell rebalancing** — `bogle suggest` splits a contribution across the laggards (whole shares for variable income, exact values for fixed income); `bogle status` tracks the evaluation cycle (6 or 12 months).
+- **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices from Tesouro Transparente, cached on disk. Private fixed income is marked to present value.
 - **Brazilian taxes** — income tax per operation and regressive IOF on fixed-income redemptions.
 
@@ -199,6 +201,55 @@ Cotacao mais recente: 2026-07-20 18:28
 ```
 
 Live B3 quotes need a brapi token — see [Setup step 5](#5-optional-brapi-token-for-live-b3-quotes).
+
+### Rebalancing by contribution (no-sell)
+
+Boglehead policy: nothing is ever sold to rebalance — overweight positions are
+held, and fresh money goes to whatever lagged behind. `bogle suggest` splits a
+contribution so every ticker approaches its target weight of the *future*
+patrimony (portfolio + contribution), never pushing a receiver past its target:
+
+```bash
+bogle suggest --amount 10000          # how to split a R$ 10.000 contribution
+bogle suggest --amount 10000 --json   # machine-readable output for scripts
+```
+
+Variable income (stocks, FIIs, ETFs, BDRs) is suggested in **whole shares**
+(rounded down; whatever the rounding leaves is re-offered to the neediest
+tickers). Tesouro and private fixed income take **exact values**. The footer
+shows the total allocated vs the contribution and any leftover cash. A warning
+flags private fixed-income suggestions, since a new contribution is a new
+contract (own rate and date) — register it as a new asset when you execute it.
+
+Every run records the evaluation date. `bogle status` tells where the cycle
+stands, and any command emits a reminder once the period (6 or 12 months,
+`rebalance_period_months`) completes:
+
+```bash
+bogle status
+# Ciclo de avaliacao: 12 meses.
+# Ultima avaliacao: 2026-07-22.
+# Proxima avaliacao em 365 dia(s) (2027-07-22).
+```
+
+### User settings
+
+`bogle config` persists preferences in the database (JSONB key/value with
+per-key type validation):
+
+```bash
+bogle config list                            # every key: value, type, last update
+bogle config get rebalance_period_months     # 12 (default)
+bogle config set rebalance_period_months 6   # only 6 or 12 accepted
+bogle config unset rebalance_period_months   # back to the default
+```
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `rebalance_period_months` | int | `12` | Evaluation cycle (6 or 12 months) |
+| `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY |
+| `default_compare_indices` | list[str] | `CDI` | Indices for future `bogle compare` without `--index` |
+| `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
 
 ### Market data & sources
 
