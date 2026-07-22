@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from bogle.cli import assets as assets_cli
 from bogle.cli import config as config_cli
 from bogle.cli import position as position_cli
+from bogle.cli import suggest as suggest_cli
 from bogle.cli import transactions as transactions_cli
 from bogle.domain.errors import BogleError
 
@@ -28,6 +29,7 @@ app.command("income", help="Registrar um provento (dividendo, JCP, rendimento, j
 app.command("transactions", help="Listar transacoes registradas.")(transactions_cli.list_transactions)
 
 app.command("position", help="Mostrar a posicao atual da carteira (precos ao vivo).")(position_cli.position)
+app.command("suggest", help="Sugerir a divisao de um aporte para reduzir o drift.")(suggest_cli.suggest)
 
 transaction_app = typer.Typer(help="Operacoes sobre uma transacao individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transacao pelo ID.")(transactions_cli.remove)
