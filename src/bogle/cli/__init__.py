@@ -7,6 +7,7 @@ import typer
 from dotenv import load_dotenv
 
 from bogle.cli import assets as assets_cli
+from bogle.cli import config as config_cli
 from bogle.cli import position as position_cli
 from bogle.cli import transactions as transactions_cli
 from bogle.domain.errors import BogleError
@@ -31,6 +32,13 @@ app.command("position", help="Mostrar a posicao atual da carteira (precos ao viv
 transaction_app = typer.Typer(help="Operacoes sobre uma transacao individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transacao pelo ID.")(transactions_cli.remove)
 app.add_typer(transaction_app, name="transaction")
+
+config_app = typer.Typer(help="Ler e alterar configuracoes do usuario.", no_args_is_help=True)
+config_app.command("get", help="Mostrar o valor de uma configuracao.")(config_cli.get)
+config_app.command("set", help="Definir o valor de uma configuracao.")(config_cli.set_)
+config_app.command("unset", help="Reverter uma configuracao ao default.")(config_cli.unset)
+config_app.command("list", help="Listar todas as configuracoes.")(config_cli.list_settings)
+app.add_typer(config_app, name="config")
 
 
 @app.callback()

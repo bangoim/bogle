@@ -29,7 +29,7 @@ def _setup_test_db() -> None:
 def conn() -> Iterator[psycopg.Connection[DictRow]]:
     c = get_connection(TEST_DATABASE_URL)
     with c.cursor() as cur:
-        cur.execute("TRUNCATE transactions, assets CASCADE")
+        cur.execute("TRUNCATE transactions, assets, user_settings CASCADE")
     c.commit()
     yield c
     c.close()

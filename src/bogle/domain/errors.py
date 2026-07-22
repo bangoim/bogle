@@ -45,6 +45,12 @@ class TransactionNotFoundError(BogleError):
         super().__init__(f"Transacao {transaction_id} nao encontrada.")
 
 
+class UnknownSettingError(BogleError):
+    def __init__(self, key: str, known_keys: list[str]) -> None:
+        self.key = key
+        super().__init__(f"Configuracao '{key}' nao reconhecida. Chaves suportadas: {', '.join(known_keys)}.")
+
+
 class MarketDataError(BogleError):
     """Base for failures fetching market data from an external provider.
 
