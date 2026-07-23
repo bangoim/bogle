@@ -11,6 +11,7 @@ from bogle.cli import assets as assets_cli
 from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
 from bogle.cli import dividends as dividends_cli
+from bogle.cli import history as history_cli
 from bogle.cli import position as position_cli
 from bogle.cli import returns as returns_cli
 from bogle.cli import status as status_cli
@@ -44,6 +45,7 @@ app.command("dividends", help="Proventos recebidos, por mes ou por ticker.")(div
 app.command("summary", help="Resumo da carteira: investido vs patrimonio.")(summary_cli.summary)
 app.command("return", help="Rentabilidade da carteira (TWR), opcionalmente vs indices.")(returns_cli.return_)
 app.command("compare", help="Comparar a carteira com indices (base 100).")(compare_cli.compare)
+app.command("history", help="Evolucao do patrimonio ao longo do tempo.")(history_cli.history)
 
 transaction_app = typer.Typer(help="Operacoes sobre uma transacao individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transacao pelo ID.")(transactions_cli.remove)
