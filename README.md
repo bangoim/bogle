@@ -250,10 +250,12 @@ bogle return                     # TWR total / 12m / 1m
 bogle return --period 12m --vs CDI,IPCA
 bogle return --vs default        # indices de default_compare_indices
 
-bogle compare --period 12m       # carteira vs indices, base 100 + grafico ASCII
+bogle compare --period 12m       # carteira vs indices, base 100 + grafico de linha
 bogle compare --index CDI,IBOV --no-chart
+bogle compare --output rentab.html   # grafico interativo (plotly) no navegador
 
 bogle history --period 2y        # evolucao do patrimonio (12m diaria, 2y semanal, 5y+/all mensal)
+bogle history --output patrimonio.html --no-open   # so gera o HTML, sem abrir
 
 bogle profit                     # ganho de capital (realizado + nao realizado) + proventos por tipo
 bogle profit --period 12m        # limita os proventos; ganho de capital e sempre desde o inicio
@@ -261,6 +263,12 @@ bogle profit --period 12m        # limita os proventos; ganho de capital e sempr
 bogle dividends                  # proventos por mes (12 meses-calendario)
 bogle dividends --by ticker --period all
 ```
+
+`compare` and `history` render a line chart in the terminal by default
+(plotext). For a richer, interactive view pass `--output <file>.html`: it writes
+a self-contained plotly chart (dark theme, area-filled portfolio line, indices
+as lines) and opens it in the browser — add `--no-open` to only write the file.
+`compare` plots cumulative return in **%** (base 100 minus 100) in the HTML.
 
 Semantics worth knowing:
 
@@ -297,7 +305,7 @@ bogle config unset rebalance_period_months   # back to the default
 |-----|------|---------|---------|
 | `rebalance_period_months` | int | `12` | Evaluation cycle (6 or 12 months) |
 | `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY |
-| `default_compare_indices` | list[str] | `CDI` | Indices for future `bogle compare` without `--index` |
+| `default_compare_indices` | list[str] | `IBOV,CDI` | Indices for future `bogle compare` without `--index` |
 | `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
 
 ### Market data & sources
