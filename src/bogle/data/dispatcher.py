@@ -326,6 +326,37 @@ class PriceDispatcher:
             raise MarketDataError(f"Sem historico gratuito para '{key}' (simbolo {symbol}).", provider="yfinance")
         return history
 
+    def latest_history_date(self, ticker: str, start: date, end: date) -> date | None:
+        """Date of the freshest real daily bar for a variable-income ticker.
+
+        ``None`` when there is no bar (e.g. fixed income, which has no yfinance
+        history). Used to report how fresh a chart/table really is, since the
+        window end may be forward-filled from an older close.
+        """
+        history = self._variable_income_history(ticker, start, end)
+        return _as_date(history[-1].date) if history else None
+
+    def latest_index_date(self, index: str, start: date, end: date) -> date | None:
+        """Date of the freshest real data point backing an index, or ``None``.
+
+        Mirrors the source routing of :meth:`get_index_series` (BCB series for
+        rate indices, yfinance history for market ones) but returns only the
+        last real date rather than the grid-aligned levels.
+        """
+        key = index.upper()
+        if key == "IPCA":
+            points = self._bcb.get_ipca(date(start.year, start.month, 1), end)
+            return points[-1].date if points else None
+        if key in _BCB_INDEXES:
+            fetch = self._bcb.get_cdi if key == "CDI" else self._bcb.get_selic
+            points = fetch(start, end)
+            return points[-1].date if points else None
+        try:
+            history = self._index_history(key, start, end)
+        except MarketDataError:
+            return None
+        return _as_date(history[-1].date) if history else None
+
     # --- historical valuation (for TWR) --------------------------------
 
     def build_twr_valuator(self, asset: Asset, *, unit_principal: Decimal, start: date, end: date) -> Valuator | None:
