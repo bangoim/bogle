@@ -10,6 +10,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Transaction ledger** — buys, sells and income (dividends, JCP, FII distributions, interest), with fees and tax withheld.
 - **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker.
 - **No-sell rebalancing** — `bogle suggest` splits a contribution across the laggards (whole shares for variable income, exact values for fixed income); `bogle status` tracks the evaluation cycle (6 or 12 months).
+- **Reports** — `bogle summary` (invested vs patrimony), `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices from Tesouro Transparente, cached on disk. Private fixed income is marked to present value.
 - **Brazilian taxes** — income tax per operation and regressive IOF on fixed-income redemptions.
@@ -231,6 +232,49 @@ bogle status
 # Ultima avaliacao: 2026-07-22.
 # Proxima avaliacao em 365 dia(s) (2027-07-22).
 ```
+
+### Reports
+
+Every report takes `--period` with a shared vocabulary (`12m`, `2y`, `5y`,
+`10y`, `all`, `ytd`, `total`, `1m` — each command accepts the subset that makes
+sense for it). Windows older than the first transaction anchor on it.
+
+```bash
+bogle summary                    # patrimonio, investido, variacao, lucro do mes, proventos 12m
+bogle summary --json
+
+bogle return                     # TWR total / 12m / 1m
+bogle return --period 12m --vs CDI,IPCA
+bogle return --vs default        # indices de default_compare_indices
+
+bogle compare --period 12m       # carteira vs indices, base 100 + grafico ASCII
+bogle compare --index CDI,IBOV --no-chart
+
+bogle history --period 2y        # evolucao do patrimonio (12m diaria, 2y semanal, 5y+/all mensal)
+
+bogle profit                     # ganho de capital (realizado + nao realizado) + proventos por tipo
+bogle profit --period 12m        # limita os proventos; ganho de capital e sempre desde o inicio
+
+bogle dividends                  # proventos por mes (12 meses-calendario)
+bogle dividends --by ticker --period all
+```
+
+Semantics worth knowing:
+
+- **Variacao** (`summary`) = patrimony − invested capital = capital gain
+  (realized + unrealized, since the holdings view nets sale proceeds out of
+  the invested capital). **Lucro total** (`profit`) = that + income received.
+- Income is reported with **JCP net** of the tax withheld at source; the other
+  types are gross (`bogle position` shows gross income — different lens, not a
+  bug). `bogle income` *records* an income event; `bogle dividends` *reports*.
+- Realized gains use the sequential **average-cost replay** (RFB rule: a buy
+  after a sale recomposes the average over the remaining quantity).
+- The portfolio series in `compare` is the cumulative TWR level (contributions
+  are not performance); indices are normalized to base 100 at the window start.
+- **Tesouro Direto has no free price history** (see note above): historical
+  reports (`history`, `compare`, `return`, the month profit in `summary`)
+  exclude those positions and say so in a note. IFIX/SMLL/IDIV also lack a free
+  historical source and fail with a friendly message when requested.
 
 ### User settings
 
