@@ -139,6 +139,7 @@ ISO (`YYYY-MM-DD`), interpreted in America/Sao_Paulo. Rates are decimals
 ```bash
 bogle list                       # table of assets + the weight sum
 bogle update VTI --weight 0.45   # change a target weight
+bogle update VTI --type etf      # fix the type (variable income only: STOCK/BDR/FII/ETF)
 bogle remove VTI                 # only works while the asset has no transactions
 ```
 
