@@ -1,8 +1,17 @@
-"""``bogle position`` — the current portfolio, priced on the fly (issue #21)."""
+"""``bogle position`` — the current portfolio, priced on the fly (issue #21).
+
+Besides the per-ticker table (weight, drift vs target, PnL, TWR) and the
+live totals, it also folds in the portfolio-level snapshot that used to
+live in ``bogle summary``: month profit and income received over the last
+12 months. Month profit needs historical prices, so it is only computed
+when prices are on (omitted under ``--no-prices``).
+"""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -13,6 +22,11 @@ from rich.table import Table
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.position import PortfolioSummary, Position, get_portfolio_summary
+from bogle.reports.dividends import twelve_month_start
+from bogle.reports.periods import add_months
+from bogle.reports.summary import income_received, window_profit
+from bogle.reports.valuation import build_portfolio_valuation, patrimony_at
+from bogle.repositories.transactions import TransactionRepository
 
 _CONSOLE = Console()
 
@@ -62,7 +76,13 @@ def _position_json(p: Position) -> dict[str, Any]:
     }
 
 
-def _summary_json(summary: PortfolioSummary) -> dict[str, Any]:
+def _summary_json(
+    summary: PortfolioSummary,
+    *,
+    month_profit: Decimal | None = None,
+    income_12m: Decimal | None = None,
+    excluded: Sequence[str] = (),
+) -> dict[str, Any]:
     return {
         "positions": [_position_json(p) for p in summary.positions],
         "totals": {
@@ -71,11 +91,21 @@ def _summary_json(summary: PortfolioSummary) -> dict[str, Any]:
             "pnl": _dec(summary.total_pnl),
             "pnl_percent": _dec(summary.total_pnl_percent),
             "dividends": _dec(summary.total_dividends),
+            "month_profit": _dec(month_profit),
+            "income_12m": _dec(income_12m),
+            "month_profit_excluded": list(excluded),
         },
     }
 
 
-def _render(summary: PortfolioSummary, console: Console) -> None:
+def _render(
+    summary: PortfolioSummary,
+    console: Console,
+    *,
+    month_profit: Decimal | None = None,
+    income_12m: Decimal | None = None,
+    excluded: Sequence[str] = (),
+) -> None:
     table = Table(title="Posicao", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Tipo", no_wrap=True)
@@ -102,29 +132,55 @@ def _render(summary: PortfolioSummary, console: Console) -> None:
     console.print(
         f"Variacao: {_signed(summary.total_pnl, percent=False)} ({_signed(summary.total_pnl_percent, percent=True)})"
     )
+    console.print(f"Lucro do mes: {_signed(month_profit, percent=False)}")
+    console.print(f"Proventos (12m): {_signed(income_12m, percent=False)}")
     sources = sorted({p.price_source for p in summary.positions if p.price_source})
     if sources:
         console.print(f"Fonte(s) de preco: {', '.join(sources)}")
     timestamps = [p.as_of for p in summary.positions if p.as_of is not None]
     if timestamps:
         console.print(f"Cotacao mais recente: {max(timestamps):%Y-%m-%d %H:%M}")
+    if excluded:
+        console.print(
+            f"[yellow]Nota:[/yellow] lucro do mes nao considera {', '.join(excluded)} (sem historico de precos)."
+        )
 
 
 def position(
     no_prices: bool = typer.Option(False, "--no-prices", help="Usa so dados da base, sem bater nas APIs."),
     as_json: bool = typer.Option(False, "--json", help="Saida em JSON para scripts."),
 ) -> None:
+    today = date.today()
+    month_start = add_months(today, -1)
     conn = get_connection()
     try:
         dispatcher = None if no_prices else default_dispatcher()
         summary = get_portfolio_summary(conn, dispatcher)
+        transactions = TransactionRepository(conn).list()
+        # Month profit needs historical prices; skip it under --no-prices.
+        valuation = (
+            build_portfolio_valuation(conn, dispatcher, start=month_start, end=today)
+            if dispatcher is not None
+            else None
+        )
     finally:
         conn.close()
 
+    income_12m = income_received(transactions, start=twelve_month_start(today), end=today)
+    month_profit: Decimal | None = None
+    excluded: list[str] = []
+    if valuation is not None:
+        excluded = valuation.excluded
+        value_start = patrimony_at(valuation, month_start)
+        value_end = patrimony_at(valuation, today)
+        if value_start is not None and value_end is not None:
+            month_profit = window_profit(valuation.transactions, value_start, value_end, start=month_start, end=today)
+
     if as_json:
-        typer.echo(json.dumps(_summary_json(summary), ensure_ascii=False, indent=2))
+        payload = _summary_json(summary, month_profit=month_profit, income_12m=income_12m, excluded=excluded)
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
         return
     if not summary.positions:
         typer.echo("Nenhuma posicao ativa.")
         return
-    _render(summary, _CONSOLE)
+    _render(summary, _CONSOLE, month_profit=month_profit, income_12m=income_12m, excluded=excluded)
