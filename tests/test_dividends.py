@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -26,7 +26,7 @@ def make_income(
         id=next(_ID),
         ticker=ticker,
         transaction_type=income_type,
-        date=datetime.fromisoformat(on),
+        date=datetime.fromisoformat(on).replace(tzinfo=UTC),
         shares=Decimal("0"),
         unit_price=Decimal("0"),
         total_investment=Decimal(amount),
@@ -41,7 +41,7 @@ def make_buy(ticker: str, on: str) -> Transaction:
         id=next(_ID),
         ticker=ticker,
         transaction_type=TransactionType.BUY,
-        date=datetime.fromisoformat(on),
+        date=datetime.fromisoformat(on).replace(tzinfo=UTC),
         shares=Decimal("10"),
         unit_price=Decimal("10"),
         total_investment=Decimal("100"),
