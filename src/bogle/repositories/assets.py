@@ -63,9 +63,7 @@ class AssetRepository:
 
     def list(self) -> list[Asset]:
         with self._conn.cursor() as cur:
-            cur.execute(
-                f"SELECT {_SELECT_COLUMNS} FROM assets ORDER BY ticker"
-            )
+            cur.execute(f"SELECT {_SELECT_COLUMNS} FROM assets ORDER BY ticker")
             rows = cur.fetchall()
         return [_row_to_asset(r) for r in rows]
 
@@ -103,10 +101,16 @@ class AssetRepository:
                         )
                         """,
                     (
-                        ticker, target_weight, asset_type.value, issuer,
+                        ticker,
+                        target_weight,
+                        asset_type.value,
+                        issuer,
                         indexer.value if indexer is not None else None,
-                        rate, is_prefixed, daily_liquidity,
-                        purchase_date, maturity_date,
+                        rate,
+                        is_prefixed,
+                        daily_liquidity,
+                        purchase_date,
+                        maturity_date,
                     ),
                 )
                 self._guard_weight_sum(cur)
@@ -114,8 +118,7 @@ class AssetRepository:
             raise AssetAlreadyExistsError(ticker) from None
         except pg_errors.CheckViolation as exc:
             raise ValidationError(
-                f"Combinacao invalida de campos para o tipo {asset_type.value} "
-                f"(constraint {exc.diag.constraint_name})."
+                f"Combinacao invalida de campos para o tipo {asset_type.value} (constraint {exc.diag.constraint_name})."
             ) from None
         return Asset(
             ticker=ticker,
@@ -145,13 +148,31 @@ class AssetRepository:
         assert result is not None  # row existed (rowcount > 0).
         return result
 
+    def update_type(self, ticker: str, asset_type: AssetType) -> Asset:
+        """Change only ``asset_type``.
+
+        Callers must ensure the change is metadata-safe (see
+        ``bogle.domain.validation.validate_type_change``): this method
+        touches no metadata column, so it is only sound between
+        variable-income types, where those columns are all NULL.
+        """
+        ticker = ticker.upper()
+        with self._conn.transaction(), self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE assets SET asset_type = %s WHERE ticker = %s",
+                (asset_type.value, ticker),
+            )
+            if cur.rowcount == 0:
+                raise AssetNotFoundError(ticker)
+        result = self.get(ticker)
+        assert result is not None  # row existed (rowcount > 0).
+        return result
+
     def remove(self, ticker: str) -> None:
         ticker = ticker.upper()
         try:
             with self._conn.transaction(), self._conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM assets WHERE ticker = %s", (ticker,)
-                )
+                cur.execute("DELETE FROM assets WHERE ticker = %s", (ticker,))
                 if cur.rowcount == 0:
                     raise AssetNotFoundError(ticker)
         except pg_errors.ForeignKeyViolation:

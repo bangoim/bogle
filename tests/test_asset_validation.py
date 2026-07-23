@@ -7,7 +7,7 @@ import pytest
 
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import ValidationError
-from bogle.domain.validation import validate_asset_metadata
+from bogle.domain.validation import validate_asset_metadata, validate_type_change
 
 PURCHASE = datetime(2026, 4, 1, tzinfo=UTC)
 MATURITY = datetime(2027, 4, 1, tzinfo=UTC)
@@ -224,3 +224,35 @@ class TestExtraErrors:
     def test_extra_errors_alone_still_raise(self) -> None:
         with pytest.raises(ValidationError, match="boom"):
             validate_asset_metadata(AssetType.STOCK, extra_errors=["boom"])
+
+
+class TestTypeChange:
+    @pytest.mark.parametrize(
+        ("current", "new"),
+        [
+            (AssetType.STOCK, AssetType.ETF),
+            (AssetType.ETF, AssetType.FII),
+            (AssetType.FII, AssetType.BDR),
+            (AssetType.BDR, AssetType.STOCK),
+            (AssetType.STOCK, AssetType.STOCK),  # no-op ainda e valido
+        ],
+    )
+    def test_variable_to_variable_is_allowed(self, current: AssetType, new: AssetType) -> None:
+        validate_type_change("VWRA11", current, new)  # nao levanta
+
+    @pytest.mark.parametrize("new", [AssetType.CDB, AssetType.TESOURO, AssetType.LCI])
+    def test_to_fixed_income_is_rejected(self, new: AssetType) -> None:
+        with pytest.raises(ValidationError, match="exige metadados"):
+            validate_type_change("VWRA11", AssetType.STOCK, new)
+
+    @pytest.mark.parametrize("current", [AssetType.CDB, AssetType.TESOURO, AssetType.LCA])
+    def test_from_fixed_income_is_rejected(self, current: AssetType) -> None:
+        with pytest.raises(ValidationError, match="metadados orfaos"):
+            validate_type_change("CDB1", current, AssetType.STOCK)
+
+    def test_error_message_names_the_ticker_and_escape_hatch(self) -> None:
+        with pytest.raises(ValidationError) as exc:
+            validate_type_change("VWRA11", AssetType.STOCK, AssetType.CDB)
+        message = str(exc.value)
+        assert "VWRA11" in message
+        assert "bogle remove" in message

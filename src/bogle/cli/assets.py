@@ -11,8 +11,8 @@ from rich.table import Table
 from bogle.cli.parsing import parse_date, parse_decimal
 from bogle.db import get_connection
 from bogle.domain.assets import AssetType, Indexer
-from bogle.domain.errors import ValidationError
-from bogle.domain.validation import validate_asset_metadata
+from bogle.domain.errors import AssetNotFoundError, ValidationError
+from bogle.domain.validation import validate_asset_metadata, validate_type_change
 from bogle.repositories.assets import AssetRepository
 
 
@@ -151,19 +151,34 @@ def update(
         "-w",
         help="Novo peso-alvo em decimal entre 0 e 1.",
     ),
+    asset_type: AssetType | None = typer.Option(  # noqa: B008 — padrao do typer, OptionInfo e sentinela imutavel
+        None,
+        "--type",
+        "-t",
+        case_sensitive=False,
+        help="Novo tipo do ativo (apenas entre renda variavel: STOCK/BDR/FII/ETF).",
+    ),
 ) -> None:
-    # `update` so toca target_weight por enquanto; quando passar a aceitar
-    # os campos de renda fixa, deve revalidar a combinacao resultante via
-    # bogle.domain.validation.validate_asset_metadata.
-    if weight is None:
-        raise ValidationError("Nada para atualizar. Informe --weight.")
-    weight_dec = _parse_weight(weight)
+    # `update` so mexe em target_weight e asset_type. A troca de tipo e
+    # limitada a renda variavel (validate_type_change): mudar de/para renda
+    # fixa exige adicionar ou limpar metadados, o que este comando nao faz.
+    if weight is None and asset_type is None:
+        raise ValidationError("Nada para atualizar. Informe --weight e/ou --type.")
+    weight_dec = _parse_weight(weight) if weight is not None else None
     conn = get_connection()
     try:
-        asset = AssetRepository(conn).update_weight(ticker, weight_dec)
+        repo = AssetRepository(conn)
+        asset = repo.get(ticker)
+        if asset is None:
+            raise AssetNotFoundError(ticker.upper())
+        if asset_type is not None and asset_type != asset.asset_type:
+            validate_type_change(asset.ticker, asset.asset_type, asset_type)
+            asset = repo.update_type(ticker, asset_type)
+        if weight_dec is not None:
+            asset = repo.update_weight(ticker, weight_dec)
     finally:
         conn.close()
-    typer.echo(f"asset {asset.ticker} atualizado para peso {asset.target_weight:.2%}.")
+    typer.echo(f"asset {asset.ticker} atualizado: tipo {asset.asset_type}, peso {asset.target_weight:.2%}.")
 
 
 def remove(

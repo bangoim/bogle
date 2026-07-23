@@ -167,6 +167,27 @@ class TestUpdateWeight:
         assert a1.target_weight == Decimal("0.4")
 
 
+class TestUpdateType:
+    def test_success_returns_full_state(self, repo: AssetRepository) -> None:
+        repo.add("VWRA11", Decimal("0.3"), asset_type=AssetType.STOCK)
+        updated = repo.update_type("VWRA11", AssetType.ETF)
+        assert updated.asset_type == AssetType.ETF
+        assert updated.target_weight == Decimal("0.3")  # peso preservado
+        persisted = repo.get("VWRA11")
+        assert persisted is not None
+        assert persisted.asset_type == AssetType.ETF  # persistido
+
+    def test_case_insensitive_ticker(self, repo: AssetRepository) -> None:
+        repo.add("VWRA11", Decimal("0.3"))
+        updated = repo.update_type("vwra11", AssetType.FII)
+        assert updated.ticker == "VWRA11"
+        assert updated.asset_type == AssetType.FII
+
+    def test_unknown_ticker_raises(self, repo: AssetRepository) -> None:
+        with pytest.raises(AssetNotFoundError):
+            repo.update_type("XYZ", AssetType.ETF)
+
+
 class TestRemove:
     def test_success(self, repo: AssetRepository) -> None:
         repo.add("VTI", Decimal("0.1"))
