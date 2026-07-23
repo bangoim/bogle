@@ -17,7 +17,6 @@ from bogle.cli import profit as profit_cli
 from bogle.cli import returns as returns_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
-from bogle.cli import summary as summary_cli
 from bogle.cli import transactions as transactions_cli
 from bogle.db import get_connection
 from bogle.domain.errors import BogleError
@@ -39,11 +38,12 @@ app.command("sell", help="Registrar uma venda (parcial ou total).")(transactions
 app.command("income", help="Registrar um provento (dividendo, JCP, rendimento, juros).")(transactions_cli.income)
 app.command("transactions", help="Listar transacoes registradas.")(transactions_cli.list_transactions)
 
-app.command("position", help="Mostrar a posicao atual da carteira (precos ao vivo).")(position_cli.position)
+app.command("position", help="Posicao atual: tabela por ativo + totais, lucro do mes e proventos (precos ao vivo).")(
+    position_cli.position
+)
 app.command("suggest", help="Sugerir a divisao de um aporte para reduzir o drift.")(suggest_cli.suggest)
 app.command("status", help="Mostrar em que pe esta o ciclo de avaliacao de rebalanceamento.")(status_cli.status)
 app.command("dividends", help="Proventos recebidos, por mes ou por ticker.")(dividends_cli.dividends)
-app.command("summary", help="Resumo da carteira: investido vs patrimonio.")(summary_cli.summary)
 app.command("return", help="Rentabilidade da carteira (TWR), opcionalmente vs indices.")(returns_cli.return_)
 app.command("compare", help="Comparar a carteira com indices (base 100).")(compare_cli.compare)
 app.command("history", help="Evolucao do patrimonio ao longo do tempo.")(history_cli.history)

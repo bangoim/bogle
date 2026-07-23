@@ -81,6 +81,23 @@ class TestJson:
         assert totals["value"] == "220"
         assert totals["pnl"] == "20"
 
+    def test_totals_include_month_profit_and_income(self) -> None:
+        totals = _summary_json(
+            sample_summary(),
+            month_profit=Decimal("1420.15"),
+            income_12m=Decimal("85"),
+            excluded=["TESOURO SELIC 2029"],
+        )["totals"]
+        assert totals["month_profit"] == "1420.15"
+        assert totals["income_12m"] == "85"
+        assert totals["month_profit_excluded"] == ["TESOURO SELIC 2029"]
+
+    def test_totals_extras_default_to_null(self) -> None:
+        totals = _summary_json(sample_summary())["totals"]
+        assert totals["month_profit"] is None
+        assert totals["income_12m"] is None
+        assert totals["month_profit_excluded"] == []
+
 
 class TestTableRender:
     def test_renders_without_error(self) -> None:
@@ -91,6 +108,22 @@ class TestTableRender:
         assert "Total investido" in out
         assert "Fonte(s) de preco: brapi" in out
         assert "Cotacao mais recente" in out
+
+    def test_renders_month_profit_income_and_excluded_note(self) -> None:
+        buffer = io.StringIO()
+        _render(
+            sample_summary(),
+            Console(file=buffer, width=200),
+            month_profit=Decimal("1420.15"),
+            income_12m=Decimal("85"),
+            excluded=["TESOURO SELIC 2029"],
+        )
+        out = buffer.getvalue()
+        assert "Lucro do mes" in out
+        assert "+1420.15" in out
+        assert "Proventos (12m)" in out
+        assert "+85.00" in out
+        assert "TESOURO SELIC 2029" in out  # nota de exclusao
 
 
 class TestEndToEnd:
@@ -117,6 +150,21 @@ class TestEndToEnd:
         assert result.returncode == 0
         assert "PETR4" in result.stdout
         assert "Total investido" in result.stdout
+        assert "Proventos (12m)" in result.stdout
+
+    def test_no_prices_income_counted_month_profit_null(self) -> None:
+        # Proventos (12m) sai da base (sem precos); lucro do mes exige historico
+        # de precos, entao fica nulo sob --no-prices.
+        assert run_cli("add", "ITUB4", "-w", "0.4").returncode == 0
+        assert run_cli("buy", "ITUB4", "-s", "10", "-p", "20", "--date", "2026-01-05").returncode == 0
+        assert (
+            run_cli("income", "ITUB4", "--type", "DIVIDEND", "--amount", "100", "--date", "2026-03-01").returncode == 0
+        )
+        result = run_cli("position", "--no-prices", "--json")
+        assert result.returncode == 0
+        totals = json.loads(result.stdout)["totals"]
+        assert totals["income_12m"] == "100"
+        assert totals["month_profit"] is None
 
 
 @pytest.mark.live
