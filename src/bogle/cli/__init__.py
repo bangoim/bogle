@@ -30,7 +30,7 @@ app = typer.Typer(
 )
 
 app.command("add", help="Adicionar um novo ativo a carteira.")(assets_cli.add)
-app.command("update", help="Atualizar o peso-alvo de um ativo.")(assets_cli.update)
+app.command("update", help="Atualizar o peso-alvo e/ou o tipo de um ativo.")(assets_cli.update)
 app.command("remove", help="Remover um ativo da carteira.")(assets_cli.remove)
 app.command("list", help="Listar todos os ativos cadastrados.")(assets_cli.list_assets)
 

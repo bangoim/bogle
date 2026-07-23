@@ -139,3 +139,26 @@ def _raise_if_any(asset_type: AssetType, errors: list[str]) -> None:
     if errors:
         listing = "\n".join(f"  - {e}" for e in errors)
         raise ValidationError(f"parametros invalidos para o tipo {asset_type}:\n{listing}")
+
+
+def validate_type_change(ticker: str, current: AssetType, new: AssetType) -> None:
+    """Guard a ``bogle update --type`` change (variable-income only).
+
+    Changing an asset's type only touches ``asset_type`` when both the
+    current and new types are variable income (STOCK/BDR/FII/ETF), which
+    carry no metadata. Any change that crosses the fixed-income boundary
+    would require *supplying* metadata (issuer/indexer/rate/dates) or
+    *clearing* it — neither of which ``update`` does — so it is rejected
+    here in favor of ``bogle remove`` + ``bogle add``.
+    """
+    if new not in VARIABLE_INCOME_TYPES:
+        raise ValidationError(
+            f"nao da para trocar {ticker} para o tipo {new} (renda fixa) via update: "
+            f"esse tipo exige metadados (issuer/indexer/rate/datas). "
+            f"Use 'bogle remove {ticker}' e recadastre com 'bogle add'."
+        )
+    if current not in VARIABLE_INCOME_TYPES:
+        raise ValidationError(
+            f"{ticker} e do tipo {current} (renda fixa); trocar de tipo via update deixaria "
+            f"metadados orfaos. Use 'bogle remove {ticker}' e recadastre com 'bogle add'."
+        )

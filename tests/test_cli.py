@@ -73,6 +73,37 @@ def test_update_not_found() -> None:
     assert "nao encontrado" in result.stderr
 
 
+def test_update_type_variable_to_variable() -> None:
+    assert run_cli("add", "VWRA11", "-w", "0.5", "-t", "stock").returncode == 0
+    result = run_cli("update", "VWRA11", "-t", "etf")
+    assert result.returncode == 0
+    assert "ETF" in result.stdout
+    assert "50.00%" in result.stdout  # peso preservado
+
+
+def test_update_type_and_weight_together() -> None:
+    assert run_cli("add", "VWRA11", "-w", "0.5", "-t", "stock").returncode == 0
+    result = run_cli("update", "VWRA11", "-t", "fii", "-w", "0.3")
+    assert result.returncode == 0
+    assert "FII" in result.stdout
+    assert "30.00%" in result.stdout
+
+
+def test_update_type_to_fixed_income_rejected() -> None:
+    assert run_cli("add", "VWRA11", "-w", "0.5").returncode == 0
+    result = run_cli("update", "VWRA11", "-t", "cdb")
+    assert result.returncode == 1
+    assert "metadados" in result.stderr
+    assert "bogle remove" in result.stderr
+
+
+def test_update_nothing_to_do() -> None:
+    assert run_cli("add", "VWRA11", "-w", "0.5").returncode == 0
+    result = run_cli("update", "VWRA11")
+    assert result.returncode == 1
+    assert "Nada para atualizar" in result.stderr
+
+
 def test_remove_success() -> None:
     assert run_cli("add", "VTI", "-w", "0.5").returncode == 0
     result = run_cli("remove", "VTI")
