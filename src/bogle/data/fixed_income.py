@@ -74,6 +74,19 @@ def present_value(
     raise ValueError(f"indexer nao suportado para valor presente: {indexer!r}")
 
 
+def accumulated_rate_factor(series: Sequence[SeriesPoint], start: date, end: date, *, name: str = "indice") -> Decimal:
+    """Compound ``(1 + value)`` over the series in ``[start, end)`` — the growth
+    factor of a daily-rate index (CDI/SELIC) at 100%. Shared with the reports
+    epic (#67) so index accumulation is never reimplemented."""
+    return _accumulate(series, start, end, multiplier=_ONE, name=name)
+
+
+def accumulated_ipca_factor(series: Sequence[SeriesPoint], start: date, end: date) -> Decimal:
+    """IPCA correction factor over ``[start, end)`` (monthly composition with the
+    documented business-day pro-rata). Shared with the reports epic (#67)."""
+    return _ipca_factor(series, start, end)
+
+
 def _accumulate(series: Sequence[SeriesPoint], start: date, end: date, *, multiplier: Decimal, name: str) -> Decimal:
     """Compound ``(1 + multiplier * value)`` over series points in ``[start, end)``."""
     if not series:

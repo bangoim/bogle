@@ -8,10 +8,16 @@ import typer
 from dotenv import load_dotenv
 
 from bogle.cli import assets as assets_cli
+from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
+from bogle.cli import dividends as dividends_cli
+from bogle.cli import history as history_cli
 from bogle.cli import position as position_cli
+from bogle.cli import profit as profit_cli
+from bogle.cli import returns as returns_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
+from bogle.cli import summary as summary_cli
 from bogle.cli import transactions as transactions_cli
 from bogle.db import get_connection
 from bogle.domain.errors import BogleError
@@ -36,6 +42,12 @@ app.command("transactions", help="Listar transacoes registradas.")(transactions_
 app.command("position", help="Mostrar a posicao atual da carteira (precos ao vivo).")(position_cli.position)
 app.command("suggest", help="Sugerir a divisao de um aporte para reduzir o drift.")(suggest_cli.suggest)
 app.command("status", help="Mostrar em que pe esta o ciclo de avaliacao de rebalanceamento.")(status_cli.status)
+app.command("dividends", help="Proventos recebidos, por mes ou por ticker.")(dividends_cli.dividends)
+app.command("summary", help="Resumo da carteira: investido vs patrimonio.")(summary_cli.summary)
+app.command("return", help="Rentabilidade da carteira (TWR), opcionalmente vs indices.")(returns_cli.return_)
+app.command("compare", help="Comparar a carteira com indices (base 100).")(compare_cli.compare)
+app.command("history", help="Evolucao do patrimonio ao longo do tempo.")(history_cli.history)
+app.command("profit", help="Lucro decomposto: ganho de capital + proventos.")(profit_cli.profit)
 
 transaction_app = typer.Typer(help="Operacoes sobre uma transacao individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transacao pelo ID.")(transactions_cli.remove)
