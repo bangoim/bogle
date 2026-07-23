@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -70,6 +71,23 @@ class TestComputeCompare:
         assert cdi_series.levels[-1] == Decimal("100") * Decimal("1.001")
         assert "IFIX" in report.index_errors
 
+    def test_data_as_of_is_freshest_real_date_not_window_end(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        # Ultima barra real do PETR4 e 07-17, mas a janela vai ate TODAY (07-20).
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
+        report = compute_compare(conn, dispatcher, period="1m", indices=(), today=TODAY)
+        assert report.grid[-1] == TODAY
+        assert report.data_as_of == date(2026, 7, 17)
+
+    def test_data_as_of_takes_most_recent_across_series(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        cdi = [SeriesPoint(date(2026, 7, 18), Decimal("0.001"))]  # mais fresco que o PETR4 (07-17)
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)), bcb=FakeBcb(cdi=cdi))
+        report = compute_compare(conn, dispatcher, period="1m", indices=("CDI",), today=TODAY)
+        assert report.data_as_of == date(2026, 7, 18)
+
     def test_no_transactions_is_friendly(self, conn: psycopg.Connection[DictRow], tmp_path: object) -> None:
         with pytest.raises(ValidationError, match="Nenhuma transacao"):
             compute_compare(conn, make_dispatcher(tmp_path), period="12m", indices=(), today=TODAY)
@@ -99,6 +117,7 @@ class TestCli:
             ],
             excluded=[],
             index_errors={"IFIX": "Sem historico gratuito para 'IFIX' (simbolo IFIX.SA)."},
+            data_as_of=date(2026, 7, 20),
         )
         captured: dict[str, object] = {}
         self.captured = captured
@@ -120,6 +139,14 @@ class TestCli:
         assert "Sem historico gratuito" in result.stdout
         assert self.captured["indices"] == ("CDI", "IFIX")
 
+    def test_table_renames_and_data_as_of(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["compare", "--no-chart"])
+        assert result.exit_code == 0, result.output
+        assert "Carteira v. Indices" in result.stdout  # titulo renomeado
+        assert "Retorno" in result.stdout  # coluna renomeada
+        assert "Retorno acumulado" not in result.stdout  # nome antigo sumiu
+        assert "Dados ate: 2026-07-20" in result.stdout  # freshness real do dado
+
     def test_no_chart_flag(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["compare", "--no-chart"])
         assert result.exit_code == 0, result.output
@@ -128,7 +155,18 @@ class TestCli:
     def test_default_indices_come_from_settings(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["compare", "--no-chart"])
         assert result.exit_code == 0, result.output
-        assert self.captured["indices"] == ("CDI",)
+        assert self.captured["indices"] == ("IBOV", "CDI")
+
+    def test_output_writes_interactive_html(self, runner: CliRunner, tmp_path: Path) -> None:
+        out = tmp_path / "compare.html"
+        result = runner.invoke(app, ["compare", "--index", "cdi", "--output", str(out), "--no-open"])
+        assert result.exit_code == 0, result.output
+        assert f"grafico salvo em {out}" in result.stdout
+        assert out.exists()
+        html = out.read_text(encoding="utf-8")
+        assert "Carteira" in html
+        assert "CDI" in html
+        assert "Base 100" not in result.stdout  # grafico do terminal suprimido com --output
 
     def test_invalid_period(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["compare", "--period", "3m"])

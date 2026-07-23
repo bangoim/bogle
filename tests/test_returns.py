@@ -134,4 +134,4 @@ class TestCliRendering:
         monkeypatch.setattr("bogle.cli.returns.compute_returns", fake_compute)
         result = runner.invoke(app, ["return", "--vs", "default"])
         assert result.exit_code == 0, result.output
-        assert captured["indices"] == ("CDI",)  # default_compare_indices default
+        assert captured["indices"] == ("IBOV", "CDI")  # default_compare_indices default

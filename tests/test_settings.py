@@ -28,8 +28,8 @@ class TestDefaults:
     def test_period_defaults_to_12(self, conn: psycopg.Connection[DictRow]) -> None:
         assert get_setting(conn, REBALANCE_PERIOD_MONTHS) == 12
 
-    def test_indices_default_to_cdi(self, conn: psycopg.Connection[DictRow]) -> None:
-        assert get_setting(conn, DEFAULT_COMPARE_INDICES) == ["CDI"]
+    def test_indices_default_to_ibov_and_cdi(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert get_setting(conn, DEFAULT_COMPARE_INDICES) == ["IBOV", "CDI"]
 
     def test_threshold_defaults_to_5pp(self, conn: psycopg.Connection[DictRow]) -> None:
         assert get_setting(conn, WEIGHT_DRIFT_THRESHOLD) == Decimal("0.05")

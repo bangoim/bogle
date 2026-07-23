@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bogle import settings as settings_mod
+from bogle.cli.charts import export_line_chart_html, open_in_browser, render_line_chart
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.reports.compare import CompareReport, compute_compare
@@ -25,31 +26,30 @@ def _pct(value: Decimal) -> str:
 
 
 def _render_table(report: CompareReport, period: str, console: Console) -> None:
-    table = Table(title=f"Carteira vs indices ({period})", title_style="bold")
+    table = Table(title=f"Carteira v. Indices ({period})", title_style="bold")
     table.add_column("Serie", style="cyan", no_wrap=True)
-    table.add_column("Retorno acumulado", justify="right")
+    table.add_column("Retorno", justify="right")
     for series in report.series:
         value = series.accumulated_return
         color = "green" if value >= 0 else "red"
         table.add_row(series.name, f"[{color}]{_pct(value)}[/{color}]")
     console.print(table)
     console.print(f"Janela: {report.grid[0].isoformat()} a {report.grid[-1].isoformat()} (base 100 no inicio)")
+    if report.data_as_of is not None:
+        console.print(f"Dados ate: {report.data_as_of.isoformat()}")
 
 
 def _render_chart(report: CompareReport) -> None:
-    import plotext as plt
-
-    plt.clear_figure()
     labels = [on.isoformat() for on in report.grid]
-    ticks = list(range(len(labels)))
-    for series in report.series:
-        plt.plot(ticks, [float(level) for level in series.levels], label=series.name)
-    step = max(1, len(ticks) // 6)
-    plt.xticks(ticks[::step], labels[::step])
-    plt.title("Base 100 no inicio do periodo")
-    plt.plotsize(100, 25)
-    plt.theme("clear")
-    plt.show()
+    series = [(s.name, [float(level) for level in s.levels]) for s in report.series]
+    render_line_chart("Base 100 no inicio do periodo", labels, series)
+
+
+def _export_chart(report: CompareReport, path: str) -> None:
+    dates = list(report.grid)
+    # Base 100 -> retorno acumulado em % (baseline 0), como no layout de referencia.
+    series = [(s.name, [float(level) - 100 for level in s.levels]) for s in report.series]
+    export_line_chart_html("Carteira v. Índices", dates, series, path, y_suffix="%")
 
 
 def compare(
@@ -57,7 +57,11 @@ def compare(
         None, "--index", help="Indices separados por virgula (ex: CDI,IBOV). Default: default_compare_indices."
     ),
     period: str = typer.Option("12m", "--period", help=f"Janela: {', '.join(_PERIODS)}."),
-    no_chart: bool = typer.Option(False, "--no-chart", help="So a tabela, sem o grafico ASCII."),
+    no_chart: bool = typer.Option(False, "--no-chart", help="So a tabela, sem o grafico de linha (terminal)."),
+    output: str | None = typer.Option(
+        None, "--output", help="Salva um grafico HTML interativo (plotly) no caminho dado."
+    ),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Abrir o HTML gerado no navegador."),
 ) -> None:
     parsed = parse_period(period, allowed=_PERIODS)
 
@@ -73,7 +77,12 @@ def compare(
         conn.close()
 
     _render_table(report, parsed, _CONSOLE)
-    if not no_chart:
+    if output is not None:
+        _export_chart(report, output)
+        typer.echo(f"grafico salvo em {output}")
+        if open_browser:
+            open_in_browser(output)
+    elif not no_chart:
         _render_chart(report)
     if report.excluded:
         _CONSOLE.print(

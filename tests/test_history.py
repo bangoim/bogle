@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -87,6 +88,14 @@ class TestCli:
     def test_chart_renders(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["history"])
         assert result.exit_code == 0, result.output
+
+    def test_output_writes_interactive_html(self, runner: CliRunner, tmp_path: Path) -> None:
+        out = tmp_path / "history.html"
+        result = runner.invoke(app, ["history", "--output", str(out), "--no-open"])
+        assert result.exit_code == 0, result.output
+        assert f"grafico salvo em {out}" in result.stdout
+        assert out.exists()
+        assert "Patrimonio" in out.read_text(encoding="utf-8")
 
     def test_invalid_period(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["history", "--period", "ytd"])

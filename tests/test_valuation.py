@@ -128,6 +128,33 @@ class TestIndexReturn:
             dispatcher.get_index_return("CDI", date(2026, 1, 5), date(2026, 7, 20))
 
 
+class TestLatestDataDate:
+    def test_history_date_is_last_bar(self, tmp_path: Any) -> None:
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-06-22", "20"), bar("2026-07-17", "25")]})
+        d = make_dispatcher(tmp_path, yfinance=yf).latest_history_date("PETR4", date(2026, 6, 1), date(2026, 7, 20))
+        assert d == date(2026, 7, 17)
+
+    def test_history_date_none_when_no_bars(self, tmp_path: Any) -> None:
+        d = make_dispatcher(tmp_path).latest_history_date("PETR4", date(2026, 6, 1), date(2026, 7, 20))
+        assert d is None
+
+    def test_index_date_market(self, tmp_path: Any) -> None:
+        yf = FakeYfinance({"^BVSP": [bar("2026-07-01", "100"), bar("2026-07-18", "110")]})
+        d = make_dispatcher(tmp_path, yfinance=yf).latest_index_date("IBOV", date(2026, 6, 1), date(2026, 7, 20))
+        assert d == date(2026, 7, 18)
+
+    def test_index_date_bcb(self, tmp_path: Any) -> None:
+        cdi = [SeriesPoint(date(2026, 7, 16), Decimal("0.001")), SeriesPoint(date(2026, 7, 17), Decimal("0.001"))]
+        d = make_dispatcher(tmp_path, bcb=FakeBcb(cdi=cdi)).latest_index_date(
+            "CDI", date(2026, 6, 1), date(2026, 7, 20)
+        )
+        assert d == date(2026, 7, 17)
+
+    def test_index_date_none_on_missing_history(self, tmp_path: Any) -> None:
+        d = make_dispatcher(tmp_path).latest_index_date("IFIX", date(2026, 6, 1), date(2026, 7, 20))
+        assert d is None
+
+
 class TestIndexSeries:
     def test_cdi_series_is_cumulative_factor(self, tmp_path: Any) -> None:
         cdi = [
