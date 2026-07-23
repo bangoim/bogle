@@ -8,6 +8,7 @@ import typer
 from dotenv import load_dotenv
 
 from bogle.cli import assets as assets_cli
+from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
 from bogle.cli import dividends as dividends_cli
 from bogle.cli import position as position_cli
@@ -42,6 +43,7 @@ app.command("status", help="Mostrar em que pe esta o ciclo de avaliacao de rebal
 app.command("dividends", help="Proventos recebidos, por mes ou por ticker.")(dividends_cli.dividends)
 app.command("summary", help="Resumo da carteira: investido vs patrimonio.")(summary_cli.summary)
 app.command("return", help="Rentabilidade da carteira (TWR), opcionalmente vs indices.")(returns_cli.return_)
+app.command("compare", help="Comparar a carteira com indices (base 100).")(compare_cli.compare)
 
 transaction_app = typer.Typer(help="Operacoes sobre uma transacao individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transacao pelo ID.")(transactions_cli.remove)
