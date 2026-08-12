@@ -1,13 +1,24 @@
-"""Shared plotext line-chart rendering for the report commands (#25/#26).
+"""Line charts shared by the user-facing frontends (issues #25/#26, #75).
 
-`history` and `compare` render the same kind of time series, so the chart
-config lives here to keep them consistent and readable:
+Both frontends draw the same time series with the same library: the CLI prints
+plotext straight to the terminal, and the TUI embeds it through
+``textual-plotext``, which runs plotext inside a Textual widget. The series
+configuration lives here so the two renderings cannot drift apart — see
+:func:`plot_line_series`. What is genuinely frontend-specific stays outside: the
+terminal size and the final ``show()`` on one side, the widget and its theme on
+the other.
 
-- continuous **braille** lines (the previous default marker drew sparse
-  dots that read as scattered points, not a curve);
+The module sits at the package root, not under ``cli/``, because the TUI reads
+from ``domain``/``reports`` only — routing a second frontend through the command
+layer is exactly the coupling the interface avoids (see :mod:`bogle.tui`), the
+same reason the number format moved to :mod:`bogle.format`.
+
+Chart style, decided in #25/#26 and kept for the TUI:
+
+- continuous **braille** lines (the previous default marker drew sparse dots
+  that read as scattered points, not a curve);
 - horizontal **gridlines** so values are readable off the y-axis;
-- a width that **follows the terminal** (capped) instead of a fixed 100
-  columns, which distorted on narrower/wider terminals.
+- at most :data:`_X_TICKS` date labels, so a long window does not smear its axis.
 """
 
 from __future__ import annotations
@@ -16,25 +27,28 @@ import contextlib
 import webbrowser
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 _MAX_WIDTH = 120
 _HEIGHT = 25
 _X_TICKS = 6
 
+Series = Sequence[tuple[str, Sequence[float]]]
+"""``(name, values)`` pairs, one line each; values align with the x labels."""
 
-def render_line_chart(
-    title: str,
-    x_labels: Sequence[str],
-    series: Sequence[tuple[str, Sequence[float]]],
-) -> None:
-    """Render one or more time series as continuous braille lines.
 
-    ``series`` is a list of ``(name, values)`` pairs, one line each;
-    ``values`` align positionally with ``x_labels``.
+def plot_line_series(plt: Any, title: str, x_labels: Sequence[str], series: Series) -> None:
+    """Configure one or more time series as continuous braille lines.
+
+    ``plt`` is whatever the caller plots on: the ``plotext`` module itself (CLI)
+    or the plotext-alike object ``textual-plotext`` hands out (TUI). Both expose
+    the same plotting calls, which is the whole reason this function can be
+    shared; it is deliberately untyped because one of them is a module.
+
+    Neither the size nor the theme is set here — the CLI follows the terminal
+    width, and in the TUI the widget owns both (it re-themes the plot on every
+    render to follow the app's theme).
     """
-    import plotext as plt
-
-    plt.clear_figure()
     ticks = list(range(len(x_labels)))
     for name, values in series:
         plt.plot(ticks, list(values), label=name, marker="braille")
@@ -42,6 +56,14 @@ def render_line_chart(
     plt.xticks(ticks[::step], list(x_labels)[::step])
     plt.title(title)
     plt.grid(horizontal=True, vertical=False)
+
+
+def render_line_chart(title: str, x_labels: Sequence[str], series: Series) -> None:
+    """Print the chart to the terminal, sized to it (capped at 120 columns)."""
+    import plotext as plt
+
+    plt.clear_figure()
+    plot_line_series(plt, title, x_labels, series)
     plt.theme("clear")
     plt.plotsize(min(plt.terminal_width() or _MAX_WIDTH, _MAX_WIDTH), _HEIGHT)
     plt.show()
@@ -50,7 +72,7 @@ def render_line_chart(
 def export_line_chart_html(
     title: str,
     x_values: Sequence[object],
-    series: Sequence[tuple[str, Sequence[float]]],
+    series: Series,
     path: str,
     *,
     y_title: str = "",

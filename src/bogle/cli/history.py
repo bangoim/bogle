@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from bogle.cli.charts import export_line_chart_html, open_in_browser, render_line_chart
+from bogle.charts import export_line_chart_html, open_in_browser, render_line_chart
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.format import money, signed

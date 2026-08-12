@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from bogle.cli.charts import export_line_chart_html, render_line_chart
+from bogle.charts import export_line_chart_html, render_line_chart
 
 _BRAILLE = "⠀⡀⢀⠄⠂⠁⣀⠤⠊⠒"
 
