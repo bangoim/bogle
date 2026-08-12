@@ -12,6 +12,7 @@ from rich.table import Table
 from bogle.cli.charts import export_line_chart_html, open_in_browser, render_line_chart
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
+from bogle.format import money, signed
 from bogle.reports.history import HistoryReport, compute_history
 from bogle.reports.periods import parse_period
 
@@ -19,16 +20,6 @@ _CONSOLE = Console()
 
 _PERIODS = ("12m", "2y", "5y", "10y", "all")
 _GRANULARITY_LABEL = {"daily": "diaria", "weekly": "semanal", "monthly": "mensal"}
-
-
-def _money(value: Decimal) -> str:
-    return f"{value:.2f}"
-
-
-def _signed(value: Decimal, *, percent: bool) -> str:
-    color = "green" if value >= 0 else "red"
-    body = f"{value * 100:+.2f}%" if percent else f"{value:+.2f}"
-    return f"[{color}]{body}[/{color}]"
 
 
 def _render_table(report: HistoryReport, period: str, console: Console) -> None:
@@ -43,9 +34,9 @@ def _render_table(report: HistoryReport, period: str, console: Console) -> None:
         percent = delta / previous if delta is not None and previous and previous > 0 else None
         table.add_row(
             point.date.isoformat(),
-            _money(point.value),
-            _signed(delta, percent=False) if delta is not None else "-",
-            _signed(percent, percent=True) if percent is not None else "-",
+            money(point.value),
+            signed(delta, percent=False),
+            signed(percent, percent=True),
         )
         previous = point.value
     console.print(table)

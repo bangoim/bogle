@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from decimal import Decimal
 from typing import Any
 
 import typer
@@ -15,44 +14,32 @@ from bogle import settings as settings_mod
 from bogle.cli.parsing import parse_decimal
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
+from bogle.format import exact, exact_or_none, money, pct
 from bogle.position import get_portfolio_summary
 from bogle.rebalancing import AporteSuggestion, suggest_allocation
 
 _CONSOLE = Console()
 
 
-def _money(value: Decimal) -> str:
-    return f"{value:.2f}"
-
-
-def _pct(value: Decimal) -> str:
-    return f"{value * 100:.2f}%"
-
-
-def _dec(value: Decimal | None) -> str | None:
-    # Normalized and non-scientific (10.00000000 -> "10", 0E+4 -> "0").
-    return format(value.normalize(), "f") if value is not None else None
-
-
 def _suggestion_json(suggestion: AporteSuggestion) -> dict[str, Any]:
     return {
-        "amount": _dec(suggestion.amount),
+        "amount": exact_or_none(suggestion.amount),
         "items": [
             {
                 "ticker": item.ticker,
                 "type": item.asset_type.value,
-                "price": _dec(item.price),
-                "allocation": _dec(item.allocation),
-                "quantity": _dec(item.quantity),
-                "effective_cost": _dec(item.effective_cost),
-                "target_weight": _dec(item.target_weight),
-                "weight_after": _dec(item.weight_after),
+                "price": exact_or_none(item.price),
+                "allocation": exact_or_none(item.allocation),
+                "quantity": exact_or_none(item.quantity),
+                "effective_cost": exact_or_none(item.effective_cost),
+                "target_weight": exact_or_none(item.target_weight),
+                "weight_after": exact_or_none(item.weight_after),
             }
             for item in suggestion.items
         ],
         "totals": {
-            "allocated": _dec(suggestion.total_allocated),
-            "leftover": _dec(suggestion.leftover),
+            "allocated": exact_or_none(suggestion.total_allocated),
+            "leftover": exact_or_none(suggestion.leftover),
         },
         "warnings": suggestion.warnings,
     }
@@ -66,16 +53,16 @@ def _render(suggestion: AporteSuggestion, console: Console) -> None:
     for item in suggestion.items:
         table.add_row(
             item.ticker,
-            _money(item.price),
-            _money(item.allocation),
-            format(item.quantity, "f") if item.quantity is not None else "-",
-            _money(item.effective_cost),
-            _pct(item.weight_after),
+            money(item.price),
+            money(item.allocation),
+            exact(item.quantity),
+            money(item.effective_cost),
+            pct(item.weight_after),
         )
     console.print(table)
 
-    console.print(f"Total alocado: {_money(suggestion.total_allocated)} / Aporte: {_money(suggestion.amount)}")
-    console.print(f"Sobra (caixa): {_money(suggestion.leftover)}")
+    console.print(f"Total alocado: {money(suggestion.total_allocated)} / Aporte: {money(suggestion.amount)}")
+    console.print(f"Sobra (caixa): {money(suggestion.leftover)}")
     for warning in suggestion.warnings:
         console.print(f"[yellow]Atencao:[/yellow] {warning}")
 

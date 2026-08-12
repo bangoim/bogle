@@ -13,6 +13,7 @@ from bogle.cli.parsing import parse_date, parse_decimal
 from bogle.db import DEFAULT_TIMEZONE, get_connection
 from bogle.domain.errors import ValidationError
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.format import exact
 from bogle.repositories.transactions import TransactionRepository
 
 
@@ -33,11 +34,6 @@ def _resolve_date(value: str | None) -> datetime:
     if value is not None:
         return parse_date(value, "--date")
     return datetime.now(tz=ZoneInfo(DEFAULT_TIMEZONE))
-
-
-def _fmt(value: Decimal) -> str:
-    """Render without the raw NUMERIC scale (100.00000000 -> 100)."""
-    return format(value.normalize(), "f")
 
 
 def _echo_recorded(tx: Transaction) -> None:
@@ -63,7 +59,7 @@ def buy(
         conn.close()
     _echo_recorded(tx)
     typer.echo(
-        f"custo total: {_fmt(tx.total_cost)} ({_fmt(tx.shares)} x {_fmt(tx.unit_price)} + {_fmt(tx.fees)} de fees)."
+        f"custo total: {exact(tx.total_cost)} ({exact(tx.shares)} x {exact(tx.unit_price)} + {exact(tx.fees)} de fees)."
     )
 
 
@@ -89,7 +85,7 @@ def sell(
     finally:
         conn.close()
     _echo_recorded(tx)
-    typer.echo(f"produto bruto da venda: {_fmt(tx.total_investment)}; custo da operacao: {_fmt(tx.total_cost)}.")
+    typer.echo(f"produto bruto da venda: {exact(tx.total_investment)}; custo da operacao: {exact(tx.total_cost)}.")
 
 
 def income(
@@ -134,7 +130,7 @@ def income(
     finally:
         conn.close()
     _echo_recorded(tx)
-    typer.echo(f"valor bruto: {_fmt(tx.total_investment)}; IR retido: {_fmt(tx.tax_withheld)}.")
+    typer.echo(f"valor bruto: {exact(tx.total_investment)}; IR retido: {exact(tx.tax_withheld)}.")
 
 
 def list_transactions(
@@ -168,11 +164,11 @@ def list_transactions(
             f"{tx.date:%Y-%m-%d}",
             tx.transaction_type,
             tx.ticker,
-            _fmt(tx.shares) if is_trade else "-",
-            _fmt(tx.unit_price) if is_trade else "-",
-            _fmt(tx.total_investment),
-            _fmt(tx.fees),
-            _fmt(tx.tax_withheld),
+            exact(tx.shares) if is_trade else "-",
+            exact(tx.unit_price) if is_trade else "-",
+            exact(tx.total_investment),
+            exact(tx.fees),
+            exact(tx.tax_withheld),
         )
     Console().print(table)
 

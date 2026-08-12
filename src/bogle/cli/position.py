@@ -21,6 +21,7 @@ from rich.table import Table
 
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
+from bogle.format import exact, exact_or_none, money, pct, signed
 from bogle.position import PortfolioSummary, Position, get_portfolio_summary
 from bogle.reports.dividends import twelve_month_start
 from bogle.reports.periods import add_months
@@ -31,46 +32,20 @@ from bogle.repositories.transactions import TransactionRepository
 _CONSOLE = Console()
 
 
-def _money(value: Decimal | None) -> str:
-    return f"{value:.2f}" if value is not None else "-"
-
-
-def _qty(value: Decimal | None) -> str:
-    return format(value.normalize(), "f") if value is not None else "-"
-
-
-def _pct(value: Decimal | None) -> str:
-    return f"{value * 100:.2f}%" if value is not None else "-"
-
-
-def _signed(value: Decimal | None, *, percent: bool) -> str:
-    """Signed, colored cell (green >= 0, red < 0); percentage or money."""
-    if value is None:
-        return "-"
-    color = "green" if value >= 0 else "red"
-    body = f"{value * 100:+.2f}%" if percent else f"{value:+.2f}"
-    return f"[{color}]{body}[/{color}]"
-
-
-def _dec(value: Decimal | None) -> str | None:
-    # Normalized and non-scientific (10.00000000 -> "10", 0E+4 -> "0").
-    return format(value.normalize(), "f") if value is not None else None
-
-
 def _position_json(p: Position) -> dict[str, Any]:
     return {
         "ticker": p.ticker,
         "type": p.asset_type.value,
-        "quantity": _dec(p.quantity),
-        "price": _dec(p.price),
-        "market_value": _dec(p.market_value),
-        "current_weight": _dec(p.current_weight),
-        "target_weight": _dec(p.target_weight),
-        "drift": _dec(p.drift),
-        "pnl": _dec(p.pnl),
-        "pnl_percent": _dec(p.pnl_percent),
-        "twr": _dec(p.twr),
-        "dividends": _dec(p.dividends),
+        "quantity": exact_or_none(p.quantity),
+        "price": exact_or_none(p.price),
+        "market_value": exact_or_none(p.market_value),
+        "current_weight": exact_or_none(p.current_weight),
+        "target_weight": exact_or_none(p.target_weight),
+        "drift": exact_or_none(p.drift),
+        "pnl": exact_or_none(p.pnl),
+        "pnl_percent": exact_or_none(p.pnl_percent),
+        "twr": exact_or_none(p.twr),
+        "dividends": exact_or_none(p.dividends),
         "price_source": p.price_source,
         "as_of": p.as_of.isoformat() if p.as_of else None,
     }
@@ -86,13 +61,13 @@ def _summary_json(
     return {
         "positions": [_position_json(p) for p in summary.positions],
         "totals": {
-            "invested": _dec(summary.total_invested),
-            "value": _dec(summary.total_value),
-            "pnl": _dec(summary.total_pnl),
-            "pnl_percent": _dec(summary.total_pnl_percent),
-            "dividends": _dec(summary.total_dividends),
-            "month_profit": _dec(month_profit),
-            "income_12m": _dec(income_12m),
+            "invested": exact_or_none(summary.total_invested),
+            "value": exact_or_none(summary.total_value),
+            "pnl": exact_or_none(summary.total_pnl),
+            "pnl_percent": exact_or_none(summary.total_pnl_percent),
+            "dividends": exact_or_none(summary.total_dividends),
+            "month_profit": exact_or_none(month_profit),
+            "income_12m": exact_or_none(income_12m),
             "month_profit_excluded": list(excluded),
         },
     }
@@ -115,25 +90,25 @@ def _render(
         table.add_row(
             p.ticker,
             p.asset_type.value,
-            _qty(p.quantity),
-            _money(p.price),
-            _money(p.market_value),
-            _pct(p.current_weight),
-            _pct(p.target_weight),
-            _signed(p.drift, percent=True),
-            _signed(p.pnl, percent=False),
-            _signed(p.pnl_percent, percent=True),
-            _signed(p.twr, percent=True),
+            exact(p.quantity),
+            money(p.price),
+            money(p.market_value),
+            pct(p.current_weight),
+            pct(p.target_weight),
+            signed(p.drift, percent=True),
+            signed(p.pnl, percent=False),
+            signed(p.pnl_percent, percent=True),
+            signed(p.twr, percent=True),
         )
     console.print(table)
 
-    console.print(f"Total investido: {_money(summary.total_invested)}")
-    console.print(f"Patrimonio total: {_money(summary.total_value)}")
+    console.print(f"Total investido: {money(summary.total_invested)}")
+    console.print(f"Patrimonio total: {money(summary.total_value)}")
     console.print(
-        f"Variacao: {_signed(summary.total_pnl, percent=False)} ({_signed(summary.total_pnl_percent, percent=True)})"
+        f"Variacao: {signed(summary.total_pnl, percent=False)} ({signed(summary.total_pnl_percent, percent=True)})"
     )
-    console.print(f"Lucro do mes: {_signed(month_profit, percent=False)}")
-    console.print(f"Proventos (12m): {_signed(income_12m, percent=False)}")
+    console.print(f"Lucro do mes: {signed(month_profit, percent=False)}")
+    console.print(f"Proventos (12m): {signed(income_12m, percent=False)}")
     sources = sorted({p.price_source for p in summary.positions if p.price_source})
     if sources:
         console.print(f"Fonte(s) de preco: {', '.join(sources)}")

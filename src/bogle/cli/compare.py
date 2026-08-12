@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 import typer
 from rich.console import Console
@@ -13,6 +12,7 @@ from bogle import settings as settings_mod
 from bogle.cli.charts import export_line_chart_html, open_in_browser, render_line_chart
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
+from bogle.format import signed
 from bogle.reports.compare import CompareReport, compute_compare
 from bogle.reports.periods import parse_period
 
@@ -21,18 +21,12 @@ _CONSOLE = Console()
 _PERIODS = ("12m", "2y", "5y", "10y", "all", "ytd")
 
 
-def _pct(value: Decimal) -> str:
-    return f"{value * 100:+.2f}%"
-
-
 def _render_table(report: CompareReport, period: str, console: Console) -> None:
     table = Table(title=f"Carteira v. Indices ({period})", title_style="bold")
     table.add_column("Serie", style="cyan", no_wrap=True)
     table.add_column("Retorno", justify="right")
     for series in report.series:
-        value = series.accumulated_return
-        color = "green" if value >= 0 else "red"
-        table.add_row(series.name, f"[{color}]{_pct(value)}[/{color}]")
+        table.add_row(series.name, signed(series.accumulated_return, percent=True))
     console.print(table)
     console.print(f"Janela: {report.grid[0].isoformat()} a {report.grid[-1].isoformat()} (base 100 no inicio)")
     if report.data_as_of is not None:
