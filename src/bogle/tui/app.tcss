@@ -203,3 +203,13 @@ ConfirmModal, NextStepModal {
 #ledger-note {
     height: auto;
 }
+
+/* ------------------------------------------------------------------ Toasts */
+
+/* O default do textual reserva uma linha em branco acima e outra abaixo do
+   texto, e fixa a largura em 60: um aviso de uma linha ocupa tres linhas e
+   metade da tela. */
+Toast {
+    padding: 0 1;
+    width: auto;
+}
