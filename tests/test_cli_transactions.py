@@ -51,7 +51,7 @@ class TestBuy:
         assert result.returncode == 0
         assert "registrada: BUY PETR4 em 2026-01-15" in result.stdout
         # Linha completa: pina tambem a normalizacao dos Decimais (_fmt).
-        assert "custo total: 3055.2 (100 x 30.5 + 5.2 de fees)." in result.stdout
+        assert "custo total: 3,055.2 (100 x 30.5 + 5.2 de fees)." in result.stdout
 
         tx = trepo.list("PETR4")[0]
         assert tx.transaction_type is TransactionType.BUY
@@ -109,7 +109,7 @@ class TestSell:
         )
         assert result.returncode == 0
         assert "registrada: SELL PETR4" in result.stdout
-        assert "produto bruto da venda: 1400" in result.stdout
+        assert "produto bruto da venda: 1,400" in result.stdout
 
         tx = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL)
         assert tx.shares == Decimal("40")

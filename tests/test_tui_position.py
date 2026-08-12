@@ -91,7 +91,7 @@ class TestTable:
                 "STOCK",
                 "100",
                 "41.15",
-                "4115.00",
+                "4,115.00",
                 "52.30%",
                 "50.00%",
                 "+2.30%",
@@ -130,8 +130,8 @@ class TestTotals:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
-            assert "Total investido 4550.00" in screen.totals
-            assert "Patrimonio total 4926.20" in screen.totals
+            assert "Total investido 4,550.00" in screen.totals
+            assert "Patrimonio total 4,926.20" in screen.totals
             assert "Variacao +376.20 (+8.27%)" in screen.totals
             assert "Lucro do mes +82.40" in screen.totals
             assert "Proventos (12m) +145.00" in screen.totals
@@ -151,7 +151,7 @@ class TestTotals:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
-            assert "Total investido 4550.00" in screen.totals
+            assert "Total investido 4,550.00" in screen.totals
             assert "Patrimonio total -" in screen.totals
             assert "Variacao - (-)" in screen.totals
 

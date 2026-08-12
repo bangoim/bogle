@@ -120,7 +120,7 @@ class TestTableRender:
         )
         out = buffer.getvalue()
         assert "Lucro do mes" in out
-        assert "+1420.15" in out
+        assert "+1,420.15" in out
         assert "Proventos (12m)" in out
         assert "+85.00" in out
         assert "TESOURO SELIC 2029" in out  # nota de exclusao

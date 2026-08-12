@@ -82,7 +82,7 @@ class TestTableRender:
         _render(sample_suggestion(), Console(file=buffer, width=200))
         out = buffer.getvalue()
         assert "VWRA11" in out
-        assert "Total alocado: 9950.50 / Aporte: 10000.00" in out
+        assert "Total alocado: 9,950.50 / Aporte: 10,000.00" in out
         assert "Sobra (caixa): 49.50" in out
         assert "novo contrato" in out
 

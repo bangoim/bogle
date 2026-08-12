@@ -7,6 +7,7 @@ import psycopg
 import typer
 from dotenv import load_dotenv
 
+from bogle import format as fmt
 from bogle.cli import assets as assets_cli
 from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
@@ -21,7 +22,7 @@ from bogle.cli import transactions as transactions_cli
 from bogle.db import get_connection
 from bogle.domain.errors import BogleError
 from bogle.rebalancing import overdue_notice
-from bogle.settings import LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
+from bogle.settings import DECIMAL_SEPARATOR, LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
 
 app = typer.Typer(
     help="bogle - CLI tool for passive portfolio rebalancing.",
@@ -63,24 +64,24 @@ config_app.command("list", help="Listar todas as configuracoes.")(config_cli.lis
 app.add_typer(config_app, name="config")
 
 
-def _warn_if_rebalance_due() -> None:
-    """Best-effort reminder that the evaluation cycle completed (issue #24).
+def _read_preferences() -> tuple[str, str | None]:
+    """The display separator and the overdue-cycle reminder, in one round trip.
 
-    Never breaks the command it precedes: any failure (database down, migrations
-    pending) is swallowed silently.
+    Best-effort by design: any failure (database down, migrations pending) leaves
+    the canonical number format and no reminder, instead of breaking the command
+    that follows.
     """
     try:
         conn = get_connection()
         try:
+            separator = get_setting(conn, DECIMAL_SEPARATOR)
             period = get_setting(conn, REBALANCE_PERIOD_MONTHS)
             last = get_setting(conn, LAST_REBALANCE_DATE)
         finally:
             conn.close()
     except Exception:
-        return
-    notice = overdue_notice(last, period, today=date.today())
-    if notice is not None:
-        typer.echo(f"aviso: {notice}", err=True)
+        return fmt.CANONICAL_DECIMAL, None
+    return separator, overdue_notice(last, period, today=date.today())
 
 
 def _is_interactive() -> bool:
@@ -108,9 +109,11 @@ def _main(ctx: typer.Context) -> None:
 
         run_tui()
         return
+    separator, notice = _read_preferences()
+    fmt.configure(separator)
     # `status` ja reporta o ciclo por inteiro; avisar de novo seria ruido.
-    if ctx.invoked_subcommand != "status":
-        _warn_if_rebalance_due()
+    if notice is not None and ctx.invoked_subcommand != "status":
+        typer.echo(f"aviso: {notice}", err=True)
 
 
 def _run() -> None:  # pragma: no cover - tiny shim for the console_script

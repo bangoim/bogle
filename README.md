@@ -12,7 +12,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker, plus the portfolio totals, the month profit and income received (12m).
 - **No-sell rebalancing** — `bogle suggest` splits a contribution across the laggards (whole shares for variable income, exact values for fixed income); `bogle status` tracks the evaluation cycle (6 or 12 months).
 - **Reports** — `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
-- **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices).
+- **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices from Tesouro Transparente, cached on disk. Private fixed income is marked to present value.
 - **Brazilian taxes** — income tax per operation and regressive IOF on fixed-income redemptions.
 
@@ -106,7 +106,7 @@ interface, since a full-screen interface needs a real terminal.
  █▄▄▀ ▀▄▄▀ ▀▄▄▀ █▄▄▄ █▄▄▄
  ╭─ Carteira - fechamento de 2026-08-11 ───────────────────────────────────────╮
  │ Patrimonio total                     Variacao                               │
- │ 12772.90                             +685.43  (+5.67%)                      │
+ │ 12,772.90                            +685.43  (+5.67%)                      │
  │ Rentabilidade 12m (TWR)              Rentabilidade total (TWR)              │
  │ +7.06%                               +7.06%                                 │
  │                                                                             │
@@ -267,12 +267,12 @@ bogle position --json        # machine-readable output for scripts
 ┏━━━━━━━━┳━━━━━━━┳━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┓
 ┃ Ticker ┃ Tipo  ┃ Qtd ┃  Preco ┃   Valor ┃ Peso atual ┃ Target ┃  Drift ┃  PnL R$ ┃  PnL % ┃     TWR ┃
 ┡━━━━━━━━╇━━━━━━━╇━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━┩
-│ PETR4  │ STOCK │ 100 │  41.15 │ 4115.00 │     52.30% │ 50.00% │ +2.30% │ +365.00 │ +9.74% │ +12.75% │
-│ MXRF11 │ FII   │ 300 │   9.80 │ 2940.00 │     37.36% │ 40.00% │ -2.64% │ +140.00 │ +5.00% │  +6.10% │
-│ CDB01  │ CDB   │   1 │ 811.20 │  811.20 │     10.31% │ 10.00% │ +0.31% │  +11.20 │ +1.40% │  +1.40% │
-└────────┴───────┴─────┴────────┴─────────┴────────────┴────────┴────────┴─────────┴────────┴─────────┘
-Total investido: 7350.00
-Patrimonio total: 7866.20
+│ PETR4  │ STOCK │ 100 │  41.15 │ 4,115.00 │    52.30% │ 50.00% │ +2.30% │ +365.00 │ +9.74% │ +12.75% │
+│ MXRF11 │ FII   │ 300 │   9.80 │ 2,940.00 │    37.36% │ 40.00% │ -2.64% │ +140.00 │ +5.00% │  +6.10% │
+│ CDB01  │ CDB   │   1 │ 811.20 │   811.20 │    10.31% │ 10.00% │ +0.31% │  +11.20 │ +1.40% │  +1.40% │
+└────────┴───────┴─────┴────────┴──────────┴───────────┴────────┴────────┴─────────┴────────┴─────────┘
+Total investido: 7,350.00
+Patrimonio total: 7,866.20
 Variacao: +516.20 (+7.02%)
 Lucro do mes: +82.40
 Proventos (12m): +145.00
@@ -372,6 +372,8 @@ bogle config list                            # every key: value, type, last upda
 bogle config get rebalance_period_months     # 12 (default)
 bogle config set rebalance_period_months 6   # only 6 or 12 accepted
 bogle config unset rebalance_period_months   # back to the default
+
+bogle config set decimal_separator ,         # 1.234,56 instead of 1,234.56
 ```
 
 | Key | Type | Default | Meaning |
@@ -379,7 +381,35 @@ bogle config unset rebalance_period_months   # back to the default
 | `rebalance_period_months` | int | `12` | Evaluation cycle (6 or 12 months) |
 | `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY |
 | `default_compare_indices` | list[str] | `IBOV,CDI` | Indices for future `bogle compare` without `--index` |
+| `decimal_separator` | str | `.` | Decimal separator on screen (`.` or `,`); the other character groups thousands |
 | `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
+
+### Number format
+
+Money, percentages and quantities are shown with the separator pair you choose:
+`decimal_separator` picks the decimal character and the other one groups the
+thousands. Money and quantities are grouped, percentages are not.
+
+```bash
+bogle config set decimal_separator ,   # 12.772,90   +5,67%
+bogle config set decimal_separator .   # 12,772.90   +5.67%   (default)
+```
+
+Input follows the same setting, and the canonical dot decimal is always accepted
+(it is what every example here uses):
+
+```bash
+bogle buy PETR4 --shares 1 --price 1.234,50   # with decimal_separator = ,
+bogle buy PETR4 --shares 1 --price 1234.50    # always valid
+```
+
+A string with two readings is refused instead of guessed — under a comma decimal,
+`1.000` could be a thousand or a one, so `bogle` asks for `1000` or `1.000,00`.
+The difference is a factor of a thousand, which is not a guess worth making on a
+buy order.
+
+`--json` output is never localized: it always uses a canonical dot decimal with
+no grouping, so scripts keep parsing it with `Decimal(...)`.
 
 ### Market data & sources
 

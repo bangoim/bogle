@@ -7,6 +7,7 @@ import psycopg
 import pytest
 from psycopg.rows import DictRow
 
+from bogle import format as fmt
 from bogle.db import get_connection, run_migrations
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
@@ -23,6 +24,14 @@ assert "_test" in TEST_DATABASE_URL, (
 def _setup_test_db() -> None:
     os.environ["BOGLE_DATABASE_URL"] = TEST_DATABASE_URL
     run_migrations(TEST_DATABASE_URL)
+
+
+@pytest.fixture(autouse=True)
+def _canonical_number_format() -> Iterator[None]:
+    """Reset the process-wide display format (bogle.format.configure) per test."""
+    fmt.configure(fmt.CANONICAL_DECIMAL)
+    yield
+    fmt.configure(fmt.CANONICAL_DECIMAL)
 
 
 @pytest.fixture

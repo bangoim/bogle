@@ -17,6 +17,7 @@ import pytest
 from typer.testing import CliRunner
 
 from bogle import cli as cli_mod
+from bogle import format as fmt
 from bogle.cli import app
 from tests.test_cli import PROJECT_ROOT, run_cli
 
@@ -114,14 +115,34 @@ class TestEndToEnd:
         )
 
 
-class TestRebalanceReminderStaysOnCommands:
-    def test_no_args_does_not_emit_the_cli_reminder(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # O aviso de ciclo vencido virou toast na Home; a linha em stderr e so
-        # dos comandos diretos.
+class TestPreferences:
+    def test_no_args_reads_nothing_and_warns_about_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # No modo interativo a TUI cuida das preferencias (e o aviso de ciclo
+        # vencido virou toast na Home): o callback nao le nada nem escreve em
+        # stderr antes de abrir a interface.
         def unexpected(*_args: Any, **_kwargs: Any) -> None:
-            raise AssertionError("sem aviso em stderr no modo interativo")
+            raise AssertionError("o modo interativo nao passa pelas preferencias da CLI")
 
-        monkeypatch.setattr(cli_mod, "_warn_if_rebalance_due", unexpected)
+        monkeypatch.setattr(cli_mod, "_read_preferences", unexpected)
         monkeypatch.setattr(cli_mod, "_is_interactive", lambda: True)
         monkeypatch.setattr("bogle.tui.run_tui", lambda: None)
-        assert CliRunner().invoke(app, []).exit_code == 0
+        result = CliRunner().invoke(app, [])
+        assert result.exit_code == 0
+        assert result.output == ""
+
+    def test_a_command_applies_the_configured_separator(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (",", None))
+        assert CliRunner().invoke(app, ["list"]).exit_code == 0
+        assert fmt.separators().decimal == ","
+
+    def test_an_overdue_cycle_still_warns_on_stderr(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido desde 2026-07-01."))
+        result = CliRunner().invoke(app, ["list"])
+        assert result.exit_code == 0
+        assert "aviso: ciclo vencido desde 2026-07-01." in result.output
+
+    def test_status_does_not_repeat_the_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # `bogle status` ja reporta o ciclo por inteiro.
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido desde 2026-07-01."))
+        result = CliRunner().invoke(app, ["status"])
+        assert "aviso:" not in result.output

@@ -110,6 +110,7 @@ class TestUnsetAndList:
         set_setting(conn, WEIGHT_DRIFT_THRESHOLD, "0.03")
         entries = {e.key: e for e in list_settings(conn)}
         assert set(entries) == {
+            "decimal_separator",
             REBALANCE_PERIOD_MONTHS,
             DEFAULT_COMPARE_INDICES,
             WEIGHT_DRIFT_THRESHOLD,

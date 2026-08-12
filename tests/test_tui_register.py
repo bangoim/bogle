@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from textual.widgets import Input, Select
 
+from bogle import format as fmt
 from bogle.domain.errors import AssetNotFoundError, ValidationError
 from bogle.domain.transactions import TransactionType
 from bogle.tui import services
@@ -158,6 +159,51 @@ class TestValidation:
             await settle(pilot)
             assert "NOPE" in error_of(screen, "ticker")
             assert "nao encontrado" in error_of(screen, "ticker")
+
+    @pytest.mark.asyncio
+    async def test_accepts_the_configured_number_format(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Com decimal virgula, o formulario le o que a tela mostra (1.234,50) —
+        # e o formato canonico continua valendo.
+        spy = RecordSpy(TransactionType.BUY)
+        monkeypatch.setattr(services, "record_buy", spy)
+        fmt.configure(",")
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
+            fill(screen, ticker="PETR4", shares="1.000,5", price="1.234,50", fees="0,13")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            modal = app.screen
+            assert isinstance(modal, ConfirmModal)
+            assert "1.000,5 x PETR4 @ 1.234,50" in modal.body
+            await pilot.press("enter")
+            await settle(pilot)
+            assert spy.last["shares"] == Decimal("1000.5")
+            assert spy.last["unit_price"] == Decimal("1234.50")
+            assert spy.last["fees"] == Decimal("0.13")
+
+    @pytest.mark.asyncio
+    async def test_an_ambiguous_thousand_asks_the_user_to_be_explicit(self) -> None:
+        # `1.000` com decimal virgula pode ser mil ou um: o formulario nao chuta.
+        fmt.configure(",")
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
+            fill(screen, ticker="PETR4", shares="1.000", price="10")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            assert isinstance(app.screen, TradeFormScreen)  # nao abriu o modal
+            assert "Escreva 1000 para o inteiro" in error_of(screen, "shares")
+
+    @pytest.mark.asyncio
+    async def test_a_misplaced_separator_is_explained_with_an_example(self) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
+            fill(screen, ticker="PETR4", shares="1", price="126,25")  # decimal e ponto por default
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            assert "1,234.56" in error_of(screen, "price")  # o exemplo do formato vigente
 
     @pytest.mark.asyncio
     async def test_bad_date_format_is_rejected(self) -> None:

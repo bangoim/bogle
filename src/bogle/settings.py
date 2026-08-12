@@ -25,6 +25,7 @@ REBALANCE_PERIOD_MONTHS = "rebalance_period_months"
 DEFAULT_COMPARE_INDICES = "default_compare_indices"
 WEIGHT_DRIFT_THRESHOLD = "weight_drift_threshold"
 LAST_REBALANCE_DATE = "last_rebalance_date"
+DECIMAL_SEPARATOR = "decimal_separator"
 
 _VALID_PERIODS = (6, 12)
 
@@ -54,6 +55,13 @@ def _parse_threshold(raw: str) -> Decimal:
     if not (Decimal("0") < threshold < Decimal("1")):
         raise ValidationError(f"Threshold deve estar em (0, 1), recebido {threshold}.")
     return threshold
+
+
+def _parse_separator(raw: str) -> str:
+    separator = raw.strip()
+    if separator not in (".", ","):
+        raise ValidationError(f"Separador decimal deve ser '.' ou ',', recebido {raw!r}.")
+    return separator
 
 
 def _parse_date(raw: str) -> date:
@@ -104,6 +112,15 @@ SETTINGS: dict[str, SettingSpec] = {
             parse=_parse_threshold,
             to_json=str,
             from_json=Decimal,
+        ),
+        SettingSpec(
+            key=DECIMAL_SEPARATOR,
+            type_name="str",
+            description="Separador decimal na exibicao ('.' ou ','); o outro caractere separa o milhar.",
+            default=".",
+            parse=_parse_separator,
+            to_json=str,
+            from_json=str,
         ),
         SettingSpec(
             key=LAST_REBALANCE_DATE,

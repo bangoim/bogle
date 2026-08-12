@@ -52,7 +52,7 @@ class TestSummary:
             await settle(pilot)
             home = app.screen
             assert isinstance(home, HomeScreen)
-            assert metric(home, "patrimony") == "7866.20"
+            assert metric(home, "patrimony") == "7,866.20"
             assert metric(home, "variation") == "+516.20  (+7.02%)"
             assert metric(home, "twr-12m") == "+12.75%"
             assert metric(home, "twr-total") == "+18.40%"
@@ -80,7 +80,7 @@ class TestSummary:
             assert metric(app.screen, "patrimony") == PLACEHOLDER  # type: ignore[arg-type]
             release.set()
             await settle(pilot)
-            assert metric(app.screen, "patrimony") == "7866.20"  # type: ignore[arg-type]
+            assert metric(app.screen, "patrimony") == "7,866.20"  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
     async def test_twr_legend_is_shown_when_everything_is_priced(self, monkeypatch: pytest.MonkeyPatch) -> None:

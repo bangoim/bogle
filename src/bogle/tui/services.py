@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
+from bogle import format as fmt
 from bogle.analytics.business_days import previous_business_day
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
@@ -25,13 +26,31 @@ from bogle.reports.overview import PortfolioOverview, compute_overview
 from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
-from bogle.settings import LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
+from bogle.settings import DECIMAL_SEPARATOR, LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
 
 _ZERO = Decimal("0")
 
 
 def _today(today: date | None) -> date:
     return today if today is not None else date.today()
+
+
+def apply_display_format() -> None:
+    """Load the user's number format into :mod:`bogle.format`.
+
+    Runs once, synchronously, before the app opens: it is a single local query,
+    and doing it in a worker would race with the first screen's rendering.
+    Best-effort, like the CLI's — a database that is down leaves the canonical
+    format and the Home screen reports the connection failure anyway.
+    """
+    try:
+        conn = get_connection()
+        try:
+            fmt.configure(get_setting(conn, DECIMAL_SEPARATOR))
+        finally:
+            conn.close()
+    except Exception:
+        return
 
 
 def overview_date(today: date | None = None) -> date:
