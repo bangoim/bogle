@@ -6,6 +6,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 
 ## Features
 
+- **Two frontends** — `bogle` with no arguments opens an interactive full-screen interface; `bogle <command>` runs the same operations non-interactively. See [Interactive mode](#interactive-mode).
 - **Portfolio registry** — assets with target weights; the total can never exceed 100%.
 - **Transaction ledger** — buys, sells and income (dividends, JCP, FII distributions, interest), with fees and tax withheld.
 - **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker, plus the portfolio totals, the month profit and income received (12m).
@@ -56,6 +57,9 @@ export BOGLE_DATABASE_URL="postgresql://user:password@host:5432/bogle"
 pip install -e .
 ```
 
+This installs two entry points for the same tool: `bogle` and the short alias
+`bo`.
+
 ### 5. (Optional) brapi token for live B3 quotes
 
 Live quotes for B3 tickers and indices come from [brapi](https://brapi.dev). Put
@@ -73,6 +77,69 @@ sources (yfinance, Banco Central, Tesouro Transparente) need no token.
 
 Apply the schema migrations once before first use (see
 [Schema migrations](#schema-migrations) below).
+
+### Interactive mode
+
+`bogle` with no arguments opens a full-screen interface in the terminal; every
+command keeps working exactly as before when given directly. Both are frontends
+over the same data — nothing is exclusive to one of them:
+
+```bash
+bogle             # opens the interface
+bo                # short alias, identical to bogle (with or without a command)
+bogle position    # direct command, unchanged
+bogle --help      # still the help
+```
+
+Use the interface to **register operations** without memorizing flags (guided
+forms with validation as you type) and to browse the position; use the direct
+commands for one-shot answers, scripting (`--json`) and everything the interface
+does not cover yet — reports, asset management, contribution suggestions and
+settings.
+
+Piping or redirecting (`bogle | cat`) prints the help instead of opening the
+interface, since a full-screen interface needs a real terminal.
+
+```text
+ █▄  ▄▀▄ ▄▀█ █   ▄▀▀
+ █▄█ ▀▄▀ ▀▄█ █▄▄ ▀▄▄
+ ╭─ Carteira - fechamento de 2026-08-11 ───────────────────────────────────────╮
+ │ Patrimonio total                     Variacao                               │
+ │ 12772.90                             +685.43  (+5.67%)                      │
+ │ Rentabilidade 12m (TWR)              Rentabilidade total (TWR)              │
+ │ +7.06%                               +7.06%                                 │
+ │                                                                             │
+ │ Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera...  │
+ ╰─────────────────────────────────────────────────────────────────────────────╯
+ ╭─ Menu ──────────────────────────────────────────────────────────────────────╮
+ │ 1  Posicao      precos ao vivo, pesos e drift                               │
+ │ 2  Registrar    compra, venda ou provento                                   │
+ │ 3  Transacoes   listar e remover lancamentos                                │
+ ╰─────────────────────────────────────────────────────────────────────────────╯
+ q Sair  r Atualizar
+```
+
+The home screen opens on the **previous close (D-1)**, not on live quotes: the
+four numbers come from the database plus cached price history, so startup does
+not wait on an API. Returns are TWR (time-weighted), which removes the effect of
+contributions and withdrawals and credits income. Live prices belong to the
+Position screen. If the rebalance evaluation cycle is overdue, the reminder
+arrives as a notification here instead of a line on stderr.
+
+| Screen | What it covers | Equivalent commands |
+|--------|----------------|---------------------|
+| Posicao | Priced table (weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
+| Registrar | Guided forms for buy, sell and income, with a confirmation summary | `bogle buy` / `sell` / `income` |
+| Transacoes | Ledger with a ticker filter; `d` removes the selected row after confirming | `bogle transactions`, `bogle transaction remove` |
+
+Navigation: arrows or the item's number, `Enter` to open, `Esc` to go back, `q`
+to quit from the home screen, `Ctrl+S` to save a form. The footer always shows
+the keys available on the current screen.
+
+A form never writes a bad value: bad input is reported next to the field that
+caused it, and an error from the database keeps you on the form with everything
+you typed still there. Income follows the same rule as the CLI — JCP requires
+the tax withheld at source, and RENDIMENTO does not accept it.
 
 ### Adding assets
 
@@ -147,7 +214,9 @@ bogle remove VTI                 # only works while the asset has no transaction
 
 Transactions reference a registered asset. `--date` is optional
 everywhere and defaults to today (America/Sao_Paulo); pass ISO dates
-(`YYYY-MM-DD`) to backfill history.
+(`YYYY-MM-DD`) to backfill history. The same three operations are available as
+guided forms in [interactive mode](#interactive-mode), which validates each
+field as you type.
 
 ```bash
 bogle add PETR4 --weight 0.2
