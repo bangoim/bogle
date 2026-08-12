@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 import typer
 from rich.console import Console
@@ -28,26 +27,21 @@ _INCOME_LABELS = (
 )
 
 
-def _gain(value: Decimal) -> str:
-    """A gain/loss figure: signed and colored (green >= 0, red < 0)."""
-    return signed(value, percent=False)
-
-
 def _render(report: ProfitReport, period: str, console: Console) -> None:
     console.print(f"[bold]Lucro da carteira (desde {report.since.isoformat()})[/bold]")
-    console.print(f"  Ganho de capital:      {_gain(report.capital_total)}")
-    console.print(f"    Realizado (vendas):  {_gain(report.realized)}")
-    console.print(f"    Nao realizado:       {_gain(report.unrealized)}")
+    console.print(f"  Ganho de capital:      {signed(report.capital_total, percent=False)}")
+    console.print(f"    Realizado (vendas):  {signed(report.realized, percent=False)}")
+    console.print(f"    Nao realizado:       {signed(report.unrealized, percent=False)}")
     console.print()
     income_window = " (ultimos 12 meses)" if period == "12m" else ""
-    console.print(f"  Proventos recebidos:{income_window}   {_gain(report.income_total)}")
+    console.print(f"  Proventos recebidos:{income_window}   {signed(report.income_total, percent=False)}")
     for kind, label in _INCOME_LABELS:
-        console.print(f"    {label:<19}{_gain(report.income_by_type[kind])}")
+        console.print(f"    {label:<19}{signed(report.income_by_type[kind], percent=False)}")
     console.print()
     if period == "12m":
         console.print("  (Lucro total omitido: ganho de capital e desde o inicio; proventos, 12 meses.)")
     else:
-        console.print(f"  Lucro total:           {_gain(report.total)}")
+        console.print(f"  Lucro total:           {signed(report.total, percent=False)}")
     if report.unpriced:
         console.print(
             f"[yellow]Nota:[/yellow] ganho nao realizado nao considera {', '.join(report.unpriced)} (sem preco atual)."
