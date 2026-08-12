@@ -135,6 +135,20 @@ class TestList:
             assert table_rows(screen)[0][4] == "PREFIXADO"
 
     @pytest.mark.asyncio
+    async def test_the_rate_is_not_masked_with_the_amounts(self, spy: AssetsSpy) -> None:
+        # Privacidade oculta valores; uma taxa contratada e termo do contrato, nao
+        # o tamanho da posicao — mascara-la esconderia nada e cegaria a unica tela
+        # que mostra os metadados de renda fixa.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            await pilot.press("h")
+            await pilot.pause()
+            cdb = table_rows(screen)[1]
+            assert cdb[5] == "1.1"  # taxa
+            assert cdb[2] == "10.00%"  # peso continua visivel tambem
+
+    @pytest.mark.asyncio
     async def test_the_note_carries_the_weight_sum(self, spy: AssetsSpy) -> None:
         app = make_app()
         async with app.run_test() as pilot:

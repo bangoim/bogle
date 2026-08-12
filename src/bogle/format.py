@@ -152,6 +152,16 @@ def exact(value: Decimal | None) -> str:
     return MASK if _HIDDEN else _localized(format(value.normalize(), ",f"))
 
 
+def rate(value: Decimal | None) -> str:
+    """A contracted rate: ``1.10`` (110% of CDI), ``0.065`` (IPCA + 6.5%).
+
+    Same digits :func:`exact` gives, but never masked: privacy hides *amounts*, and
+    a rate is a term of the contract, not the size of the position. Masking it
+    would hide nothing and cost the only view that shows the fixed income metadata.
+    """
+    return _localized(format(value.normalize(), "f")) if value is not None else DASH
+
+
 def exact_or_none(value: Decimal | None) -> str | None:
     """:func:`exact` for JSON payloads: canonical decimal, no grouping, ``None`` kept."""
     return format(value.normalize(), "f") if value is not None else None

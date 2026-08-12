@@ -136,7 +136,7 @@ class AssetsScreen(DataScreen[list[Asset]]):
                 cells.pct(asset.target_weight),
                 cells.text(asset.issuer or fmt.DASH),
                 cells.text(_indexer_of(asset)),
-                cells.exact(asset.rate) if asset.rate is not None else cells.right(fmt.DASH),
+                cells.rate(asset.rate),
                 cells.text(_liquidity_of(asset)),
                 cells.text(_date_of(asset.purchase_date)),
                 cells.text(_date_of(asset.maturity_date)),
@@ -325,7 +325,7 @@ class AssetFormScreen(WriteScreen[Asset]):
         ]
         if "rate" in entry:
             indexer = "prefixado" if entry["is_prefixed"] else str(entry["indexer"])
-            lines.append(f"{indexer}, taxa {fmt.exact(entry['rate'])}")
+            lines.append(f"{indexer}, taxa {fmt.rate(entry['rate'])}")
             lines.append(f"Compra {entry['purchase_date']:%Y-%m-%d}")
             maturity = entry["maturity_date"]
             lines[-1] += f", vencimento {maturity:%Y-%m-%d}" if maturity is not None else ", sem vencimento"

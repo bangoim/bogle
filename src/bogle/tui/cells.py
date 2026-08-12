@@ -40,6 +40,11 @@ def exact(value: Decimal | None) -> Text:
     return right(fmt.exact(value))
 
 
+def rate(value: Decimal | None) -> Text:
+    """A contracted rate — every digit, and not masked with the amounts."""
+    return right(fmt.rate(value))
+
+
 def signed(value: Decimal | None, *, percent: bool) -> Text:
     """Signed and colored (green >= 0, red < 0), from the shared markup."""
     return Text.from_markup(fmt.signed(value, percent=percent), justify="right")

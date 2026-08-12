@@ -26,6 +26,7 @@ from bogle.format import (
     money,
     pct,
     points,
+    rate,
     separators,
     separators_for,
     sign_color,
@@ -106,6 +107,22 @@ class TestPercent:
     def test_none_is_dash(self) -> None:
         assert pct(None) == DASH
         assert signed_pct(None) == DASH
+
+
+class TestRate:
+    def test_every_digit_that_matters(self) -> None:
+        assert rate(Decimal("1.100000")) == "1.1"
+        assert rate(Decimal("0.065")) == "0.065"
+        assert rate(None) == DASH
+
+    def test_follows_the_decimal_separator(self, comma: None) -> None:
+        assert rate(Decimal("1.10")) == "1,1"
+
+    def test_is_not_masked_with_the_amounts(self) -> None:
+        # Uma taxa nao e o tamanho da posicao: mascara-la nao esconde nada.
+        hide_amounts(True)
+        assert rate(Decimal("1.10")) == "1.1"
+        assert exact(Decimal("1.10")) == MASK  # a quantidade, sim
 
 
 class TestPoints:
