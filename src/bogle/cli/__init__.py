@@ -99,8 +99,11 @@ def _main(ctx: typer.Context) -> None:
         # `bogle` sem argumentos abre a interface interativa (issue #73);
         # `bogle --help` e `bogle <comando>` seguem intocados.
         if not _is_interactive():
-            typer.echo(ctx.get_help())
-            return
+            # Sem terminal, o comportamento e o mesmo de antes da TUI (quando
+            # `no_args_is_help` cuidava disso): help na saida padrao e status 2,
+            # que scripts existentes podem estar checando.
+            typer.echo(ctx.get_help(), nl=False)
+            raise typer.Exit(code=2)
         from bogle.tui import run_tui  # import tardio: comandos diretos nao pagam pelo textual
 
         run_tui()

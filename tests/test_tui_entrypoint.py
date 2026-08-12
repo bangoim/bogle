@@ -45,7 +45,9 @@ class TestNoArguments:
         monkeypatch.setattr(cli_mod, "_is_interactive", lambda: False)
         monkeypatch.setattr("bogle.tui.run_tui", unexpected)
         result = CliRunner().invoke(app, [])
-        assert result.exit_code == 0
+        # Status 2 e o mesmo de antes da TUI (quando `no_args_is_help` cuidava
+        # disso): "nenhum comando" nao e sucesso, e scripts podem checar isso.
+        assert result.exit_code == 2
         assert "position" in result.output  # o help lista os comandos
 
     def test_help_flag_never_opens_the_tui(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,14 +87,14 @@ class TestEndToEnd:
 
     def test_bogle_without_arguments_prints_the_help(self) -> None:
         result = run_cli()
-        assert result.returncode == 0
+        assert result.returncode == 2  # convencao do click para "sem comando"
         assert "position" in result.stdout
         assert "Traceback" not in result.stderr
 
     def test_bo_is_the_same_entry_point(self) -> None:
         assert BO_BIN.exists(), "instale o pacote (uv pip install -e .) para criar o alias `bo`"
         result = self._run_bo()
-        assert result.returncode == 0
+        assert result.returncode == 2
         assert "position" in result.stdout
 
     def test_bo_accepts_subcommands(self) -> None:
