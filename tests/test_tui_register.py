@@ -525,6 +525,41 @@ class TestKeyboard:
             assert isinstance(app.screen, ConfirmModal)
 
     @pytest.mark.asyncio
+    async def test_a_second_submit_during_the_write_does_not_record_twice(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # O worker e exclusivo, mas uma thread ja em voo termina o que comecou:
+        # sem o guard, o segundo ctrl+s abria outro modal e gravava de novo.
+        release = threading.Event()
+        calls: list[Any] = []
+
+        def slow(**kwargs: Any) -> Any:
+            calls.append(kwargs)
+            release.wait(timeout=5)
+            return make_transaction(TransactionType.BUY, **kwargs)
+
+        monkeypatch.setattr(services, "record_buy", slow)
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, TradeFormScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
+            fill(screen, ticker="PETR4", shares="1", price="30")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            await pilot.press("enter")  # confirma; a gravacao fica pendente
+            await pilot.pause()
+            assert screen.writing
+
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert not isinstance(app.screen, ConfirmModal)  # nenhum segundo modal
+            release.set()
+            await settle(pilot)
+            assert len(calls) == 1
+            assert toasts.severity_of("gravando o lancamento") == "warning"
+
+    @pytest.mark.asyncio
     async def test_escape_waits_while_the_entry_is_being_written(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Sair no meio da gravacao deixaria a transacao escrita sem confirmacao
         # na tela (o worker morre com a tela) e convidaria a lancar de novo.

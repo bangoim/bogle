@@ -1,9 +1,15 @@
 """Shared parsers for user input, in both frontends.
 
-Format-only validation lives here; range/coherence rules belong to the
-domain validators and repositories, which already aggregate friendly
-errors. The TUI's forms reuse these so a value the CLI accepts is a value
-the forms accept (and the other way around).
+Reading a value the user typed lives here, and so do the ranges that belong to
+the *value itself* — a target weight is a fraction in ``(0, 1]``, a contracted
+rate is positive and bounded by its column. Coherence between fields (which
+metadata a type requires, whether a ticker exists) belongs to the domain
+validators and repositories, which aggregate friendly errors.
+
+Every rule takes the field's name as an argument, so the message names what the
+user was filling: ``--weight`` from the command, ``Peso-alvo`` from the form. The
+TUI's forms reuse these, so a value the CLI accepts is a value the forms accept —
+and the other way around.
 """
 
 from __future__ import annotations

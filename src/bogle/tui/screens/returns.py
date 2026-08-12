@@ -85,11 +85,13 @@ class ReturnsScreen(DataScreen[ReturnsReport]):
 
         table = self.query_one(DataTable)
         table.clear(columns=True)  # o numero de colunas depende dos indices
+        # Rotulos como Text, e nao str: o textual leria markup numa string, e o
+        # nome do indice vem do que o usuario digitou — "[/]" derrubaria a app.
         table.add_columns(
-            "Periodo",
-            "Janela",
-            "Carteira (TWR)",
-            *chain.from_iterable((index, f"vs {index}") for index in indices),
+            Text("Periodo"),
+            Text("Janela"),
+            Text("Carteira (TWR)"),
+            *chain.from_iterable((Text(index), Text(f"vs {index}")) for index in indices),
         )
         for row in report.rows:
             table.add_row(

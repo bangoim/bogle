@@ -82,6 +82,12 @@ class WriteScreen[T](Screen[None]):
     # --- fluxo ----------------------------------------------------------
 
     def action_submit(self) -> None:
+        if self.writing:
+            # Sem isso, um segundo ctrl+s (ou Enter) durante a escrita abre outro
+            # modal e grava o mesmo lancamento duas vezes: o worker exclusivo
+            # cancela o primeiro, mas uma thread ja em voo termina o que comecou.
+            self.notify(self.WRITING_MESSAGE, severity="warning")
+            return
         entry = self.collect()
         if entry is None:
             return

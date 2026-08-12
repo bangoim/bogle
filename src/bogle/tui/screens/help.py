@@ -77,6 +77,9 @@ class HelpModal(ModalScreen[None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "dismiss_help", "Fechar"),
+        # As duas teclas que abrem tambem fecham. Precisam estar aqui: um
+        # ModalScreen nao deixa a tecla chegar ao binding da App.
+        Binding("f1", "dismiss_help", "Fechar", show=False),
         Binding("question_mark", "dismiss_help", "Fechar", show=False),
     ]
 
@@ -88,7 +91,12 @@ class HelpModal(ModalScreen[None]):
     @override
     def compose(self) -> ComposeResult:
         with Vertical(id="help"):
-            yield Label(f"Atalhos - {self.subject}" if self.subject else "Atalhos desta tela", id="help-title")
+            # markup=False: o subtitulo pode citar um ticker ("atualizar TES[/]").
+            yield Label(
+                f"Atalhos - {self.subject}" if self.subject else "Atalhos desta tela",
+                id="help-title",
+                markup=False,
+            )
             with VerticalScroll(id="help-keys"):
                 yield Static(_table(self.shortcuts), id="help-table")
             yield Static(_FOOTER, id="help-footer")

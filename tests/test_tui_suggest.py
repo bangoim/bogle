@@ -161,6 +161,20 @@ class TestSplit:
 
 class TestHiddenAmounts:
     @pytest.mark.asyncio
+    async def test_h_also_takes_the_amount_out_of_the_header(self, spy: SuggestSpy) -> None:
+        # O subtitulo carrega o valor do aporte: mascarar a tabela e deixa-lo no
+        # cabecalho esconderia o aporte no lugar menos visivel da tela.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            assert screen.sub_title == "aporte - 1,500.00"
+            screen.query_one(DataTable).focus()
+            await pilot.press("h")
+            await pilot.pause()
+            assert screen.sub_title == f"aporte - {MASK}"
+
+    @pytest.mark.asyncio
     async def test_h_masks_the_amounts_but_keeps_the_weights(self, spy: SuggestSpy) -> None:
         app = make_app()
         async with app.run_test() as pilot:

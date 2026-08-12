@@ -17,6 +17,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import ClassVar, override
 
+from rich.markup import escape
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
@@ -199,7 +200,7 @@ class AssetFormScreen(WriteScreen[Asset]):
                 "Peso-alvo",
                 id="weight",
                 placeholder=_WEIGHT_HINT,
-                validators=[DecimalField("Peso-alvo", positive=True, parse=parse_weight)],
+                validators=[DecimalField("Peso-alvo", parse=parse_weight)],
             )
             yield Field("Emissor", id="issuer", placeholder="banco/emissor", validators=[TextField("Emissor")])
             yield ControlRow("Prefixado", Checkbox(id="prefixed", compact=True), id="prefixed-row")
@@ -218,7 +219,7 @@ class AssetFormScreen(WriteScreen[Asset]):
                 "Taxa",
                 id="rate",
                 placeholder=_RATE_HINT,
-                validators=[DecimalField("Taxa", positive=True, parse=parse_rate)],
+                validators=[DecimalField("Taxa", parse=parse_rate)],
             )
             yield ControlRow("Liquidez diaria", Checkbox(id="daily-liquidity", compact=True), id="liquidity-row")
             yield Field(
@@ -275,7 +276,7 @@ class AssetFormScreen(WriteScreen[Asset]):
         self.query_one("#liquidity-row").display = private
 
         self._applies("issuer", private, [TextField("Emissor")])
-        self._applies("rate", fixed, [DecimalField("Taxa", positive=True, parse=parse_rate)], placeholder=_RATE_HINT)
+        self._applies("rate", fixed, [DecimalField("Taxa", parse=parse_rate)], placeholder=_RATE_HINT)
         self._applies("purchase-date", fixed, [DateField("Data de compra")], placeholder="YYYY-MM-DD")
         self._applies(
             "maturity-date",
@@ -372,7 +373,7 @@ class AssetUpdateScreen(WriteScreen[Asset]):
                 id="weight",
                 value=_weight_text(self.asset.target_weight),
                 placeholder=_WEIGHT_HINT,
-                validators=[DecimalField("Peso-alvo", positive=True, parse=parse_weight)],
+                validators=[DecimalField("Peso-alvo", parse=parse_weight)],
             )
             yield ControlRow(
                 "Tipo",
@@ -393,7 +394,8 @@ class AssetUpdateScreen(WriteScreen[Asset]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#asset-form").border_title = f"Ativo {self.asset.ticker}"
+        # escape: o titulo da borda e lido como markup, e o ticker vem do usuario.
+        self.query_one("#asset-form").border_title = f"Ativo {escape(self.asset.ticker)}"
         if not self.switchable:
             self.query_one("#update-note", Static).update(
                 Text.from_markup(

@@ -41,10 +41,6 @@ class IndicesInput(Horizontal):
     def input(self) -> Input:
         return self.query_one(Input)
 
-    @property
-    def indices(self) -> tuple[str, ...]:
-        return parse_indices(self.input.value)
-
     def show(self, indices: Sequence[str]) -> None:
         """Display the indices in use, without asking for a reload."""
         self.input.value = ",".join(indices)

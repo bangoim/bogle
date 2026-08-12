@@ -88,7 +88,7 @@ class HistoryScreen(PeriodScreen[HistoryReport]):
         previous: Decimal | None = None
         for point in report.points:
             delta = point.value - previous if previous is not None else None
-            percent = delta / previous if delta is not None and previous else None
+            percent = delta / previous if delta is not None and previous and previous > 0 else None
             table.add_row(
                 cells.text(point.date.isoformat()),
                 cells.money(point.value),

@@ -78,10 +78,11 @@ class HomeScreen(MenuScreen):
     def __init__(self) -> None:
         super().__init__()
         self.overview: PortfolioOverview | None = None
-        """Last loaded summary; ``None`` until the worker finishes."""
+        """Last loaded summary; ``None`` until the worker finishes (or after a failure)."""
         self.note = ""
         """Plain text of the note under the metrics (read by the tests)."""
-        self._loaded = False
+        self._may_be_stale = False
+        """True once a screen that can write has been opened from the menu."""
 
     @override
     def compose(self) -> ComposeResult:
@@ -110,12 +111,19 @@ class HomeScreen(MenuScreen):
             self._show_overview(self.overview)
 
     def on_screen_resume(self) -> None:
-        # Voltando de outra tela (um lancamento novo, por exemplo) o resumo pode
-        # estar velho. Enquanto a primeira carga nao terminou, ela ja cobre isso.
-        if self._loaded:
+        # Voltando de uma tela do menu (um lancamento novo, por exemplo) o resumo
+        # pode estar velho. A ajuda tambem suspende a Home, mas nao escreve nada:
+        # recarregar por causa dela custaria um recalculo D-1 inteiro por consulta.
+        if self._may_be_stale:
+            self._may_be_stale = False
             self.action_reload()
 
     # --- navegacao ------------------------------------------------------
+
+    @override
+    def action_open(self, item_id: str) -> None:
+        self._may_be_stale = True
+        super().action_open(item_id)
 
     def action_reload(self) -> None:
         for metric in self.query(Metric):
@@ -148,7 +156,6 @@ class HomeScreen(MenuScreen):
 
     def _show_overview(self, overview: PortfolioOverview) -> None:
         self.overview = overview
-        self._loaded = True
         self.query_one("#summary").border_title = f"Carteira - fechamento de {overview.as_of.isoformat()}"
         # Com ticker excluido o numero e um subconjunto da carteira: o rotulo diz
         # isso, em vez de deixar so a nota explicando um "total" que nao e total.
@@ -163,7 +170,6 @@ class HomeScreen(MenuScreen):
         self._show_note(_note_for(overview))
 
     def _show_failure(self, message: str) -> None:
-        self._loaded = True
         # Sem resumo guardado: um redraw (o toggle de privacidade) nao pode
         # ressuscitar numeros que a tela acabou de dizer que nao tem.
         self.overview = None

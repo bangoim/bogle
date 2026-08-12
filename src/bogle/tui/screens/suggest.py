@@ -73,7 +73,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
         if field.check() is not None:
             return
         self.amount = parse_decimal(field.value, "Valor do aporte")
-        self.sub_title = f"aporte - {fmt.money(self.amount)}"
+        self.sub_title = _subtitle(self.amount)
         self.fetch()
 
     # --- carga ----------------------------------------------------------
@@ -99,6 +99,10 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
 
     @override
     def render_report(self, report: AporteSuggestion) -> None:
+        # O subtitulo tambem carrega um valor, entao ele e refeito no redraw: sem
+        # isso, ligar a privacidade mascarava a tabela e deixava o aporte no
+        # cabecalho, que e onde ele estava mais visivel.
+        self.sub_title = _subtitle(report.amount)
         table = self.query_one(DataTable)
         table.clear()  # mantem as colunas
         for item in report.items:
@@ -128,6 +132,10 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
         rendered = Text.from_markup(markup)
         self.totals = rendered.plain
         self.query_one("#suggest-totals", Static).update(rendered)
+
+
+def _subtitle(amount: Decimal) -> str:
+    return f"aporte - {fmt.money(amount)}"
 
 
 def _note_for(report: AporteSuggestion) -> str:

@@ -179,6 +179,21 @@ class TestIndices:
             assert table_columns(screen) == ["Periodo", "Janela", "Carteira (TWR)"]
 
     @pytest.mark.asyncio
+    async def test_an_index_name_is_not_read_as_markup(self, spy: ReturnsSpy) -> None:
+        # O nome vira rotulo de coluna, e o textual le markup numa string: "[/]"
+        # digitado no campo derrubava a app de dentro do worker.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, ReturnsScreen())
+            field = screen.query_one(IndicesInput)
+            field.input.value = "[/]"
+            field.input.focus()
+            await pilot.press("enter")
+            await settle(pilot)
+            assert app.is_running
+            assert table_columns(screen)[3:] == ["[/]", "vs [/]"]
+
+    @pytest.mark.asyncio
     async def test_a_refresh_does_not_undo_what_the_user_typed(self, spy: ReturnsSpy) -> None:
         # O campo e preenchido uma unica vez, com o default; depois disso ele e do
         # usuario, e recarregar nao pode apagar o que ele digitou.

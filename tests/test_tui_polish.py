@@ -10,6 +10,7 @@ mid-word) and a screen that cannot render at that size at all.
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from textual.widgets import Checkbox, Footer, Select, Static
 
 from bogle.domain.assets import AssetType
 from bogle.domain.transactions import TransactionType
+from bogle.tui import services
 from bogle.tui.screens.assets import AssetFormScreen, AssetsScreen, AssetUpdateScreen
 from bogle.tui.screens.compare import CompareScreen
 from bogle.tui.screens.config import ConfigScreen
@@ -37,7 +39,7 @@ from bogle.tui.screens.status import StatusScreen
 from bogle.tui.screens.suggest import SuggestScreen
 from bogle.tui.screens.transactions import TransactionsScreen
 from bogle.tui.widgets.menu import Menu
-from tests.tui_fakes import make_app, make_assets, open_screen, settle, stub_services
+from tests.tui_fakes import make_app, make_asset, make_assets, make_overview, open_screen, settle, stub_services
 
 NARROW = (80, 24)
 """The size the plan committed to: the position table has eleven columns."""
@@ -269,3 +271,77 @@ class TestFormLayout:
             screen.query_one("#asset-type", Select).value = AssetType.CDB
             await pilot.pause()
             assert screen.query_one("#prefixed", Checkbox).size.width >= 4
+
+
+class TestHelpDoesNotDisturb:
+    @pytest.mark.asyncio
+    async def test_f1_closes_it_too(self) -> None:
+        # Um ModalScreen nao deixa a tecla chegar ao binding da App, entao o `f1`
+        # que abre precisa estar declarado na propria ajuda para fechar.
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_screen(pilot, StatusScreen())
+            await pilot.press("f1")
+            await settle(pilot)
+            assert isinstance(app.screen, HelpModal)
+            await pilot.press("f1")
+            await settle(pilot)
+            assert isinstance(app.screen, StatusScreen)
+
+    @pytest.mark.asyncio
+    async def test_consulting_it_on_the_home_does_not_recompute_the_summary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A Home recarrega ao voltar de uma tela do menu (que pode ter gravado).
+        # A ajuda nao grava nada, e um recalculo D-1 por consulta e caro.
+        loads = {"n": 0}
+
+        def load(**_: Any) -> Any:
+            loads["n"] += 1
+            return make_overview()
+
+        monkeypatch.setattr(services, "load_overview", load)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert loads["n"] == 1
+            await pilot.press("f1")
+            await settle(pilot)
+            await pilot.press("escape")
+            await settle(pilot)
+            assert loads["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_coming_back_from_a_menu_screen_still_refreshes_the_summary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        loads = {"n": 0}
+
+        def load(**_: Any) -> Any:
+            loads["n"] += 1
+            return make_overview()
+
+        monkeypatch.setattr(services, "load_overview", load)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("2")  # Registrar: pode gravar
+            await settle(pilot)
+            await pilot.press("escape")
+            await settle(pilot)
+            assert loads["n"] == 2
+
+    @pytest.mark.asyncio
+    async def test_a_ticker_with_markup_does_not_break_the_form_or_its_help(self) -> None:
+        # O ticker vem do usuario e aparece no titulo da borda e no da ajuda, que
+        # sao lidos como markup: "TES[/]2035" derrubava a app no mount.
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            asset = make_asset(ticker="TES[/]2035", target_weight=Decimal("0.1"))
+            await open_screen(pilot, AssetUpdateScreen(asset))
+            assert app.is_running
+            await pilot.press("f1")
+            await settle(pilot)
+            assert isinstance(app.screen, HelpModal)
+            assert app.is_running
