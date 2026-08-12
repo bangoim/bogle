@@ -164,8 +164,38 @@ Input:ansi.field-input.-invalid {
 
 /* -------------------------------------------------------------- Modais */
 
-ConfirmModal, NextStepModal, EditModal {
+ConfirmModal, NextStepModal, EditModal, HelpModal {
     align: center middle;
+}
+
+/* Largura fixa (e nao `auto`): com `auto` o dialogo acompanha a linha mais
+   larga, e a nota do rodape ficava cortada em 80 colunas. */
+#help {
+    width: 58;
+    max-width: 100%;
+    height: auto;
+    max-height: 80%;
+    padding: 1 2;
+    background: $surface;
+    border: round $accent;
+}
+
+#help-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* Metade da altura, nao um numero fixo: a lista mais longa (a da Home, com oito
+   itens de menu) cabe em 24 linhas sem empurrar o rodape para fora, e num
+   terminal alto ela cresce em vez de rolar sem motivo. */
+#help-keys {
+    height: auto;
+    max-height: 50%;
+}
+
+#help-footer {
+    color: $text-muted;
+    margin-top: 1;
 }
 
 #dialog {
@@ -348,6 +378,15 @@ ConfirmModal, NextStepModal, EditModal {
 
 #dialog-input {
     margin-top: 1;
+}
+
+/* -------------------------------------------------------------- Footer */
+
+/* O footer nao gasta doze colunas anunciando a paleta de comandos: ela continua
+   no ctrl+p e aparece na ajuda (`?`). Em 80 colunas, essas colunas sao a
+   diferenca entre mostrar "h Valores" e cortar no meio da palavra. */
+Footer FooterKey.-command-palette {
+    display: none;
 }
 
 /* ------------------------------------------------------------------ Toasts */

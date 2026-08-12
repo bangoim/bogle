@@ -118,6 +118,11 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
             f"   [dim]Sobra (caixa)[/dim] {fmt.money(report.leftover)}"
         )
         self.show_note(_note_for(report))
+        # Com a sugestao na tela o campo ja cumpriu o seu papel, e enquanto um
+        # Input tem foco o textual desativa os atalhos de uma letra (r, h, ?).
+        # So aqui, e nao no submit: um widget em estado de carga nao aceita foco.
+        if self.focused is self.query_one("#amount", Field).input:
+            table.focus()
 
     def _show_totals(self, markup: str) -> None:
         rendered = Text.from_markup(markup)

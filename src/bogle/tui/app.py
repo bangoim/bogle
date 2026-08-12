@@ -24,6 +24,7 @@ from bogle.settings import DECIMAL_SEPARATOR, DEFAULT_THEME, HIDE_VALUES, THEME
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.config import ConfigScreen
+from bogle.tui.screens.help import HelpModal, shortcuts_of
 from bogle.tui.screens.home import HomeScreen
 
 
@@ -42,6 +43,11 @@ class BogleApp(App[None]):
     SUB_TITLE = "rebalanceamento passivo"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("h", "toggle_amounts", "Valores", tooltip="Ocultar ou mostrar os valores"),
+        # `f1` e o atalho anunciado porque funciona em qualquer tela: enquanto um
+        # Input tem foco, ele consome as teclas imprimiveis, e o `?` viraria texto
+        # digitado no campo. O `?` fica como apelido, para quem tenta o obvio.
+        Binding("f1", "help", "Ajuda", tooltip="Atalhos desta tela"),
+        Binding("question_mark", "help", "Ajuda", tooltip="Atalhos desta tela", show=False),
     ]
 
     def __init__(self, *, theme: str = DEFAULT_THEME) -> None:
@@ -74,6 +80,20 @@ class BogleApp(App[None]):
             severity="warning",
             markup=False,
         )
+
+    # --- ajuda ----------------------------------------------------------
+
+    def action_help(self) -> None:
+        """Show (or dismiss) the shortcuts of the screen underneath."""
+        screen = self.screen
+        if isinstance(screen, HelpModal):
+            screen.dismiss()
+            return
+        # A Home nao define subtitulo proprio: nela `sub_title` vem vazio ou cai no
+        # da App, que nomeia o programa, nao a tela.
+        own = bool(screen.sub_title) and screen.sub_title != self.sub_title
+        subject = str(screen.sub_title) if own else ""
+        self.push_screen(HelpModal(shortcuts_of(screen), subject=subject))
 
     # --- preferencias que a interface muda por dentro --------------------
 
