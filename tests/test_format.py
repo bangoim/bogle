@@ -25,6 +25,7 @@ from bogle.format import (
     hide_amounts,
     money,
     pct,
+    points,
     separators,
     separators_for,
     sign_color,
@@ -105,6 +106,22 @@ class TestPercent:
     def test_none_is_dash(self) -> None:
         assert pct(None) == DASH
         assert signed_pct(None) == DASH
+
+
+class TestPoints:
+    def test_a_difference_between_returns_is_measured_in_points(self) -> None:
+        # 18.4% de carteira contra 11% do indice: 7.4 p.p. de vantagem. Chamar
+        # isso de "7.4%" seria outra afirmacao, e muito menor.
+        assert points(Decimal("0.184") - Decimal("0.11")) == "+7.40 p.p."
+        assert points(Decimal("-0.021")) == "-2.10 p.p."
+
+    def test_follows_the_decimal_separator_without_touching_the_unit(self, comma: None) -> None:
+        # O "p.p." tem pontos que nao sao separador: localizar a string inteira
+        # viraria "p,p,".
+        assert points(Decimal("0.074")) == "+7,40 p.p."
+
+    def test_none_is_dash(self) -> None:
+        assert points(None) == DASH
 
 
 class TestExact:

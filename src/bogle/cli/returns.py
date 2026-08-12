@@ -10,7 +10,7 @@ from rich.console import Console
 from bogle import settings as settings_mod
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
-from bogle.format import sign_color, signed_pct
+from bogle.format import points, sign_color, signed_pct
 from bogle.reports.periods import parse_period
 from bogle.reports.returns import DEFAULT_PERIODS, PeriodReturn, ReturnsReport, compute_returns
 
@@ -38,11 +38,11 @@ def _render(report: ReturnsReport, indices: tuple[str, ...], console: Console) -
             if row.twr is None or index_return is None:
                 console.print(f"  {_LABELS[row.period]}: -")
                 continue
-            diff = (row.twr - index_return) * 100
+            diff = row.twr - index_return
             color = sign_color(diff)
             console.print(
                 f"  {_LABELS[row.period]}: {signed_pct(row.twr)} carteira / {signed_pct(index_return)} {index}"
-                f"  -> [{color}]{diff:+.2f} p.p.[/{color}]"
+                f"  -> [{color}]{points(diff)}[/{color}]"
             )
 
     if report.excluded:

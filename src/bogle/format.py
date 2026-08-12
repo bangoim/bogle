@@ -130,6 +130,17 @@ def signed_pct(value: Decimal | None) -> str:
     return _localized(f"{value * 100:+.2f}%") if value is not None else DASH
 
 
+def points(value: Decimal | None) -> str:
+    """A difference between two returns, in percentage points: ``0.074`` -> ``"+7.40 p.p."``.
+
+    The difference between two percentages is measured in points, not in percent:
+    a portfolio 7.4 p.p. ahead of the CDI is not "7.4% ahead of it", which would
+    be a different (and much smaller) claim. Only the number is localized — the
+    dots in "p.p." are not separators.
+    """
+    return f"{_localized(f'{value * 100:+.2f}')} p.p." if value is not None else DASH
+
+
 def exact(value: Decimal | None) -> str:
     """Every digit that matters, no more: ``10.00000000`` -> ``"10"``, ``0E+4`` -> ``"0"``.
 
