@@ -35,17 +35,16 @@ LOGO = r"""
 █▄█ ▀▄▀ ▀▄█ █▄▄ ▀▄▄
 """.strip("\n")
 
-MENU_ITEMS = (
-    MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"),
-    MenuItem("2", "register", "Registrar", "compra, venda ou provento"),
-    MenuItem("3", "transactions", "Transacoes", "listar e remover lancamentos"),
+# Um item de menu e a tela que ele abre andam juntos, entao a lista e uma so:
+# nao existe id de menu sem tela (nem o contrario) para sair de sincronia.
+_ENTRIES: tuple[tuple[MenuItem, Callable[[], Screen[None]]], ...] = (
+    (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"), PositionScreen),
+    (MenuItem("2", "register", "Registrar", "compra, venda ou provento"), RegisterScreen),
+    (MenuItem("3", "transactions", "Transacoes", "listar e remover lancamentos"), TransactionsScreen),
 )
 
-_SCREENS: dict[str, Callable[[], Screen[None]]] = {
-    "position": PositionScreen,
-    "register": RegisterScreen,
-    "transactions": TransactionsScreen,
-}
+MENU_ITEMS = tuple(item for item, _ in _ENTRIES)
+_SCREENS = {item.id: factory for item, factory in _ENTRIES}
 
 _TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
 
@@ -95,11 +94,7 @@ class HomeScreen(Screen[None]):
     # --- navegacao ------------------------------------------------------
 
     def action_open(self, item_id: str) -> None:
-        factory = _SCREENS.get(item_id)
-        if factory is None:  # item previsto para uma fase seguinte do epico 13
-            self.notify("Ainda nao implementado.", severity="warning")
-            return
-        self.app.push_screen(factory())
+        self.app.push_screen(_SCREENS[item_id]())
 
     def on_option_list_option_selected(self, event: Menu.OptionSelected) -> None:
         if event.option.id is not None:

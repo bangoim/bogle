@@ -15,6 +15,7 @@ from bogle.domain.errors import MarketDataError
 from bogle.tui import services
 from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.position import PositionScreen
+from bogle.tui.screens.register import RegisterScreen
 from bogle.tui.widgets.menu import Menu
 from bogle.tui.widgets.metric import PLACEHOLDER, Metric
 from tests.tui_fakes import (
@@ -146,6 +147,16 @@ class TestNavigation:
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, PositionScreen)
+
+    @pytest.mark.asyncio
+    async def test_arrows_move_the_highlight(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("down", "enter")  # segundo item: Registrar
+            await settle(pilot)
+            assert isinstance(app.screen, RegisterScreen)
 
     @pytest.mark.asyncio
     async def test_q_quits(self, monkeypatch: pytest.MonkeyPatch) -> None:
