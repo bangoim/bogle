@@ -15,23 +15,20 @@ from decimal import Decimal
 import pytest
 
 from bogle.format import (
-    AMBIGUOUS,
     CANONICAL_DECIMAL,
     DASH,
-    MISPLACED,
     configure,
     exact,
     exact_or_none,
     money,
     pct,
-    read_number,
-    sample,
     separators,
     separators_for,
     sign_color,
     signed,
     signed_money,
     signed_pct,
+    to_canonical,
 )
 
 
@@ -49,11 +46,11 @@ class TestSeparators:
 
     def test_default_is_canonical(self) -> None:
         assert separators().is_canonical
-        assert sample() == "1,234.56"
+        assert money(Decimal("1234.56")) == "1,234.56"
 
     def test_configure_switches_the_pair(self, comma: None) -> None:
         assert not separators().is_canonical
-        assert sample() == "1.234,56"
+        assert money(Decimal("1234.56")) == "1.234,56"
 
 
 class TestMoney:
@@ -153,77 +150,44 @@ class TestSigned:
         assert signed(None, percent=False) == DASH
 
 
-class TestReadNumber:
-    """What the user is allowed to type; a refusal always says why."""
+class TestToCanonical:
+    """Input takes one separator, always the cents; thousands go bare."""
 
     @pytest.mark.parametrize(
         ("typed", "expected"),
         [
-            ("126.25", "126.25"),  # canonico
-            ("1,234.50", "1234.50"),  # milhar configurado
-            ("1,234,567.89", "1234567.89"),
             ("1000", "1000"),
-            ("-2.5", "-2.5"),
-            ("+1,000", "+1000"),
-            (" 126.25 ", "126.25"),  # espacos ao redor
+            ("1000,00", "1000.00"),
+            ("1000.00", "1000.00"),
+            ("10000,00", "10000.00"),
+            ("150000,75", "150000.75"),
+            ("150000.75", "150000.75"),
+            ("0,75", "0.75"),
+            ("0.75", "0.75"),
+            ("-2,5", "-2.5"),
+            ("+1000,50", "+1000.50"),
+            (" 126,25 ", "126.25"),  # espacos ao redor
             ("1e3", "1e3"),  # notacao cientifica segue chegando ao Decimal
             ("abc", "abc"),  # lixo tambem: o erro e do Decimal
         ],
     )
-    def test_dot_decimal(self, typed: str, expected: str) -> None:
-        assert read_number(typed).canonical == expected
+    def test_one_separator_is_always_the_cents(self, typed: str, expected: str) -> None:
+        assert to_canonical(typed) == expected
 
-    @pytest.mark.parametrize("typed", ["126,25", "1,2,3", "1,23", "1,2345", "0,750", "0,75"])
-    def test_dot_decimal_rejects_a_misplaced_comma(self, typed: str) -> None:
-        # Com decimal ponto, a virgula so pode agrupar milhar — e nao esta.
-        reading = read_number(typed)
-        assert reading.canonical is None
-        assert reading.reason == MISPLACED
+    @pytest.mark.parametrize("typed", ["1.000,00", "1,000.00", "1.000.000", "150.000,75", "1,2,3", "0,7,5"])
+    def test_a_second_separator_is_refused(self, typed: str) -> None:
+        # Aceitar milhar e o que criaria ambiguidade: `1.000` seria mil para quem
+        # le a tela agrupada e um para quem segue os exemplos canonicos.
+        assert to_canonical(typed) is None
 
-    def test_dot_decimal_has_no_ambiguity(self) -> None:
-        # `1.000` so pode ser um decimal aqui: o milhar seria `1,000`.
-        assert read_number("1.000").canonical == "1.000"
-        assert read_number("1,000").canonical == "1000"
+    def test_input_ignores_the_display_setting(self, comma: None) -> None:
+        # A exibicao muda; a entrada continua aceitando os dois separadores.
+        assert to_canonical("1000.75") == "1000.75"
+        assert to_canonical("1000,75") == "1000.75"
+        assert to_canonical("1.000,75") is None
 
-    @pytest.mark.parametrize(
-        ("typed", "expected"),
-        [
-            ("126,25", "126.25"),  # decimal configurado
-            ("1.234,50", "1234.50"),  # milhar configurado
-            ("1.234.567", "1234567"),
-            ("126.25", "126.25"),  # canonico continua valendo
-            ("-2,5", "-2.5"),
-            ("1000", "1000"),
-        ],
-    )
-    def test_comma_decimal(self, comma: None, typed: str, expected: str) -> None:
-        assert read_number(typed).canonical == expected
-
-    @pytest.mark.parametrize("typed", ["1,2,3", "1.23.456"])
-    def test_comma_decimal_rejects_a_misplaced_separator(self, comma: None, typed: str) -> None:
-        reading = read_number(typed)
-        assert reading.canonical is None
-        assert reading.reason == MISPLACED
-
-    def test_a_grouping_never_opens_with_a_zero(self, comma: None) -> None:
-        # `0.750` nao tem duas leituras: nenhuma convencao escreve 750 assim,
-        # entao o ponto so pode ser decimal. E com decimal ponto, `0,750` nao
-        # pode virar 750 caladamente — a diferenca e de mil vezes.
-        assert read_number("0.750").canonical == "0.750"
-        configure(".")
-        assert read_number("0,750").canonical is None
-        assert read_number("0,750").reason == MISPLACED
-
-    @pytest.mark.parametrize("typed", ["1.000", "12.500", "-1.000", "123.000"])
-    def test_comma_decimal_refuses_to_guess_thousand_versus_one(self, comma: None, typed: str) -> None:
-        # As duas leituras diferem por mil: melhor recusar do que chutar.
-        reading = read_number(typed)
-        assert reading.canonical is None
-        assert reading.reason == AMBIGUOUS
-
-    @pytest.mark.parametrize(
-        ("typed", "expected"),
-        [("1.000,00", "1000.00"), ("1000", "1000"), ("1.0000", "1.0000"), ("1.00", "1.00")],
-    )
-    def test_comma_decimal_keeps_the_unambiguous_neighbours(self, comma: None, typed: str, expected: str) -> None:
-        assert read_number(typed).canonical == expected
+    def test_a_lone_separator_with_three_digits_is_cents_not_thousands(self) -> None:
+        # `1.000` vale um (mil se escreve `1000`): a regra e sempre a mesma, sem
+        # excecao por quantidade de digitos.
+        assert to_canonical("1.000") == "1.000"
+        assert to_canonical("1,000") == "1.000"

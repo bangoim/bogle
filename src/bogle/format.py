@@ -14,11 +14,15 @@ Two conventions worth knowing:
   both frontends render — Rich tables directly, Textual through
   :meth:`~rich.text.Text.from_markup`.
 
-**Separators.** ``decimal_separator`` (see :mod:`bogle.settings`) picks which
+**Display.** ``decimal_separator`` (see :mod:`bogle.settings`) picks which
 character separates the decimals; the other one groups the thousands. Money and
 quantities are grouped, percentages are not — a weight or a return never needs
 it. Each frontend calls :func:`configure` once at startup; the default is the
 canonical ``1,234.56``.
+
+**Input** is deliberately narrower and does not follow the setting: one
+separator, always the cents (``,`` or ``.``), and thousands with no separator at
+all. See :func:`to_canonical`.
 
 The machine-readable path never goes through the localized helpers:
 :func:`exact_or_none` (used by ``--json``) always emits a canonical decimal.
@@ -67,11 +71,6 @@ def configure(decimal_separator: str) -> None:
 
 def separators() -> Separators:
     return _SEPARATORS
-
-
-def sample() -> str:
-    """``1,234.56`` in the configured format — for error messages."""
-    return _localized("1,234.56")
 
 
 def _localized(canonical: str) -> str:
@@ -132,34 +131,21 @@ def signed(value: Decimal | None, *, percent: bool) -> str:
 
 # ------------------------------------------------------------------ entrada
 
-MISPLACED = "misplaced"
-"""A thousands mark outside a group of three."""
-AMBIGUOUS = "ambiguous"
-"""A dot that could be either the decimal point or a thousands mark."""
 
-
-@dataclass(frozen=True, slots=True)
-class Reading:
-    """A typed number in canonical form, or why it could not be read."""
-
-    canonical: str | None
-    reason: str = ""
-
-
-def read_number(value: str) -> Reading:
+def to_canonical(value: str) -> str | None:
     """Rewrite a number the user typed the way ``Decimal`` accepts it.
 
-    Accepts the configured separators, including thousands in groups of three,
-    and always the canonical dot decimal — every example in the README and in
-    ``--help`` uses it, and it is what the tests and scripts type.
+    Input takes **one** separator, and it always marks the cents — ``,`` or ``.``,
+    whichever the user prefers, independent of what the display is configured to
+    do. Thousands are written without any separator at all: ``150000,75``, not
+    ``150.000,75``.
 
-    Refuses instead of guessing when a string has more than one reading, because
-    the two readings differ by a factor of a thousand:
-
-    - ``126,25`` under a dot decimal is :data:`MISPLACED` — there the comma can
-      only group thousands, and 25 is not a group of three;
-    - ``1.000`` under a comma decimal is :data:`AMBIGUOUS` — one thousand or one,
-      and no rule can tell. ``1.000,00`` and ``1000`` are both unambiguous.
+    That rule is what makes input unambiguous. Accepting a thousands separator
+    would not: a lone ``1.000`` is one thousand to someone reading the grouped
+    display and one to someone following the canonical examples, and the two
+    readings differ by a factor of a thousand. Refusing anything with a second
+    separator keeps that guess off the table — ``None`` says so, and the caller
+    turns it into a friendly error.
 
     Anything without a separator passes straight through, so scientific notation
     and plain garbage keep reaching ``Decimal`` (and its error message).
@@ -168,42 +154,6 @@ def read_number(value: str) -> Reading:
     sign = ""
     if text[:1] in "+-":
         sign, text = text[0], text[1:]
-    decimal, thousands = _SEPARATORS.decimal, _SEPARATORS.thousands
-
-    if decimal in text:
-        if text.count(decimal) > 1:
-            return Reading(None, MISPLACED)
-        integer, _, fraction = text.rpartition(decimal)
-        if not _grouped(integer, thousands):
-            return Reading(None, MISPLACED)
-        return Reading(f"{sign}{integer.replace(thousands, '')}{CANONICAL_DECIMAL}{fraction}")
-
-    if thousands in text:
-        if thousands == CANONICAL_DECIMAL and text.count(thousands) == 1:
-            _, _, tail = text.partition(thousands)
-            # `1.000` com decimal virgula: milhar ou decimal canonico? As duas
-            # leituras diferem por mil, entao ninguem chuta. Ja `0.750` nao e
-            # ambiguo: nenhum agrupamento comeca com zero, logo e decimal.
-            if _grouped(text, thousands) and len(tail) == 3:
-                return Reading(None, AMBIGUOUS)
-            return Reading(f"{sign}{text}")
-        if not _grouped(text, thousands):
-            return Reading(None, MISPLACED)
-        return Reading(f"{sign}{text.replace(thousands, '')}")
-
-    return Reading(f"{sign}{text}")
-
-
-def _grouped(text: str, thousands: str) -> bool:
-    """True when ``text`` carries no thousands mark, or carries them in threes.
-
-    A grouped number never opens with a zero (``0,750`` is not seven hundred and
-    fifty in any convention), so rejecting that head keeps ``0.750`` readable as
-    a decimal and stops ``0,750`` from silently becoming ``750``.
-    """
-    if thousands not in text:
-        return True
-    head, *groups = text.split(thousands)
-    if not head.isdigit() or len(head) > 3 or head.startswith("0"):
-        return False
-    return all(len(g) == 3 and g.isdigit() for g in groups)
+    if text.count(CANONICAL_DECIMAL) + text.count(",") > 1:
+        return None
+    return f"{sign}{text.replace(',', CANONICAL_DECIMAL)}"

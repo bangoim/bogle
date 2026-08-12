@@ -98,12 +98,20 @@ class TestDecimalSeparator:
         comma = run_cli("transactions")
         assert "3.050" in comma.stdout  # milhar com ponto
 
-    def test_input_accepts_the_configured_format(self) -> None:
+    def test_input_takes_either_separator_for_the_cents(self) -> None:
+        # A entrada nao depende da configuracao: os dois separadores marcam
+        # centavos, e milhar vai sem separador nenhum.
         assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
         assert run_cli("config", "set", "decimal_separator", ",").returncode == 0
-        result = run_cli("buy", "PETR4", "-s", "1", "-p", "1.234,50", "--date", "2026-01-15")
+        result = run_cli("buy", "PETR4", "-s", "1", "-p", "1234,50", "--date", "2026-01-15")
         assert result.returncode == 0
-        assert "custo total: 1.234,5" in result.stdout
+        assert "custo total: 1.234,5" in result.stdout  # exibicao agrupada
+
+    def test_input_rejects_a_thousands_separator(self) -> None:
+        assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
+        result = run_cli("buy", "PETR4", "-s", "1", "-p", "1.234,50", "--date", "2026-01-15")
+        assert result.returncode == 1
+        assert "milhar vai sem separador" in result.stderr
 
     def test_json_output_stays_canonical(self) -> None:
         assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0

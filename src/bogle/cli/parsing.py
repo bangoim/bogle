@@ -21,36 +21,24 @@ def parse_decimal(value: str, option: str) -> Decimal:
     """Parse a decimal the user typed.
 
     The value arrives as a string so we get exact decimal handling instead of
-    going through ``float`` (and its 0.1 + 0.2 surprises). The configured
-    separators are accepted (``1.234,56`` when the decimal is a comma), and so is
-    the canonical dot decimal.
+    going through ``float`` (and its 0.1 + 0.2 surprises). Either separator marks
+    the cents (``1000,50`` and ``1000.50`` are the same number); a thousands
+    separator is rejected, since it is what makes a number ambiguous.
     """
-    reading = fmt.read_number(value)
-    if reading.canonical is None:
-        raise ValidationError(f"{option}: {_separator_problem(value, reading.reason)}")
+    canonical = fmt.to_canonical(value)
+    if canonical is None:
+        raise ValidationError(
+            f"{option}: use um unico separador, para os centavos — milhar vai sem separador. "
+            f"Recebido {value!r}; escreva 1000 ou 1000,00 (o ponto tambem vale)."
+        )
     try:
-        parsed = Decimal(reading.canonical)
+        parsed = Decimal(canonical)
     except InvalidOperation:
         raise ValidationError(f"{option} deve ser um numero decimal, recebido {value!r}.") from None
     # NaN/Infinity parseiam como Decimal mas estouram em comparacoes e no banco.
     if not parsed.is_finite():
         raise ValidationError(f"{option} deve ser um numero decimal, recebido {value!r}.")
     return parsed
-
-
-def _separator_problem(value: str, reason: str) -> str:
-    """Explain a rejected number in terms of the separators in force."""
-    separators = fmt.separators()
-    if reason == fmt.AMBIGUOUS:
-        plain = value.strip().replace(separators.thousands, "")
-        return (
-            f"{value!r} tem duas leituras, porque '{separators.thousands}' pode ser milhar ou decimal. "
-            f"Escreva {plain} para o inteiro, ou {value.strip()}{separators.decimal}00 com os centavos."
-        )
-    return (
-        f"nao consegui ler {value!r} como numero. Com separador decimal '{separators.decimal}', "
-        f"o milhar e '{separators.thousands}' em grupos de tres (ex: {fmt.sample()})."
-    )
 
 
 def parse_date(value: str, option: str) -> datetime:

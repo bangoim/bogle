@@ -395,18 +395,22 @@ bogle config set decimal_separator ,   # 12.772,90   +5,67%
 bogle config set decimal_separator .   # 12,772.90   +5.67%   (default)
 ```
 
-Input follows the same setting, and the canonical dot decimal is always accepted
-(it is what every example here uses):
+**Input is narrower on purpose and does not follow the setting**: one separator,
+always the cents — `,` or `.`, whichever you prefer — and thousands with no
+separator at all.
 
 ```bash
-bogle buy PETR4 --shares 1 --price 1.234,50   # with decimal_separator = ,
-bogle buy PETR4 --shares 1 --price 1234.50    # always valid
+bogle buy PETR4 --shares 1 --price 1234,50    # ok
+bogle buy PETR4 --shares 1 --price 1234.50    # ok, same number
+bogle buy PETR4 --shares 1 --price 1.234,50   # refused: no thousands separator
 ```
 
-A string with two readings is refused instead of guessed — under a comma decimal,
-`1.000` could be a thousand or a one, so `bogle` asks for `1000` or `1.000,00`.
-The difference is a factor of a thousand, which is not a guess worth making on a
-buy order.
+Accepting a thousands separator is what would make a number ambiguous: a lone
+`1.234` is one thousand two hundred and thirty-four to someone reading the
+grouped display, and one point two three four to someone following the examples
+above. The two readings differ by a factor of a thousand, which is not a guess
+worth making on a buy order — so anything with a second separator is refused,
+with the message saying what to type instead.
 
 `--json` output is never localized: it always uses a canonical dot decimal with
 no grouping, so scripts keep parsing it with `Decimal(...)`.

@@ -161,21 +161,21 @@ class TestValidation:
             assert "nao encontrado" in error_of(screen, "ticker")
 
     @pytest.mark.asyncio
-    async def test_accepts_the_configured_number_format(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Com decimal virgula, o formulario le o que a tela mostra (1.234,50) —
-        # e o formato canonico continua valendo.
+    async def test_either_separator_marks_the_cents(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A entrada nao segue a configuracao de exibicao: virgula e ponto valem
+        # os dois, e o milhar vai sem separador.
         spy = RecordSpy(TransactionType.BUY)
         monkeypatch.setattr(services, "record_buy", spy)
         fmt.configure(",")
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
-            fill(screen, ticker="PETR4", shares="1.000,5", price="1.234,50", fees="0,13")
+            fill(screen, ticker="PETR4", shares="1000,5", price="1234.50", fees="0,13")
             await pilot.press("ctrl+s")
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, ConfirmModal)
-            assert "1.000,5 x PETR4 @ 1.234,50" in modal.body
+            assert "1.000,5 x PETR4 @ 1.234,50" in modal.body  # exibicao agrupada
             await pilot.press("enter")
             await settle(pilot)
             assert spy.last["shares"] == Decimal("1000.5")
@@ -183,27 +183,16 @@ class TestValidation:
             assert spy.last["fees"] == Decimal("0.13")
 
     @pytest.mark.asyncio
-    async def test_an_ambiguous_thousand_asks_the_user_to_be_explicit(self) -> None:
-        # `1.000` com decimal virgula pode ser mil ou um: o formulario nao chuta.
-        fmt.configure(",")
+    async def test_a_thousands_separator_is_refused_with_what_to_type(self) -> None:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
-            fill(screen, ticker="PETR4", shares="1.000", price="10")
+            fill(screen, ticker="PETR4", shares="1", price="1.234,50")
             await pilot.press("ctrl+s")
             await settle(pilot)
             assert isinstance(app.screen, TradeFormScreen)  # nao abriu o modal
-            assert "Escreva 1000 para o inteiro" in error_of(screen, "shares")
-
-    @pytest.mark.asyncio
-    async def test_a_misplaced_separator_is_explained_with_an_example(self) -> None:
-        app = make_app()
-        async with app.run_test() as pilot:
-            screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
-            fill(screen, ticker="PETR4", shares="1", price="126,25")  # decimal e ponto por default
-            await pilot.press("ctrl+s")
-            await settle(pilot)
-            assert "1,234.56" in error_of(screen, "price")  # o exemplo do formato vigente
+            assert "milhar vai sem separador" in error_of(screen, "price")
+            assert "escreva 1000 ou 1000,00" in error_of(screen, "price")
 
     @pytest.mark.asyncio
     async def test_bad_date_format_is_rejected(self) -> None:
