@@ -7,6 +7,7 @@ values typed, and the "what next" modal decides between another entry and Home.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -487,6 +488,39 @@ class TestKeyboard:
             await pilot.press("enter")
             await settle(pilot)
             assert isinstance(app.screen, ConfirmModal)
+
+    @pytest.mark.asyncio
+    async def test_escape_waits_while_the_entry_is_being_written(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Sair no meio da gravacao deixaria a transacao escrita sem confirmacao
+        # na tela (o worker morre com a tela) e convidaria a lancar de novo.
+        release = threading.Event()
+
+        def slow(**kwargs: Any) -> Any:
+            release.wait(timeout=5)
+            return make_transaction(TransactionType.BUY, **kwargs)
+
+        monkeypatch.setattr(services, "record_buy", slow)
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, TradeFormScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
+            fill(screen, ticker="PETR4", shares="1", price="30")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            await pilot.press("enter")  # confirma; a gravacao fica pendente
+            await pilot.pause()
+            assert screen.writing
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert isinstance(app.screen, TradeFormScreen)  # nao saiu
+            assert toasts.severity_of("gravando o lancamento") == "warning"
+
+            release.set()
+            await settle(pilot)
+            assert isinstance(app.screen, NextStepModal)
+            assert not screen.writing
 
     @pytest.mark.asyncio
     async def test_escape_leaves_the_form(self) -> None:

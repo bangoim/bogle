@@ -100,7 +100,7 @@ class FormScreen(Screen[None]):
 
     AUTO_FOCUS = "#ticker Input"
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "app.pop_screen", "Voltar"),
+        Binding("escape", "back", "Voltar"),
         Binding("ctrl+s", "submit", "Registrar"),
     ]
 
@@ -109,6 +109,8 @@ class FormScreen(Screen[None]):
         self.tickers = KnownTicker()
         self.recorded: Transaction | None = None
         """Last transaction written from this screen (also read by the tests)."""
+        self.writing = False
+        """True between the confirmation and the answer from the database."""
 
     # --- a implementar por cada formulario -------------------------------
 
@@ -157,10 +159,20 @@ class FormScreen(Screen[None]):
         if event.button.id == "submit":
             self.action_submit()
         elif event.button.id == "back":
-            self.app.pop_screen()
+            self.action_back()
+
+    def action_back(self) -> None:
+        # Sair no meio da gravacao deixaria o lancamento escrito sem confirmacao
+        # nenhuma na tela (o worker morre com a tela), e o usuario poderia
+        # registrar de novo achando que falhou.
+        if self.writing:
+            self.notify("gravando o lancamento; um instante.", severity="warning")
+            return
+        self.app.pop_screen()
 
     def _on_confirmed(self, entry: Entry, confirmed: bool | None) -> None:
         if confirmed:
+            self.writing = True
             self._persist(entry)
 
     @work(thread=True, exclusive=True, group="record")
@@ -175,9 +187,11 @@ class FormScreen(Screen[None]):
         self.app.call_from_thread(self._succeeded, transaction)
 
     def _failed(self, message: str) -> None:
+        self.writing = False
         self.notify(message, title="erro", severity="error", timeout=10, markup=False)
 
     def _succeeded(self, transaction: Transaction) -> None:
+        self.writing = False
         self.recorded = transaction
         summary = (
             f"transacao {transaction.id} registrada: "
@@ -383,13 +397,9 @@ class IncomeFormScreen(FormScreen):
         """
         tax = self.field("tax")
         required = income_type is TransactionType.JCP
-        # O textual valida o Input por conta propria e marca `-invalid`, entao o
-        # validador tem de acompanhar o tipo: sem isso, trocar de JCP para
-        # RENDIMENTO deixaria a borda vermelha e o erro do tipo anterior num
-        # campo que nem se aplica.
-        if income_type is TransactionType.RENDIMENTO:
-            tax.set_enabled(False, placeholder="nao se aplica a RENDIMENTO (isento para PF)")
-            return
+        # O validador troca *antes* de habilitar ou desabilitar: o textual valida
+        # o Input por conta propria e pinta a borda, entao um validador do tipo
+        # anterior deixaria a marca de erro num campo que nem se aplica.
         tax.input.validators = [
             DecimalField(
                 "IR retido",
@@ -397,6 +407,9 @@ class IncomeFormScreen(FormScreen):
                 blank_message="IR retido e obrigatorio para JCP (15% retido na fonte).",
             )
         ]
+        if income_type is TransactionType.RENDIMENTO:
+            tax.set_enabled(False, placeholder="nao se aplica a RENDIMENTO (isento para PF)")
+            return
         tax.set_enabled(True, placeholder="obrigatorio para JCP" if required else "opcional")
 
     @override

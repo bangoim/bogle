@@ -83,6 +83,10 @@ class Field(Vertical):
         self.input.placeholder = placeholder or self._placeholder
         if not enabled:
             self.set_value("")
+            # O textual guarda a validade num reactive proprio, que pinta a borda
+            # do input: sem revalidar (o validador ja foi relaxado antes de
+            # desabilitar), a borda vermelha do tipo anterior fica na tela.
+            self.input.validate("")
             self.clear_error()
 
     @property
