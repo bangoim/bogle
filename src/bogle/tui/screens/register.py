@@ -31,6 +31,7 @@ from bogle.domain.transactions import Transaction, TransactionType
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.navigation import back_to_home
+from bogle.tui.screens.menu import Entries, MenuScreen, items_of
 from bogle.tui.screens.modals import GO_HOME, ConfirmModal, NextStepModal
 from bogle.tui.validators import DateField, DecimalField, KnownTicker
 from bogle.tui.widgets.form import Field
@@ -56,18 +57,30 @@ _INCOME_LABELS = {
     TransactionType.INTEREST: "Juros (renda fixa)",
 }
 
-MENU_ITEMS = (
-    MenuItem("1", "buy", "Compra", "quantidade, preco, taxas e data"),
-    MenuItem("2", "sell", "Venda", "igual a compra, com IR retido"),
-    MenuItem("3", "income", "Provento", "dividendo, JCP, rendimento ou juros"),
+# Fabricas como lambda, e nao a classe direta: os formularios sao definidos
+# abaixo, e uma lambda so procura o nome quando o item e escolhido.
+_ENTRIES: Entries = (
+    (
+        MenuItem("1", "buy", "Compra", "quantidade, preco, taxas e data"),
+        lambda: TradeFormScreen(kind=TransactionType.BUY),
+    ),
+    (
+        MenuItem("2", "sell", "Venda", "igual a compra, com IR retido"),
+        lambda: TradeFormScreen(kind=TransactionType.SELL),
+    ),
+    (MenuItem("3", "income", "Provento", "dividendo, JCP, rendimento ou juros"), lambda: IncomeFormScreen()),
 )
 
+MENU_ITEMS = items_of(_ENTRIES)
 
-class RegisterScreen(Screen[None]):
+
+class RegisterScreen(MenuScreen):
     """Which kind of entry to record."""
 
     SUB_TITLE = "registrar"
     AUTO_FOCUS = "#register-menu"
+    ENTRIES = _ENTRIES
+    MENU_TITLE = "Registrar"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Voltar"),
         *menu_bindings(MENU_ITEMS),
@@ -79,20 +92,6 @@ class RegisterScreen(Screen[None]):
         with Vertical(id="register"):
             yield Menu(MENU_ITEMS, id="register-menu")
         yield Footer()
-
-    def on_mount(self) -> None:
-        self.query_one(Menu).border_title = "Registrar"
-
-    def action_open(self, item_id: str) -> None:
-        if item_id == "income":
-            self.app.push_screen(IncomeFormScreen())
-            return
-        kind = TransactionType.BUY if item_id == "buy" else TransactionType.SELL
-        self.app.push_screen(TradeFormScreen(kind=kind))
-
-    def on_option_list_option_selected(self, event: Menu.OptionSelected) -> None:
-        if event.option.id is not None:
-            self.action_open(event.option.id)
 
 
 class FormScreen(Screen[None]):

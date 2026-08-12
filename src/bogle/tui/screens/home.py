@@ -9,7 +9,6 @@ unreachable) becomes an inline message plus a toast instead of a crash.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import ClassVar, override
 
 from rich.markup import escape
@@ -18,7 +17,6 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Grid, Vertical, VerticalScroll
-from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 from textual.worker import get_current_worker
 
@@ -26,6 +24,7 @@ from bogle import format as fmt
 from bogle.reports.overview import PortfolioOverview
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
+from bogle.tui.screens.menu import Entries, MenuScreen, items_of
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
 from bogle.tui.screens.transactions import TransactionsScreen
@@ -41,16 +40,13 @@ LOGO = r"""
 █▄▄▀ ▀▄▄▀ ▀▄▄▀ █▄▄▄ █▄▄▄
 """.strip("\n")
 
-# Um item de menu e a tela que ele abre andam juntos, entao a lista e uma so:
-# nao existe id de menu sem tela (nem o contrario) para sair de sincronia.
-_ENTRIES: tuple[tuple[MenuItem, Callable[[], Screen[None]]], ...] = (
+_ENTRIES: Entries = (
     (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda ou provento"), RegisterScreen),
     (MenuItem("3", "transactions", "Transacoes", "listar e remover lancamentos"), TransactionsScreen),
 )
 
-MENU_ITEMS = tuple(item for item, _ in _ENTRIES)
-_SCREENS = {item.id: factory for item, factory in _ENTRIES}
+MENU_ITEMS = items_of(_ENTRIES)
 
 _TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
 
@@ -60,8 +56,9 @@ _VARIATION = "Variacao"
 _VARIATION_PARTIAL = "Variacao parcial"
 
 
-class HomeScreen(Screen[None]):
+class HomeScreen(MenuScreen):
     AUTO_FOCUS = "#menu"
+    ENTRIES = _ENTRIES
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "app.quit", "Sair"),
         Binding("r", "reload", "Atualizar"),
@@ -91,8 +88,9 @@ class HomeScreen(Screen[None]):
             yield Menu(MENU_ITEMS, id="menu")
         yield Footer()
 
+    @override
     def on_mount(self) -> None:
-        self.query_one(Menu).border_title = "Menu"
+        super().on_mount()
         self._load_overview()
         self._check_rebalance()
 
@@ -108,13 +106,6 @@ class HomeScreen(Screen[None]):
             self.action_reload()
 
     # --- navegacao ------------------------------------------------------
-
-    def action_open(self, item_id: str) -> None:
-        self.app.push_screen(_SCREENS[item_id]())
-
-    def on_option_list_option_selected(self, event: Menu.OptionSelected) -> None:
-        if event.option.id is not None:
-            self.action_open(event.option.id)
 
     def action_reload(self) -> None:
         for metric in self.query(Metric):
