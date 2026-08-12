@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 import typer
 from rich.console import Console
@@ -28,17 +27,13 @@ def _render_table(report: HistoryReport, period: str, console: Console) -> None:
     table.add_column("Data", style="cyan", no_wrap=True)
     for header in ("Patrimonio", "Variacao", "Variacao %"):
         table.add_column(header, justify="right")
-    previous: Decimal | None = None
-    for point in report.points:
-        delta = point.value - previous if previous is not None else None
-        percent = delta / previous if delta is not None and previous and previous > 0 else None
+    for point, delta, fraction in report.steps():
         table.add_row(
             point.date.isoformat(),
             money(point.value),
             signed(delta, percent=False),
-            signed(percent, percent=True),
+            signed(fraction, percent=True),
         )
-        previous = point.value
     console.print(table)
 
 

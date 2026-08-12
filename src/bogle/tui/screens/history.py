@@ -13,7 +13,6 @@ with the real numbers would defeat the point.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import ClassVar, override
 
 from rich.markup import escape
@@ -85,18 +84,14 @@ class HistoryScreen(PeriodScreen[HistoryReport]):
     def render_report(self, report: HistoryReport) -> None:
         table = self.query_one(DataTable)
         table.clear()  # mantem as colunas
-        previous: Decimal | None = None
-        for point in report.points:
-            delta = point.value - previous if previous is not None else None
-            percent = delta / previous if delta is not None and previous and previous > 0 else None
+        for point, delta, fraction in report.steps():
             table.add_row(
                 cells.text(point.date.isoformat()),
                 cells.money(point.value),
                 cells.signed(delta, percent=False),
-                cells.signed(percent, percent=True),
+                cells.signed(fraction, percent=True),
                 key=point.date.isoformat(),
             )
-            previous = point.value
         self._render_chart(report)
         self.show_note(_note_for(report))
 

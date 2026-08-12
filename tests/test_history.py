@@ -100,3 +100,36 @@ class TestCli:
     def test_invalid_period(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["history", "--period", "ytd"])
         assert result.exit_code != 0
+
+
+class TestSteps:
+    """The per-point change both frontends render (and used to derive twice)."""
+
+    def test_the_first_point_has_no_previous_one(self) -> None:
+        report = HistoryReport(
+            points=[
+                PatrimonyPoint(date=date(2026, 1, 1), value=Decimal("100")),
+                PatrimonyPoint(date=date(2026, 2, 1), value=Decimal("110")),
+            ],
+            granularity="monthly",
+            excluded=[],
+        )
+        steps = list(report.steps())
+        assert steps[0][1:] == (None, None)
+        assert steps[1][1] == Decimal("10")
+        assert steps[1][2] == Decimal("10") / Decimal("100")
+
+    def test_a_non_positive_base_has_no_fraction(self) -> None:
+        # Dividir por zero (ou por um patrimonio negativo) daria um numero sem
+        # significado; a coluna mostra "-".
+        report = HistoryReport(
+            points=[
+                PatrimonyPoint(date=date(2026, 1, 1), value=Decimal("0")),
+                PatrimonyPoint(date=date(2026, 2, 1), value=Decimal("50")),
+            ],
+            granularity="monthly",
+            excluded=[],
+        )
+        _, delta, fraction = list(report.steps())[1]
+        assert delta == Decimal("50")
+        assert fraction is None
