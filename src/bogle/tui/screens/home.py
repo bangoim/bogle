@@ -32,9 +32,13 @@ from bogle.tui.screens.transactions import TransactionsScreen
 from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
 from bogle.tui.widgets.metric import Metric
 
+# Letras de 4x6 pixels desenhadas com meio-bloco, duas linhas de pixels por
+# linha de texto. Em duas linhas de texto — 4 pixels de altura — nao cabem a
+# barra do meio nem uma cauda, e o logo saia lido como "bodlc".
 LOGO = r"""
-█▄  ▄▀▄ ▄▀█ █   ▄▀▀
-█▄█ ▀▄▀ ▀▄█ █▄▄ ▀▄▄
+█▀▀▄ ▄▀▀▄ ▄▀▀▀ █    █▀▀▀
+█▀▀▄ █  █ █ ▀█ █    █▀▀
+█▄▄▀ ▀▄▄▀ ▀▄▄▀ █▄▄▄ █▄▄▄
 """.strip("\n")
 
 # Um item de menu e a tela que ele abre andam juntos, entao a lista e uma so:

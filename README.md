@@ -101,8 +101,9 @@ Piping or redirecting (`bogle | cat`) prints the help instead of opening the
 interface, since a full-screen interface needs a real terminal.
 
 ```text
- █▄  ▄▀▄ ▄▀█ █   ▄▀▀
- █▄█ ▀▄▀ ▀▄█ █▄▄ ▀▄▄
+ █▀▀▄ ▄▀▀▄ ▄▀▀▀ █    █▀▀▀
+ █▀▀▄ █  █ █ ▀█ █    █▀▀
+ █▄▄▀ ▀▄▄▀ ▀▄▄▀ █▄▄▄ █▄▄▄
  ╭─ Carteira - fechamento de 2026-08-11 ───────────────────────────────────────╮
  │ Patrimonio total                     Variacao                               │
  │ 12772.90                             +685.43  (+5.67%)                      │
