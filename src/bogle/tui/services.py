@@ -13,15 +13,21 @@ and the interface tested without a database or a network.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 
 from bogle.analytics.business_days import previous_business_day
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
+from bogle.domain.transactions import Transaction, TransactionType
 from bogle.rebalancing import overdue_notice
 from bogle.reports.overview import PortfolioOverview, compute_overview
 from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
+from bogle.repositories.assets import AssetRepository
+from bogle.repositories.transactions import TransactionRepository
 from bogle.settings import LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
+
+_ZERO = Decimal("0")
 
 
 def _today(today: date | None) -> date:
@@ -47,6 +53,88 @@ def load_snapshot(*, with_prices: bool, today: date | None = None) -> PortfolioS
     conn = get_connection()
     try:
         return compute_snapshot(conn, default_dispatcher() if with_prices else None, today=_today(today))
+    finally:
+        conn.close()
+
+
+def list_tickers() -> list[str]:
+    """Registered tickers, for the forms' autocomplete."""
+    conn = get_connection()
+    try:
+        return [asset.ticker for asset in AssetRepository(conn).list()]
+    finally:
+        conn.close()
+
+
+def load_transactions(ticker: str | None = None) -> list[Transaction]:
+    conn = get_connection()
+    try:
+        return TransactionRepository(conn).list(ticker)
+    finally:
+        conn.close()
+
+
+def delete_transaction(transaction_id: int) -> None:
+    conn = get_connection()
+    try:
+        TransactionRepository(conn).delete(transaction_id)
+    finally:
+        conn.close()
+
+
+def record_buy(*, ticker: str, when: datetime, shares: Decimal, unit_price: Decimal, fees: Decimal) -> Transaction:
+    conn = get_connection()
+    try:
+        return TransactionRepository(conn).add_buy(ticker, when, shares=shares, unit_price=unit_price, fees=fees)
+    finally:
+        conn.close()
+
+
+def record_sell(
+    *,
+    ticker: str,
+    when: datetime,
+    shares: Decimal,
+    unit_price: Decimal,
+    fees: Decimal,
+    tax_withheld: Decimal,
+) -> Transaction:
+    conn = get_connection()
+    try:
+        return TransactionRepository(conn).add_sale(
+            ticker, when, shares=shares, unit_price=unit_price, fees=fees, tax_withheld=tax_withheld
+        )
+    finally:
+        conn.close()
+
+
+def record_income(
+    *,
+    ticker: str,
+    income_type: TransactionType,
+    when: datetime,
+    amount: Decimal,
+    tax_withheld: Decimal | None = None,
+) -> Transaction:
+    """Record an income event, routing to the repository method for its type.
+
+    The rule the CLI enforces with flags (JCP always has tax withheld at source,
+    RENDIMENTO is exempt for individuals) is enforced by the form, which enables
+    or disables the field per type.
+    """
+    tax = tax_withheld if tax_withheld is not None else _ZERO
+    conn = get_connection()
+    try:
+        repo = TransactionRepository(conn)
+        if income_type is TransactionType.DIVIDEND:
+            return repo.add_dividend(ticker, when, amount, tax_withheld=tax)
+        if income_type is TransactionType.JCP:
+            return repo.add_jcp(ticker, when, amount, tax)
+        if income_type is TransactionType.RENDIMENTO:
+            return repo.add_rendimento(ticker, when, amount)
+        if income_type is TransactionType.INTEREST:
+            return repo.add_interest(ticker, when, amount, tax_withheld=tax)
+        raise ValueError(f"tipo de provento invalido: {income_type}")
     finally:
         conn.close()
 

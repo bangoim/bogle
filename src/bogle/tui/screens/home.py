@@ -25,6 +25,8 @@ from bogle.reports.overview import PortfolioOverview
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.position import PositionScreen
+from bogle.tui.screens.register import RegisterScreen
+from bogle.tui.screens.transactions import TransactionsScreen
 from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
 from bogle.tui.widgets.metric import Metric
 
@@ -33,14 +35,23 @@ LOGO = r"""
 █▄█ ▀▄▀ ▀▄█ █▄▄ ▀▄▄
 """.strip("\n")
 
-MENU_ITEMS = (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"),)
+MENU_ITEMS = (
+    MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"),
+    MenuItem("2", "register", "Registrar", "compra, venda ou provento"),
+    MenuItem("3", "transactions", "Transacoes", "listar e remover lancamentos"),
+)
 
-_SCREENS: dict[str, Callable[[], Screen[None]]] = {"position": PositionScreen}
+_SCREENS: dict[str, Callable[[], Screen[None]]] = {
+    "position": PositionScreen,
+    "register": RegisterScreen,
+    "transactions": TransactionsScreen,
+}
 
 _TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
 
 
 class HomeScreen(Screen[None]):
+    AUTO_FOCUS = "#menu"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "app.quit", "Sair"),
         Binding("r", "reload", "Atualizar"),
@@ -72,7 +83,6 @@ class HomeScreen(Screen[None]):
 
     def on_mount(self) -> None:
         self.query_one(Menu).border_title = "Menu"
-        self.query_one(Menu).focus()
         self._load_overview()
         self._check_rebalance()
 

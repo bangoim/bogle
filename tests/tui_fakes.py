@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any
 
 from bogle.domain.assets import AssetType
+from bogle.domain.transactions import Transaction, TransactionType
 from bogle.position import PortfolioSummary, Position
 from bogle.reports.overview import PortfolioOverview
 from bogle.reports.snapshot import PortfolioSnapshot
@@ -22,6 +23,7 @@ from bogle.tui.app import BogleApp
 TODAY = date(2026, 8, 12)
 AS_OF = date(2026, 8, 11)
 QUOTED_AT = datetime(2026, 8, 11, 18, 28, tzinfo=UTC)
+TICKERS = ["AUVP11", "MXRF11", "PETR4"]
 
 
 def stub_services(monkeypatch: Any) -> None:
@@ -33,6 +35,16 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "load_overview", lambda **_: make_overview())
     monkeypatch.setattr(services, "load_snapshot", lambda **_: make_snapshot())
     monkeypatch.setattr(services, "rebalance_notice", lambda **_: None)
+    monkeypatch.setattr(services, "list_tickers", lambda: list(TICKERS))
+    monkeypatch.setattr(services, "load_transactions", lambda ticker=None: [])
+    monkeypatch.setattr(services, "delete_transaction", lambda transaction_id: None)
+    monkeypatch.setattr(services, "record_buy", lambda **kwargs: make_transaction(TransactionType.BUY, **kwargs))
+    monkeypatch.setattr(services, "record_sell", lambda **kwargs: make_transaction(TransactionType.SELL, **kwargs))
+    monkeypatch.setattr(
+        services,
+        "record_income",
+        lambda **kwargs: make_transaction(kwargs.pop("income_type"), **kwargs),
+    )
 
 
 async def settle(pilot: Any) -> None:
@@ -142,6 +154,64 @@ def make_snapshot(**overrides: Any) -> PortfolioSnapshot:
 
 def empty_snapshot() -> PortfolioSnapshot:
     return snapshot_of(month_profit=None, income_12m=Decimal("0"))
+
+
+def make_transaction(kind: TransactionType, **entry: Any) -> Transaction:
+    """A persisted transaction, as a repository would return it.
+
+    Takes the same keyword arguments as the ``record_*`` services, so a fake can
+    echo back what the form asked to write.
+    """
+    zero = Decimal("0")
+    shares = entry.get("shares", zero)
+    unit_price = entry.get("unit_price", zero)
+    fees = entry.get("fees", zero)
+    amount = entry.get("amount")
+    gross = amount if amount is not None else shares * unit_price
+    return Transaction(
+        id=entry.get("id", 7),
+        ticker=entry.get("ticker", "PETR4"),
+        transaction_type=kind,
+        date=entry.get("when", datetime(2026, 8, 12, tzinfo=UTC)),
+        shares=shares,
+        unit_price=unit_price,
+        total_investment=gross,
+        fees=fees,
+        total_cost=gross + fees if kind is TransactionType.BUY else fees,
+        tax_withheld=entry.get("tax_withheld") or zero,
+    )
+
+
+def make_ledger() -> list[Transaction]:
+    """A small ledger: two tickers, a trade of each kind and an income event."""
+    return [
+        make_transaction(
+            TransactionType.BUY,
+            id=1,
+            ticker="AUVP11",
+            when=datetime(2026, 3, 10, tzinfo=UTC),
+            shares=Decimal("3"),
+            unit_price=Decimal("126.25"),
+            fees=Decimal("0.13"),
+        ),
+        make_transaction(
+            TransactionType.DIVIDEND,
+            id=2,
+            ticker="PETR4",
+            when=datetime(2026, 5, 15, tzinfo=UTC),
+            amount=Decimal("45.50"),
+        ),
+        make_transaction(
+            TransactionType.SELL,
+            id=3,
+            ticker="AUVP11",
+            when=datetime(2026, 6, 20, tzinfo=UTC),
+            shares=Decimal("1"),
+            unit_price=Decimal("130"),
+            fees=Decimal("0.13"),
+            tax_withheld=Decimal("0.01"),
+        ),
+    ]
 
 
 class ToastSpy:

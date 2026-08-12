@@ -43,6 +43,7 @@ _EMPTY = "Nenhuma posicao ativa."
 
 class PositionScreen(Screen[None]):
     SUB_TITLE = "posicao"
+    AUTO_FOCUS = "#positions"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Voltar"),
         Binding("r", "reload", "Atualizar"),
@@ -71,7 +72,6 @@ class PositionScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one(DataTable).focus()
         self._load()
 
     # --- acoes ----------------------------------------------------------

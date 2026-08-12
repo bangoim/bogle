@@ -89,3 +89,117 @@ HomeScreen.-narrow #metrics {
 #position-note {
     height: auto;
 }
+
+/* --------------------------------------------------------- Formularios */
+
+#register {
+    padding: 1 2;
+}
+
+#register-menu {
+    width: 100%;
+    height: auto;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#form {
+    padding: 0 2;
+    margin: 1 2;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+.field {
+    height: auto;
+}
+
+.field-row {
+    height: 1;
+}
+
+.field-label {
+    width: 22;
+    color: $text-muted;
+}
+
+.field-input {
+    width: 1fr;
+}
+
+.field-input.-invalid {
+    background: $error 20%;
+}
+
+.field-error {
+    height: 1;
+    padding-left: 22;
+    color: $error;
+}
+
+#form-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#form-buttons Button {
+    margin-right: 2;
+}
+
+/* -------------------------------------------------------------- Modais */
+
+ConfirmModal, NextStepModal {
+    align: center middle;
+}
+
+#dialog {
+    width: auto;
+    max-width: 72;
+    height: auto;
+    padding: 1 2;
+    background: $surface;
+    border: round $accent;
+}
+
+#dialog-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dialog-body {
+    height: auto;
+}
+
+#dialog-question {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+#dialog-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#dialog-buttons Button {
+    margin-right: 2;
+}
+
+/* --------------------------------------------------------- Transacoes */
+
+#transactions {
+    padding: 0 1;
+}
+
+#filter {
+    margin-bottom: 1;
+}
+
+#ledger {
+    height: 1fr;
+}
+
+#ledger-note {
+    height: auto;
+}
