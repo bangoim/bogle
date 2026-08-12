@@ -8,8 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bogle.cli.assets import _parse_rate, _parse_weight
-from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.cli.parsing import parse_date, parse_decimal, parse_rate, parse_weight
 from bogle.domain.errors import ValidationError
 
 
@@ -43,24 +42,24 @@ class TestParseDate:
 
 class TestParseRate:
     def test_valid_decimal(self) -> None:
-        assert _parse_rate("1.10") == Decimal("1.10")
+        assert parse_rate("1.10", "--rate") == Decimal("1.10")
 
     def test_not_a_number(self) -> None:
         with pytest.raises(ValidationError, match="--rate deve ser um numero decimal"):
-            _parse_rate("abc")
+            parse_rate("abc", "--rate")
 
     @pytest.mark.parametrize("value", ["0", "-5", "10000", "100000"])
     def test_out_of_range(self, value: str) -> None:
         # Limite superior espelha NUMERIC(10, 6): sem ele o psycopg
         # estouraria com NumericValueOutOfRange cru.
         with pytest.raises(ValidationError, match=r"--rate deve estar em \(0, 10000\)"):
-            _parse_rate(value)
+            parse_rate(value, "--rate")
 
 
 class TestParseWeight:
     def test_valid(self) -> None:
-        assert _parse_weight("0.6") == Decimal("0.6")
+        assert parse_weight("0.6", "--weight") == Decimal("0.6")
 
     def test_out_of_range(self) -> None:
         with pytest.raises(ValidationError, match=r"deve estar em \(0, 1\]"):
-            _parse_weight("1.5")
+            parse_weight("1.5", "--weight")

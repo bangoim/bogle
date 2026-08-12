@@ -8,28 +8,12 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.cli.parsing import parse_date, parse_rate, parse_weight
 from bogle.db import get_connection
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError, ValidationError
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
 from bogle.repositories.assets import AssetRepository
-
-
-def _parse_weight(value: str) -> Decimal:
-    """Parse a CLI weight argument, validating the (0, 1] range."""
-    weight = parse_decimal(value, "--weight")
-    if not (Decimal("0") < weight <= Decimal("1")):
-        raise ValidationError(f"--weight deve estar em (0, 1], recebido {weight}.")
-    return weight
-
-
-def _parse_rate(value: str) -> Decimal:
-    rate = parse_decimal(value, "--rate")
-    # Limite espelha a coluna rate NUMERIC(10, 6): |valor| < 10^4.
-    if not (Decimal("0") < rate < Decimal("10000")):
-        raise ValidationError(f"--rate deve estar em (0, 10000), recebido {rate}.")
-    return rate
 
 
 def _parse_provided[T](
@@ -106,14 +90,14 @@ def add(
         help="Data de vencimento (YYYY-MM-DD).",
     ),
 ) -> None:
-    weight_dec = _parse_weight(weight)
+    weight_dec = parse_weight(weight, "--weight")
     parse_errors: list[str] = []
     placeholder_date = datetime(1970, 1, 1, tzinfo=UTC)
     metadata = validate_asset_metadata(
         asset_type,
         issuer=issuer,
         indexer=indexer,
-        rate=_parse_provided(rate, _parse_rate, parse_errors, Decimal("1")),
+        rate=_parse_provided(rate, lambda v: parse_rate(v, "--rate"), parse_errors, Decimal("1")),
         is_prefixed=prefixed,
         daily_liquidity=daily_liquidity,
         purchase_date=_parse_provided(
@@ -164,7 +148,7 @@ def update(
     # fixa exige adicionar ou limpar metadados, o que este comando nao faz.
     if weight is None and asset_type is None:
         raise ValidationError("Nada para atualizar. Informe --weight e/ou --type.")
-    weight_dec = _parse_weight(weight) if weight is not None else None
+    weight_dec = parse_weight(weight, "--weight") if weight is not None else None
     conn = get_connection()
     try:
         repo = AssetRepository(conn)

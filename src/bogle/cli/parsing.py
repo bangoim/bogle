@@ -41,6 +41,23 @@ def parse_decimal(value: str, option: str) -> Decimal:
     return parsed
 
 
+def parse_weight(value: str, option: str) -> Decimal:
+    """Parse a target weight: a decimal fraction in ``(0, 1]`` (``0.6`` = 60%)."""
+    weight = parse_decimal(value, option)
+    if not (Decimal("0") < weight <= Decimal("1")):
+        raise ValidationError(f"{option} deve estar em (0, 1], recebido {weight}.")
+    return weight
+
+
+def parse_rate(value: str, option: str) -> Decimal:
+    """Parse a contracted rate (``1.10`` = 110% of CDI, ``0.065`` = IPCA + 6.5%)."""
+    rate = parse_decimal(value, option)
+    # Limite espelha a coluna rate NUMERIC(10, 6): |valor| < 10^4.
+    if not (Decimal("0") < rate < Decimal("10000")):
+        raise ValidationError(f"{option} deve estar em (0, 10000), recebido {rate}.")
+    return rate
+
+
 def parse_date(value: str, option: str) -> datetime:
     """Parse an ISO date (YYYY-MM-DD) into an America/Sao_Paulo datetime."""
     try:
