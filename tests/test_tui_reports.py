@@ -143,7 +143,9 @@ class TestLoadingFlow:
         # nao para, e sem o guard de cancelamento ela sobrescreveria a tabela nova.
         release = threading.Event()
         slow = make_compare()  # carteira + IBOV
-        fast = make_compare(series=[CompareSeries("Carteira", [Decimal("100"), Decimal("103")])])
+        fast = make_compare(
+            series=[CompareSeries("Carteira", [Decimal("100"), Decimal("101"), Decimal("102"), Decimal("103")])]
+        )
 
         def load(*, period: str, **_: Any) -> Any:
             if period == "12m":

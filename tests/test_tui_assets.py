@@ -292,6 +292,33 @@ class TestRegistering:
             assert f"{written['maturity_date']:%Y-%m-%d}" == "2028-05-02"
 
     @pytest.mark.asyncio
+    async def test_daily_liquidity_writes_without_a_maturity_date(self, spy: AssetsSpy) -> None:
+        # A regra que o formulario mostra (vencimento deixa de ser obrigatorio com
+        # liquidez diaria) tem de valer tambem no que chega ao servico.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetFormScreen())
+            screen.query_one("#asset-type", Select).value = AssetType.CAIXINHA
+            await pilot.pause()
+            screen.query_one("#daily-liquidity", Checkbox).value = True
+            await pilot.pause()
+            screen.field("ticker").set_value("CAIXINHA-NU")
+            screen.field("weight").set_value("0.05")
+            screen.field("issuer").set_value("Nubank")
+            screen.field("rate").set_value("1.0")
+            screen.field("purchase-date").set_value("2026-02-01")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            modal = app.screen
+            assert isinstance(modal, ConfirmModal)
+            assert "sem vencimento" in modal.body
+            await pilot.press("enter")
+            await settle(pilot)
+            written = spy.added[-1]
+            assert written["daily_liquidity"] is True
+            assert written["maturity_date"] is None
+
+    @pytest.mark.asyncio
     async def test_a_prefixed_instrument_is_written_without_an_indexer(self, spy: AssetsSpy) -> None:
         app = make_app()
         async with app.run_test() as pilot:

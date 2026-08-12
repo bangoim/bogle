@@ -129,5 +129,6 @@ def _note_for(report: services.IncomeReport, *, by_ticker: bool) -> str:
     rows = report.by_ticker if by_ticker else report.by_month
     if not rows:
         return f"[yellow]{_EMPTY}[/yellow]"
-    start = report.start.isoformat() if report.start is not None else "o inicio"
-    return f"[dim]De {start} a {report.end.isoformat()}. {_LEGEND}[/dim]"
+    # `all` nao tem data de inicio: a janela e a carteira inteira.
+    since = f"De {report.start.isoformat()}" if report.start is not None else "Do inicio"
+    return f"[dim]{since} ate {report.end.isoformat()}. {_LEGEND}[/dim]"

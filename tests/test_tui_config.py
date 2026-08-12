@@ -14,6 +14,7 @@ from bogle import format as fmt
 from bogle.domain.errors import ValidationError
 from bogle.settings import DECIMAL_SEPARATOR, HIDE_VALUES, SETTINGS, THEME
 from bogle.tui import services
+from bogle.tui.app import BogleApp
 from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.modals import EditModal
 from tests.tui_fakes import (
@@ -239,11 +240,15 @@ class TestAppliedNow:
     async def test_a_theme_this_version_does_not_have_is_a_warning_not_a_crash(
         self, spy: SettingsSpy, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # O aviso sai da App (e dela que o tema e), nao da tela: espionar a tela
+        # deixaria o teste passar sem aviso nenhum.
         toasts = ToastSpy()
-        toasts.install(monkeypatch, ConfigScreen)
+        toasts.install(monkeypatch, BogleApp)
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ConfigScreen())
             before = app.theme
             await edit(pilot, screen, THEME, "tema-que-nao-existe")
+            assert app.is_running
             assert app.theme == before
+            assert toasts.severity_of("nao existe nesta versao") == "warning"

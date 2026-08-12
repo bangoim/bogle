@@ -69,7 +69,17 @@ class TestByMonth:
             screen = await open_screen(pilot, IncomeScreen())
             assert spy.periods == ["12m"]
             assert screen.sub_title == "proventos - 12m por mes"
-            assert "De 2025-09-01 a 2026-08-12" in screen.note
+            assert "De 2025-09-01 ate 2026-08-12" in screen.note
+
+    @pytest.mark.asyncio
+    async def test_the_since_inception_window_has_no_start_date(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # `all` volta com start=None, que e o estado que o servico produz nessa
+        # janela; a nota tem de dizer "do inicio" em vez de citar uma data.
+        monkeypatch.setattr(services, "load_income", lambda **_: make_income(start=None))
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, IncomeScreen())
+            assert "Do inicio ate 2026-08-12" in screen.note
 
 
 class TestByTicker:

@@ -223,7 +223,9 @@ class TestIndices:
 
         def load(*, indices: tuple[str, ...], **_: Any) -> Any:
             calls.append(indices)
-            return make_compare(series=[CompareSeries("Carteira", [Decimal("100"), Decimal("110")])])
+            return make_compare(
+                series=[CompareSeries("Carteira", [Decimal("100"), Decimal("104"), Decimal("108"), Decimal("110")])]
+            )
 
         monkeypatch.setattr(services, "load_compare", load)
         app = make_app()
