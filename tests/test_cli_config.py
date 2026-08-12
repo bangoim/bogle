@@ -146,3 +146,21 @@ class TestHideValues:
         assert result.returncode == 0
         assert "3,050.00" in result.stdout
         assert "\u2022" not in result.stdout
+
+
+class TestTheme:
+    def test_default_is_the_dark_theme(self) -> None:
+        result = run_cli("config", "get", "theme")
+        assert result.returncode == 0
+        assert result.stdout.strip() == "textual-dark"
+
+    def test_accepts_a_theme_the_installed_textual_knows(self) -> None:
+        result = run_cli("config", "set", "theme", "ansi-dark")
+        assert result.returncode == 0
+        assert run_cli("config", "get", "theme").stdout.strip() == "ansi-dark"
+
+    def test_rejects_an_unknown_theme_and_lists_the_options(self) -> None:
+        result = run_cli("config", "set", "theme", "banana")
+        assert result.returncode == 1
+        assert "nao existe" in result.stderr
+        assert "gruvbox" in result.stderr  # a lista das opcoes

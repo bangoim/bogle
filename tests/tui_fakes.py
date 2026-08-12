@@ -35,6 +35,10 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "load_overview", lambda **_: make_overview())
     monkeypatch.setattr(services, "load_snapshot", lambda **_: make_snapshot())
     monkeypatch.setattr(services, "rebalance_notice", lambda **_: None)
+    # Preferencias: os testes nao escrevem em user_settings sem pedir.
+    monkeypatch.setattr(services, "load_preferences", services.Preferences)
+    monkeypatch.setattr(services, "save_hide_amounts", lambda hidden: None)
+    monkeypatch.setattr(services, "save_theme", lambda theme: None)
     monkeypatch.setattr(services, "list_tickers", lambda: list(TICKERS))
     monkeypatch.setattr(services, "load_transactions", list)
     monkeypatch.setattr(services, "delete_transaction", lambda transaction_id: None)

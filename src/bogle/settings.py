@@ -27,6 +27,9 @@ WEIGHT_DRIFT_THRESHOLD = "weight_drift_threshold"
 LAST_REBALANCE_DATE = "last_rebalance_date"
 DECIMAL_SEPARATOR = "decimal_separator"
 HIDE_VALUES = "hide_values"
+THEME = "theme"
+
+DEFAULT_THEME = "textual-dark"
 
 _VALID_PERIODS = (6, 12)
 
@@ -63,6 +66,17 @@ def _parse_separator(raw: str) -> str:
     if separator not in (".", ","):
         raise ValidationError(f"Separador decimal deve ser '.' ou ',', recebido {raw!r}.")
     return separator
+
+
+def _parse_theme(raw: str) -> str:
+    # Import tardio: um comando direto nao paga pelo textual so porque a chave
+    # existe — so quem realmente troca de tema carrega a lista.
+    from textual.theme import BUILTIN_THEMES
+
+    theme = raw.strip()
+    if theme not in BUILTIN_THEMES:
+        raise ValidationError(f"Tema '{theme}' nao existe. Opcoes: {', '.join(sorted(BUILTIN_THEMES))}.")
+    return theme
 
 
 _TRUE = ("true", "1", "sim", "yes", "on")
@@ -144,6 +158,15 @@ SETTINGS: dict[str, SettingSpec] = {
             parse=_parse_bool,
             to_json=bool,
             from_json=bool,
+        ),
+        SettingSpec(
+            key=THEME,
+            type_name="str",
+            description="Tema da interface interativa (a paleta de comandos tambem grava aqui).",
+            default=DEFAULT_THEME,
+            parse=_parse_theme,
+            to_json=str,
+            from_json=str,
         ),
         SettingSpec(
             key=LAST_REBALANCE_DATE,

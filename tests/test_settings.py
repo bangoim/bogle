@@ -113,6 +113,7 @@ class TestUnsetAndList:
         assert set(entries) == {
             "decimal_separator",
             "hide_values",
+            "theme",
             REBALANCE_PERIOD_MONTHS,
             DEFAULT_COMPARE_INDICES,
             WEIGHT_DRIFT_THRESHOLD,

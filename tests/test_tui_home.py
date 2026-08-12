@@ -17,6 +17,7 @@ from bogle import format as fmt
 from bogle.domain.errors import MarketDataError
 from bogle.format import MASK
 from bogle.tui import services
+from bogle.tui.app import BogleApp
 from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
@@ -201,6 +202,39 @@ class TestHiddenAmounts:
             await pilot.press("h")
             await pilot.pause()
             assert metric(app.screen, "patrimony") == "7,866.20"  # type: ignore[arg-type]
+
+    @pytest.mark.asyncio
+    async def test_the_toggle_is_remembered_for_the_next_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Sem isso, quem oculta tem de ocultar de novo a cada abertura.
+        saved: list[bool] = []
+        monkeypatch.setattr(services, "save_hide_amounts", saved.append)
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("h")
+            await settle(pilot)
+            assert saved == [True]
+            await pilot.press("h")
+            await settle(pilot)
+            assert saved == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_save_still_applies_and_warns(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def boom(hidden: bool) -> None:
+            raise psycopg.OperationalError("connection refused")
+
+        monkeypatch.setattr(services, "save_hide_amounts", boom)
+        use_overview(monkeypatch, make_overview())
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, BogleApp)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("h")
+            await settle(pilot)
+            assert metric(app.screen, "patrimony") == MASK  # type: ignore[arg-type]
+            assert toasts.severity_of("nao foi salva") == "warning"
 
     @pytest.mark.asyncio
     async def test_opens_hidden_when_the_setting_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:

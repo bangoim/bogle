@@ -20,8 +20,11 @@ __all__ = ["run_tui"]
 def run_tui() -> None:
     """Open the interface. Entry point called by the Typer callback."""
     # Import tardio: manter o custo do textual fora dos comandos diretos.
+    from bogle import format as fmt
     from bogle.tui import services
     from bogle.tui.app import BogleApp
 
-    services.apply_display_preferences()
-    BogleApp().run()
+    preferences = services.load_preferences()
+    fmt.configure(preferences.decimal_separator)
+    fmt.hide_amounts(preferences.hide_amounts)
+    BogleApp(theme=preferences.theme).run()

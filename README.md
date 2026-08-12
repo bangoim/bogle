@@ -375,7 +375,13 @@ bogle config unset rebalance_period_months   # back to the default
 
 bogle config set decimal_separator ,         # 1.234,56 instead of 1,234.56
 bogle config set hide_values true            # interface opens with amounts masked
+bogle config set theme ansi-dark             # any theme the installed textual has
 ```
+
+Two of these the interface changes from the inside — `h` for the amounts,
+`ctrl+p` for the theme — and both are **written back as they change**, so the
+next session opens the way the last one was left. Everything else is set through
+`bogle config`.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
@@ -383,7 +389,8 @@ bogle config set hide_values true            # interface opens with amounts mask
 | `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY |
 | `default_compare_indices` | list[str] | `IBOV,CDI` | Indices for future `bogle compare` without `--index` |
 | `decimal_separator` | str | `.` | Decimal separator on screen (`.` or `,`); the other character groups thousands |
-| `hide_values` | bool | `false` | Open the interactive interface with the amounts masked (`h` toggles) |
+| `hide_values` | bool | `false` | Amounts masked in the interactive interface (`h` toggles and remembers) |
+| `theme` | str | `textual-dark` | Theme of the interactive interface (the command palette also writes here) |
 | `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
 
 ### Number format
@@ -420,9 +427,9 @@ no grouping, so scripts keep parsing it with `Decimal(...)`.
 ### Hiding the amounts
 
 In the interactive interface, `h` masks every amount and `h` again brings it
-back. `hide_values` decides how the interface *opens* — which is what actually
-protects a screen someone else may be looking at, since remembering to press a
-key does not:
+back. The choice is remembered: the next session opens masked, without you
+having to press anything. `bogle config` reaches the same preference from
+outside:
 
 ```bash
 bogle config set hide_values true    # opens hidden
@@ -444,6 +451,26 @@ that shows an amount, not only the home one.
 
 The direct commands are never masked: masking `bogle position` would break
 reading its output in a script. `--json` is untouched either way.
+
+Note the trade-off of remembering the toggle: unmasking to check a balance and
+closing the app leaves it unmasked for the next session. Press `h` again before
+you walk away, or set `hide_values` and treat `h` as a peek.
+
+### Theme
+
+`ctrl+p` opens the command palette, where "Change theme" lists everything the
+installed Textual has (`textual-dark`, `ansi-dark`, `gruvbox`, `nord`, …). The
+choice is written to `theme` right away, so the interface reopens with it. From
+outside:
+
+```bash
+bogle config set theme gruvbox
+bogle config get theme
+```
+
+An unknown name is rejected with the list of options. If a theme disappears in a
+future Textual, the interface opens with the default and says so instead of
+failing.
 
 ### Market data & sources
 

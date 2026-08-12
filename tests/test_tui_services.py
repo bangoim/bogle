@@ -22,9 +22,12 @@ from bogle.domain.transactions import TransactionType
 from bogle.repositories.assets import AssetRepository
 from bogle.settings import (
     DECIMAL_SEPARATOR,
+    DEFAULT_THEME,
     HIDE_VALUES,
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
+    THEME,
+    get_setting,
     set_value,
 )
 from bogle.tui import services
@@ -179,31 +182,41 @@ class TestOverviewDate:
         assert services.overview_date() < date.today()
 
 
-class TestDisplayPreferences:
-    def test_loads_the_configured_separator(self, conn: psycopg.Connection[DictRow]) -> None:
+class TestPreferences:
+    def test_reads_what_was_configured(self, conn: psycopg.Connection[DictRow]) -> None:
         set_value(conn, DECIMAL_SEPARATOR, ",")
-        services.apply_display_preferences()
-        assert fmt.separators().decimal == ","
-
-    def test_opens_with_the_amounts_hidden_when_asked(self, conn: psycopg.Connection[DictRow]) -> None:
-        # E o que de fato protege a tela: lembrar de apertar `h` nao protege.
         set_value(conn, HIDE_VALUES, True)
-        services.apply_display_preferences()
-        assert fmt.amounts_hidden()
+        set_value(conn, THEME, "ansi-dark")
+        preferences = services.load_preferences()
+        assert preferences.decimal_separator == ","
+        assert preferences.hide_amounts is True
+        assert preferences.theme == "ansi-dark"
 
-    def test_defaults_keep_the_canonical_format_and_visible_amounts(self, conn: psycopg.Connection[DictRow]) -> None:
-        services.apply_display_preferences()
-        assert fmt.separators().is_canonical
-        assert not fmt.amounts_hidden()
+    def test_defaults_when_nothing_was_configured(self, conn: psycopg.Connection[DictRow]) -> None:
+        preferences = services.load_preferences()
+        assert preferences.decimal_separator == fmt.CANONICAL_DECIMAL
+        assert preferences.hide_amounts is False
+        assert preferences.theme == DEFAULT_THEME
 
-    def test_a_broken_database_leaves_the_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_broken_database_falls_back_to_the_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def boom(*_args: object, **_kwargs: object) -> object:
             raise psycopg.OperationalError("connection refused")
 
         monkeypatch.setattr(services, "get_connection", boom)
-        services.apply_display_preferences()
-        assert fmt.separators().is_canonical
-        assert not fmt.amounts_hidden()
+        assert services.load_preferences() == services.Preferences()
+
+    def test_saving_the_privacy_mode_round_trips(self, conn: psycopg.Connection[DictRow]) -> None:
+        # A queixa que isso resolve: ocultar, fechar, reabrir e estar visivel.
+        services.save_hide_amounts(True)
+        assert get_setting(conn, HIDE_VALUES) is True
+        assert services.load_preferences().hide_amounts is True
+        services.save_hide_amounts(False)
+        assert services.load_preferences().hide_amounts is False
+
+    def test_saving_the_theme_round_trips(self, conn: psycopg.Connection[DictRow]) -> None:
+        services.save_theme("gruvbox")
+        assert get_setting(conn, THEME) == "gruvbox"
+        assert services.load_preferences().theme == "gruvbox"
 
 
 class TestRebalanceNotice:

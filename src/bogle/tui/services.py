@@ -13,6 +13,7 @@ and the interface tested without a database or a network.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -28,10 +29,13 @@ from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from bogle.settings import (
     DECIMAL_SEPARATOR,
+    DEFAULT_THEME,
     HIDE_VALUES,
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
+    THEME,
     get_setting,
+    set_value,
 )
 
 _ZERO = Decimal("0")
@@ -41,25 +45,54 @@ def _today(today: date | None) -> date:
     return today if today is not None else date.today()
 
 
-def apply_display_preferences() -> None:
-    """Load the user's number format and privacy mode into :mod:`bogle.format`.
+@dataclass(frozen=True, slots=True)
+class Preferences:
+    """How the interface should open, from ``user_settings``."""
 
-    Runs once, synchronously, before the app opens: it is a single local query,
-    and doing it in a worker would race with the first screen's rendering — and
-    a screen that renders amounts before the privacy mode lands would show what
-    it was asked to hide. Best-effort, like the CLI's: a database that is down
-    leaves the canonical format visible and the Home screen reports the failure
-    anyway.
+    decimal_separator: str = fmt.CANONICAL_DECIMAL
+    hide_amounts: bool = False
+    theme: str = DEFAULT_THEME
+
+
+def load_preferences() -> Preferences:
+    """Read the display preferences, falling back to the defaults.
+
+    Read synchronously before the app opens: it is a single local query, and
+    doing it in a worker would race with the first screen's rendering — a screen
+    that renders amounts before the privacy mode lands would show exactly what it
+    was asked to hide. Best-effort, like the CLI's: a database that is down opens
+    with the defaults, and the Home screen reports the failure anyway.
     """
     try:
         conn = get_connection()
         try:
-            fmt.configure(get_setting(conn, DECIMAL_SEPARATOR))
-            fmt.hide_amounts(get_setting(conn, HIDE_VALUES))
+            return Preferences(
+                decimal_separator=get_setting(conn, DECIMAL_SEPARATOR),
+                hide_amounts=get_setting(conn, HIDE_VALUES),
+                theme=get_setting(conn, THEME),
+            )
         finally:
             conn.close()
     except Exception:
-        return
+        return Preferences()
+
+
+def save_hide_amounts(hidden: bool) -> None:
+    """Remember the privacy mode, so the next session opens the same way."""
+    conn = get_connection()
+    try:
+        set_value(conn, HIDE_VALUES, hidden)
+    finally:
+        conn.close()
+
+
+def save_theme(theme: str) -> None:
+    """Remember the theme picked in the command palette."""
+    conn = get_connection()
+    try:
+        set_value(conn, THEME, theme)
+    finally:
+        conn.close()
 
 
 def overview_date(today: date | None = None) -> date:
