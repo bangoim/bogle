@@ -55,6 +55,19 @@ def is_business_day(day: date) -> bool:
     return day.weekday() < 5 and day not in holidays(day.year)
 
 
+def previous_business_day(day: date) -> date:
+    """The latest business day strictly before ``day``.
+
+    Prices only exist for business days, so a "previous close" reference date
+    has to land on one: asked about a Monday it answers Friday, and it walks
+    back over holidays too.
+    """
+    previous = day - timedelta(days=1)
+    while not is_business_day(previous):
+        previous -= timedelta(days=1)
+    return previous
+
+
 def business_days_between(start: date, end: date) -> int:
     """Number of business days in the half-open interval ``[start, end)``.
 

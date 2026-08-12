@@ -5,6 +5,9 @@ live totals, it also folds in the portfolio-level snapshot that used to
 live in ``bogle summary``: month profit and income received over the last
 12 months. Month profit needs historical prices, so it is only computed
 when prices are on (omitted under ``--no-prices``).
+
+The numbers come from :func:`~bogle.reports.snapshot.compute_snapshot`, shared
+with the TUI's Position screen (#73); this module only renders them.
 """
 
 from __future__ import annotations
@@ -22,12 +25,8 @@ from rich.table import Table
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.format import exact, exact_or_none, money, pct, signed
-from bogle.position import PortfolioSummary, Position, get_portfolio_summary
-from bogle.reports.dividends import twelve_month_start
-from bogle.reports.periods import add_months
-from bogle.reports.summary import income_received, window_profit
-from bogle.reports.valuation import build_portfolio_valuation, patrimony_at
-from bogle.repositories.transactions import TransactionRepository
+from bogle.position import PortfolioSummary, Position
+from bogle.reports.snapshot import compute_snapshot
 
 _CONSOLE = Console()
 
@@ -125,37 +124,30 @@ def position(
     no_prices: bool = typer.Option(False, "--no-prices", help="Usa so dados da base, sem bater nas APIs."),
     as_json: bool = typer.Option(False, "--json", help="Saida em JSON para scripts."),
 ) -> None:
-    today = date.today()
-    month_start = add_months(today, -1)
     conn = get_connection()
     try:
+        # Month profit needs historical prices; it is skipped under --no-prices.
         dispatcher = None if no_prices else default_dispatcher()
-        summary = get_portfolio_summary(conn, dispatcher)
-        transactions = TransactionRepository(conn).list()
-        # Month profit needs historical prices; skip it under --no-prices.
-        valuation = (
-            build_portfolio_valuation(conn, dispatcher, start=month_start, end=today)
-            if dispatcher is not None
-            else None
-        )
+        snapshot = compute_snapshot(conn, dispatcher, today=date.today())
     finally:
         conn.close()
 
-    income_12m = income_received(transactions, start=twelve_month_start(today), end=today)
-    month_profit: Decimal | None = None
-    excluded: list[str] = []
-    if valuation is not None:
-        excluded = valuation.excluded
-        value_start = patrimony_at(valuation, month_start)
-        value_end = patrimony_at(valuation, today)
-        if value_start is not None and value_end is not None:
-            month_profit = window_profit(valuation.transactions, value_start, value_end, start=month_start, end=today)
-
     if as_json:
-        payload = _summary_json(summary, month_profit=month_profit, income_12m=income_12m, excluded=excluded)
+        payload = _summary_json(
+            snapshot.summary,
+            month_profit=snapshot.month_profit,
+            income_12m=snapshot.income_12m,
+            excluded=snapshot.excluded,
+        )
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
         return
-    if not summary.positions:
+    if not snapshot.summary.positions:
         typer.echo("Nenhuma posicao ativa.")
         return
-    _render(summary, _CONSOLE, month_profit=month_profit, income_12m=income_12m, excluded=excluded)
+    _render(
+        snapshot.summary,
+        _CONSOLE,
+        month_profit=snapshot.month_profit,
+        income_12m=snapshot.income_12m,
+        excluded=snapshot.excluded,
+    )

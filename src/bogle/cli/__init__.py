@@ -20,12 +20,14 @@ from bogle.cli import suggest as suggest_cli
 from bogle.cli import transactions as transactions_cli
 from bogle.db import get_connection
 from bogle.domain.errors import BogleError
-from bogle.rebalancing import next_evaluation_date
+from bogle.rebalancing import overdue_notice
 from bogle.settings import LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
 
 app = typer.Typer(
     help="bogle - CLI tool for passive portfolio rebalancing.",
-    no_args_is_help=True,
+    # Sem subcomando o bogle abre a TUI (issue #73), entao o help deixa de ser
+    # o comportamento default de `bogle` sem argumentos.
+    invoke_without_command=True,
 )
 
 app.command("add", help="Adicionar um novo ativo a carteira.")(assets_cli.add)
@@ -76,20 +78,33 @@ def _warn_if_rebalance_due() -> None:
             conn.close()
     except Exception:
         return
-    if last is None:
-        return
-    next_eval = next_evaluation_date(last, period)
-    if date.today() >= next_eval:
-        typer.echo(
-            f"aviso: ciclo de rebalanceamento de {period} meses vencido desde {next_eval.isoformat()}. "
-            "Rode 'bogle suggest' para avaliar a carteira.",
-            err=True,
-        )
+    notice = overdue_notice(last, period, today=date.today())
+    if notice is not None:
+        typer.echo(f"aviso: {notice}", err=True)
+
+
+def _is_interactive() -> bool:
+    """True when both ends are a real terminal, which a full-screen TUI needs.
+
+    Keeps ``bogle | cat`` (and any non-tty invocation) printing the help instead
+    of blowing up inside Textual.
+    """
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 @app.callback()
 def _main(ctx: typer.Context) -> None:
     """Catch-all entry point. Subcommand runs after this returns."""
+    if ctx.invoked_subcommand is None:
+        # `bogle` sem argumentos abre a interface interativa (issue #73);
+        # `bogle --help` e `bogle <comando>` seguem intocados.
+        if not _is_interactive():
+            typer.echo(ctx.get_help())
+            return
+        from bogle.tui import run_tui  # import tardio: comandos diretos nao pagam pelo textual
+
+        run_tui()
+        return
     # `status` ja reporta o ciclo por inteiro; avisar de novo seria ruido.
     if ctx.invoked_subcommand != "status":
         _warn_if_rebalance_due()

@@ -1,0 +1,91 @@
+/* Estilos da interface interativa (issue #73).
+
+   Tema dark do textual + os acentos que a saida da CLI ja usa: cyan para
+   ticker, verde/vermelho para sinal (aplicados na propria celula, em
+   bogle/tui/cells.py, para reusar a formatacao compartilhada). */
+
+/* ---------------------------------------------------------------- Home */
+
+#home {
+    padding: 1 2;
+    align-horizontal: center;
+}
+
+#logo {
+    width: auto;
+    color: $primary;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* Terminal baixo: o logo sai antes de o menu ficar sem espaco. */
+HomeScreen.-short #logo {
+    display: none;
+}
+
+#summary {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#metrics {
+    height: auto;
+    grid-size: 2 2;
+    grid-rows: 2 2;
+    grid-gutter: 0 2;
+}
+
+/* Terminal estreito: uma metrica por linha em vez de duas. */
+HomeScreen.-narrow #metrics {
+    grid-size: 1 4;
+    grid-rows: 2 2 2 2;
+}
+
+.metric {
+    height: 2;
+}
+
+.metric-caption {
+    color: $text-muted;
+}
+
+.metric-value {
+    text-style: bold;
+}
+
+#summary-note {
+    height: auto;
+    margin-top: 1;
+}
+
+#menu {
+    width: 100%;
+    height: auto;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+/* ------------------------------------------------------------ Posicao */
+
+#position {
+    padding: 0 1;
+}
+
+#positions {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#totals {
+    height: auto;
+}
+
+#position-note {
+    height: auto;
+}

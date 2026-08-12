@@ -1,0 +1,164 @@
+"""Home screen: logo, headline summary and the menu (issue #73).
+
+The summary is deliberately minimal — four numbers, all measured at the previous
+close (D-1), so opening ``bogle`` never waits on an intraday quote. Live prices
+belong to the Position screen. It loads in a worker thread with a placeholder in
+place while it computes, and an expected failure (database down, provider
+unreachable) becomes an inline message plus a toast instead of a crash.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import ClassVar, override
+
+from rich.text import Text
+from textual import work
+from textual.app import ComposeResult
+from textual.binding import Binding, BindingType
+from textual.containers import Grid, Vertical, VerticalScroll
+from textual.screen import Screen
+from textual.widgets import Footer, Header, Static
+
+from bogle import format as fmt
+from bogle.reports.overview import PortfolioOverview
+from bogle.tui import services
+from bogle.tui.errors import HANDLED, message_for
+from bogle.tui.screens.position import PositionScreen
+from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
+from bogle.tui.widgets.metric import Metric
+
+LOGO = r"""
+█▄  ▄▀▄ ▄▀█ █   ▄▀▀
+█▄█ ▀▄▀ ▀▄█ █▄▄ ▀▄▄
+""".strip("\n")
+
+MENU_ITEMS = (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"),)
+
+_SCREENS: dict[str, Callable[[], Screen[None]]] = {"position": PositionScreen}
+
+_TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
+
+
+class HomeScreen(Screen[None]):
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("q", "app.quit", "Sair"),
+        Binding("r", "reload", "Atualizar"),
+        *menu_bindings(MENU_ITEMS),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.overview: PortfolioOverview | None = None
+        """Last loaded summary; ``None`` until the worker finishes."""
+        self.note = ""
+        """Plain text of the note under the metrics (read by the tests)."""
+        self._loaded = False
+
+    @override
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with VerticalScroll(id="home"):
+            yield Static(LOGO, id="logo")
+            with Vertical(id="summary"):
+                with Grid(id="metrics"):
+                    yield Metric("Patrimonio total", id="patrimony")
+                    yield Metric("Variacao", id="variation")
+                    yield Metric("Rentabilidade 12m (TWR)", id="twr-12m")
+                    yield Metric("Rentabilidade total (TWR)", id="twr-total")
+                yield Static(id="summary-note")
+            yield Menu(MENU_ITEMS, id="menu")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one(Menu).border_title = "Menu"
+        self.query_one(Menu).focus()
+        self._load_overview()
+        self._check_rebalance()
+
+    def on_screen_resume(self) -> None:
+        # Voltando de outra tela (um lancamento novo, por exemplo) o resumo pode
+        # estar velho. Enquanto a primeira carga nao terminou, ela ja cobre isso.
+        if self._loaded:
+            self.action_reload()
+
+    # --- navegacao ------------------------------------------------------
+
+    def action_open(self, item_id: str) -> None:
+        factory = _SCREENS.get(item_id)
+        if factory is None:  # item previsto para uma fase seguinte do epico 13
+            self.notify("Ainda nao implementado.", severity="warning")
+            return
+        self.app.push_screen(factory())
+
+    def on_option_list_option_selected(self, event: Menu.OptionSelected) -> None:
+        if event.option.id is not None:
+            self.action_open(event.option.id)
+
+    def action_reload(self) -> None:
+        for metric in self.query(Metric):
+            metric.reset()
+        self._load_overview()
+
+    # --- carga ----------------------------------------------------------
+
+    @work(thread=True, exclusive=True, group="overview")
+    def _load_overview(self) -> None:
+        try:
+            overview = services.load_overview()
+        except HANDLED as exc:
+            self.app.call_from_thread(self._show_failure, message_for(exc))
+            return
+        self.app.call_from_thread(self._show_overview, overview)
+
+    @work(thread=True, group="rebalance")
+    def _check_rebalance(self) -> None:
+        # O aviso de ciclo vencido virou toast (na CLI e uma linha em stderr).
+        notice = services.rebalance_notice()
+        if notice is not None:
+            self.app.call_from_thread(
+                self.notify, notice, title="rebalanceamento", severity="warning", timeout=12, markup=False
+            )
+
+    def _show_overview(self, overview: PortfolioOverview) -> None:
+        self.overview = overview
+        self._loaded = True
+        self.query_one("#summary").border_title = f"Carteira - fechamento de {overview.as_of.isoformat()}"
+        self.query_one("#patrimony", Metric).show(fmt.money(overview.patrimony))
+        self.query_one("#variation", Metric).show(_variation(overview))
+        self.query_one("#twr-12m", Metric).show(fmt.signed(overview.twr_12m, percent=True))
+        self.query_one("#twr-total", Metric).show(fmt.signed(overview.twr_total, percent=True))
+        self._show_note(_note_for(overview))
+
+    def _show_failure(self, message: str) -> None:
+        self._loaded = True
+        for metric in self.query(Metric):
+            metric.show(fmt.DASH)
+        self._show_note(f"[red]{message}[/red]")
+        self.notify(message, title="erro", severity="error", timeout=10, markup=False)
+
+    def _show_note(self, markup: str) -> None:
+        rendered = Text.from_markup(markup)
+        self.note = rendered.plain
+        self.query_one("#summary-note", Static).update(rendered)
+
+
+def _variation(overview: PortfolioOverview) -> str:
+    """``+516.20  (+7.02%)`` — the percentage is dropped when there is no base."""
+    absolute = fmt.signed(overview.variation, percent=False)
+    percent = overview.variation_percent
+    return absolute if percent is None else f"{absolute}  ({fmt.signed(percent, percent=True)})"
+
+
+def _note_for(overview: PortfolioOverview) -> str:
+    if overview.is_empty:
+        return "[yellow]Nenhuma transacao registrada ainda.[/yellow]"
+    if overview.excluded:
+        excluded = ", ".join(overview.excluded)
+        return (
+            f"[yellow]Nota:[/yellow] sem historico de precos para {excluded} — "
+            "fora do patrimonio, da variacao e das rentabilidades."
+        )
+    if overview.patrimony is None:
+        return f"[yellow]Nota:[/yellow] nenhuma posicao avaliavel no fechamento de {overview.as_of.isoformat()}."
+    return f"[dim]{_TWR_LEGEND}[/dim]"

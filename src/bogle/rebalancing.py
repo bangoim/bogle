@@ -259,3 +259,21 @@ def next_evaluation_date(last_evaluation: date, period_months: int) -> date:
     month = month_index % 12 + 1
     day = min(last_evaluation.day, monthrange(year, month)[1])
     return date(year, month, day)
+
+
+def overdue_notice(last_evaluation: date | None, period_months: int, *, today: date) -> str | None:
+    """The "cycle completed" reminder, or ``None`` when nothing is due yet.
+
+    Shared by the frontends (issue #73): the CLI prints it to stderr before a
+    command, the TUI raises it as a toast on the Home screen. Never evaluated
+    means nothing to remind about — ``bogle suggest`` records the first one.
+    """
+    if last_evaluation is None:
+        return None
+    next_eval = next_evaluation_date(last_evaluation, period_months)
+    if today < next_eval:
+        return None
+    return (
+        f"ciclo de rebalanceamento de {period_months} meses vencido desde {next_eval.isoformat()}. "
+        "Rode 'bogle suggest' para avaliar a carteira."
+    )
