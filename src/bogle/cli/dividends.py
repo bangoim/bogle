@@ -17,7 +17,7 @@ from bogle.reports.dividends import (
     TickerIncome,
     income_by_month,
     income_by_ticker,
-    twelve_month_start,
+    income_window_start,
 )
 from bogle.reports.periods import parse_period
 from bogle.repositories.transactions import TransactionRepository
@@ -84,7 +84,7 @@ def dividends(
 ) -> None:
     parsed = parse_period(period, allowed=("12m", "all"))
     today = date.today()
-    start = twelve_month_start(today) if parsed == "12m" else None
+    start = income_window_start(parsed, today)
 
     conn = get_connection()
     try:

@@ -12,7 +12,7 @@ from bogle.db import get_connection
 from bogle.domain.transactions import TransactionType
 from bogle.format import signed
 from bogle.position import get_portfolio_summary
-from bogle.reports.dividends import twelve_month_start
+from bogle.reports.dividends import income_window_start
 from bogle.reports.periods import parse_period
 from bogle.reports.profit import ProfitReport, compute_profit
 from bogle.repositories.transactions import TransactionRepository
@@ -55,7 +55,7 @@ def profit(
 ) -> None:
     parsed = parse_period(period, allowed=("all", "12m"))
     today = date.today()
-    income_start = twelve_month_start(today) if parsed == "12m" else None
+    income_start = income_window_start(parsed, today)
 
     conn = get_connection()
     try:
