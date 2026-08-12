@@ -310,6 +310,33 @@ class TestActions:
 
 class TestFailures:
     @pytest.mark.asyncio
+    async def test_a_failed_refetch_is_not_undone_by_the_privacy_toggle(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # O toggle redesenha do snapshot guardado; depois de uma recarga que
+        # falhou nao existe snapshot, e as linhas velhas nao podem voltar.
+        loads = {"n": 0}
+
+        def load(**_: Any) -> Any:
+            loads["n"] += 1
+            if loads["n"] > 1:
+                raise QuoteNotFoundError("PETR4", provider="brapi")
+            return make_snapshot()
+
+        monkeypatch.setattr(services, "load_snapshot", load)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_position(pilot)
+            assert screen.query_one(DataTable).row_count == 2
+
+            await pilot.press("r")
+            await settle(pilot)
+            assert screen.query_one(DataTable).row_count == 0
+
+            await pilot.press("h")
+            await pilot.pause()
+            assert screen.query_one(DataTable).row_count == 0
+            assert "PETR4" in screen.note
+
+    @pytest.mark.asyncio
     async def test_price_failure_keeps_the_screen_and_explains(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def boom(**_: Any) -> Any:
             raise QuoteNotFoundError("PETR4", provider="brapi")

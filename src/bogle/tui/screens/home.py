@@ -164,6 +164,9 @@ class HomeScreen(MenuScreen):
 
     def _show_failure(self, message: str) -> None:
         self._loaded = True
+        # Sem resumo guardado: um redraw (o toggle de privacidade) nao pode
+        # ressuscitar numeros que a tela acabou de dizer que nao tem.
+        self.overview = None
         for metric in self.query(Metric):
             metric.show(fmt.DASH)
         self._show_note(f"[red]{escape(message)}[/red]")

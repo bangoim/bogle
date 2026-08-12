@@ -44,8 +44,10 @@ class TransactionsScreen(Screen[None]):
 
     def __init__(self) -> None:
         super().__init__()
-        self.transactions: list[Transaction] = []
-        """Everything loaded, unfiltered."""
+        self.transactions: list[Transaction] | None = None
+        """Everything loaded, unfiltered; ``None`` before the first load and after
+        a failure — an empty ledger and a ledger that could not be read are not
+        the same thing, and the note has to keep saying which one it is."""
         self.shown: list[Transaction] = []
         """What the table currently lists, in display order."""
         self.note = ""
@@ -129,11 +131,18 @@ class TransactionsScreen(Screen[None]):
         table = self.query_one(DataTable)
         table.clear()
         table.loading = False
+        # Tambem o ledger inteiro, e nao so o que estava filtrado: um redraw (o
+        # toggle de privacidade, o filtro) reconstroi as linhas dele.
+        self.transactions = None
         self.shown = []
         self._show_note(f"[red]{escape(message)}[/red]")
         self.notify(message, title="erro", severity="error", timeout=10, markup=False)
 
     def _refresh_rows(self, ticker_filter: str) -> None:
+        if self.transactions is None:
+            # Nada carregado (ou uma carga que falhou): redesenhar aqui apagaria a
+            # mensagem que explica por que a tabela esta vazia.
+            return
         needle = ticker_filter.strip().upper()
         self.shown = [t for t in self.transactions if needle in t.ticker.upper()]
         table = self.query_one(DataTable)

@@ -260,6 +260,34 @@ class TestRemoval:
             assert toasts.severity_of("Nenhuma transacao selecionada") == "warning"
 
     @pytest.mark.asyncio
+    async def test_a_failed_reload_is_not_undone_by_the_privacy_toggle(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # O toggle redesenha do ledger guardado; depois de uma recarga que falhou
+        # nao existe ledger, e as linhas velhas nao podem voltar.
+        stub_services(monkeypatch)
+        loads = {"n": 0}
+
+        def load() -> Any:
+            loads["n"] += 1
+            if loads["n"] > 1:
+                raise TransactionNotFoundError(1)
+            return make_ledger()
+
+        monkeypatch.setattr(services, "load_transactions", load)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_ledger(pilot)
+            assert len(rows(screen)) == 3
+
+            await pilot.press("r")
+            await settle(pilot)
+            assert rows(screen) == []
+
+            await pilot.press("h")
+            await pilot.pause()
+            assert rows(screen) == []
+            assert "nao encontrada" in screen.note
+
+    @pytest.mark.asyncio
     async def test_failed_removal_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stub_services(monkeypatch)
         spy = LedgerSpy(error=TransactionNotFoundError(1))

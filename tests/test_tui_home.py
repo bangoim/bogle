@@ -376,6 +376,36 @@ class TestFailures:
             assert toasts.severity_of("yfinance") == "error"
 
     @pytest.mark.asyncio
+    async def test_a_failed_reload_is_not_undone_by_the_privacy_toggle(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # O toggle redesenha do resumo guardado. Depois de uma recarga que falhou
+        # nao existe resumo: ressuscitar o anterior mostraria numeros que a tela
+        # acabou de dizer que nao tem, e apagaria a mensagem de erro.
+        loads = {"n": 0}
+
+        def load(**_: Any) -> Any:
+            loads["n"] += 1
+            if loads["n"] > 1:
+                raise MarketDataError("Falha de rede ao acessar yfinance.", provider="yfinance")
+            return make_overview()
+
+        monkeypatch.setattr(services, "load_overview", load)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            assert metric(home, "patrimony") == "7,866.20"
+
+            await pilot.press("r")
+            await settle(pilot)
+            assert metric(home, "patrimony") == "-"
+
+            await pilot.press("h")
+            await pilot.pause()
+            assert metric(home, "patrimony") == "-"
+            assert home.note == "Falha de rede ao acessar yfinance."
+
+    @pytest.mark.asyncio
     async def test_missing_schema_is_explained_instead_of_crashing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Banco sem as migracoes: erro previsivel, nao bug. Um worker que estoura
         # derruba a app inteira com traceback sobre a tela.

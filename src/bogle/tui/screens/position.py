@@ -137,6 +137,9 @@ class PositionScreen(Screen[None]):
         self._show_note(_note_for(snapshot))
 
     def _show_failure(self, message: str) -> None:
+        # Sem snapshot guardado: um redraw (o toggle de privacidade) nao pode
+        # trazer de volta linhas que ja sairam da tela.
+        self.snapshot = None
         table = self.query_one(DataTable)
         table.clear()
         table.loading = False
