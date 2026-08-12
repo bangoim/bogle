@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import ClassVar, override
 
+from rich.markup import escape
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
@@ -17,6 +18,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Input, Static
+from textual.worker import get_current_worker
 
 from bogle import format as fmt
 from bogle.domain.transactions import Transaction, TransactionType
@@ -104,12 +106,15 @@ class TransactionsScreen(Screen[None]):
 
     @work(thread=True, exclusive=True, group="ledger")
     def _fetch(self) -> None:
+        worker = get_current_worker()
         try:
             transactions = services.load_transactions()
         except HANDLED as exc:
-            self.app.call_from_thread(self._failed, message_for(exc))
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self._failed, message_for(exc))
             return
-        self.app.call_from_thread(self._loaded, transactions)
+        if not worker.is_cancelled:
+            self.app.call_from_thread(self._loaded, transactions)
 
     def _loaded(self, transactions: list[Transaction]) -> None:
         self.transactions = transactions
@@ -121,7 +126,7 @@ class TransactionsScreen(Screen[None]):
         table.clear()
         table.loading = False
         self.shown = []
-        self._show_note(f"[red]{message}[/red]")
+        self._show_note(f"[red]{escape(message)}[/red]")
         self.notify(message, title="erro", severity="error", timeout=10, markup=False)
 
     def _refresh_rows(self, ticker_filter: str) -> None:
@@ -149,9 +154,9 @@ class TransactionsScreen(Screen[None]):
         if not self.transactions:
             return "[yellow]Nenhuma transacao registrada.[/yellow]"
         if not self.shown:
-            return f"[yellow]Nenhuma transacao para '{needle}'.[/yellow]"
+            return f"[yellow]Nenhuma transacao para '{escape(needle)}'.[/yellow]"
         if needle:
-            return f"[dim]{len(self.shown)} de {len(self.transactions)} transacoes (filtro '{needle}')[/dim]"
+            return f"[dim]{len(self.shown)} de {len(self.transactions)} transacoes (filtro '{escape(needle)}')[/dim]"
         return f"[dim]{len(self.transactions)} transacoes[/dim]"
 
     def _show_note(self, markup: str) -> None:
@@ -170,9 +175,16 @@ class TransactionsScreen(Screen[None]):
         try:
             services.delete_transaction(transaction_id)
         except HANDLED as exc:
-            self.app.call_from_thread(self._failed, message_for(exc))
+            self.app.call_from_thread(self._delete_failed, message_for(exc))
             return
         self.app.call_from_thread(self._deleted, transaction_id)
+
+    def _delete_failed(self, message: str) -> None:
+        # Diferente de uma falha de carga: as linhas continuam validas, entao a
+        # tabela fica de pe. Recarrega para reconciliar (a linha pode ter sido
+        # removida por outro processo) e explica no toast.
+        self.notify(message, title="erro", severity="error", timeout=10, markup=False)
+        self._load()
 
     def _deleted(self, transaction_id: int) -> None:
         self.notify(f"transacao {transaction_id} removida.", markup=False)

@@ -30,6 +30,11 @@ class Metric(Vertical):
         yield Label(self.caption, classes="metric-caption")
         yield Label(PLACEHOLDER, classes="metric-value")
 
+    def set_caption(self, caption: str) -> None:
+        """Relabel the metric (a partial patrimony must not read as the total)."""
+        self.caption = caption
+        self.query_one(".metric-caption", Label).update(caption)
+
     def show(self, markup: str) -> None:
         """Render ``markup`` as the value."""
         rendered = Text.from_markup(markup)

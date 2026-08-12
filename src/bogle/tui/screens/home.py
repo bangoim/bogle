@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import ClassVar, override
 
+from rich.markup import escape
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
@@ -19,6 +20,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Grid, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
+from textual.worker import get_current_worker
 
 from bogle import format as fmt
 from bogle.reports.overview import PortfolioOverview
@@ -48,6 +50,11 @@ _SCREENS = {item.id: factory for item, factory in _ENTRIES}
 
 _TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
 
+_PATRIMONY = "Patrimonio total"
+_PATRIMONY_PARTIAL = "Patrimonio parcial"
+_VARIATION = "Variacao"
+_VARIATION_PARTIAL = "Variacao parcial"
+
 
 class HomeScreen(Screen[None]):
     AUTO_FOCUS = "#menu"
@@ -72,8 +79,8 @@ class HomeScreen(Screen[None]):
             yield Static(LOGO, id="logo")
             with Vertical(id="summary"):
                 with Grid(id="metrics"):
-                    yield Metric("Patrimonio total", id="patrimony")
-                    yield Metric("Variacao", id="variation")
+                    yield Metric(_PATRIMONY, id="patrimony")
+                    yield Metric(_VARIATION, id="variation")
                     yield Metric("Rentabilidade 12m (TWR)", id="twr-12m")
                     yield Metric("Rentabilidade total (TWR)", id="twr-total")
                 yield Static(id="summary-note")
@@ -109,12 +116,16 @@ class HomeScreen(Screen[None]):
 
     @work(thread=True, exclusive=True, group="overview")
     def _load_overview(self) -> None:
+        worker = get_current_worker()
         try:
             overview = services.load_overview()
         except HANDLED as exc:
-            self.app.call_from_thread(self._show_failure, message_for(exc))
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self._show_failure, message_for(exc))
             return
-        self.app.call_from_thread(self._show_overview, overview)
+        # Uma carga cancelada (`r` durante outra) nao pode sobrescrever a nova.
+        if not worker.is_cancelled:
+            self.app.call_from_thread(self._show_overview, overview)
 
     @work(thread=True, group="rebalance")
     def _check_rebalance(self) -> None:
@@ -129,8 +140,14 @@ class HomeScreen(Screen[None]):
         self.overview = overview
         self._loaded = True
         self.query_one("#summary").border_title = f"Carteira - fechamento de {overview.as_of.isoformat()}"
-        self.query_one("#patrimony", Metric).show(fmt.money(overview.patrimony))
-        self.query_one("#variation", Metric).show(_variation(overview))
+        # Com ticker excluido o numero e um subconjunto da carteira: o rotulo diz
+        # isso, em vez de deixar so a nota explicando um "total" que nao e total.
+        patrimony = self.query_one("#patrimony", Metric)
+        variation = self.query_one("#variation", Metric)
+        patrimony.set_caption(_PATRIMONY_PARTIAL if overview.is_partial else _PATRIMONY)
+        variation.set_caption(_VARIATION_PARTIAL if overview.is_partial else _VARIATION)
+        patrimony.show(fmt.money(overview.patrimony))
+        variation.show(_variation(overview))
         self.query_one("#twr-12m", Metric).show(fmt.signed(overview.twr_12m, percent=True))
         self.query_one("#twr-total", Metric).show(fmt.signed(overview.twr_total, percent=True))
         self._show_note(_note_for(overview))
@@ -139,7 +156,7 @@ class HomeScreen(Screen[None]):
         self._loaded = True
         for metric in self.query(Metric):
             metric.show(fmt.DASH)
-        self._show_note(f"[red]{message}[/red]")
+        self._show_note(f"[red]{escape(message)}[/red]")
         self.notify(message, title="erro", severity="error", timeout=10, markup=False)
 
     def _show_note(self, markup: str) -> None:
@@ -159,11 +176,19 @@ def _note_for(overview: PortfolioOverview) -> str:
     if overview.is_empty:
         return "[yellow]Nenhuma transacao registrada ainda.[/yellow]"
     if overview.excluded:
-        excluded = ", ".join(overview.excluded)
+        excluded = escape(", ".join(overview.excluded))
         return (
             f"[yellow]Nota:[/yellow] sem historico de precos para {excluded} — "
             "fora do patrimonio, da variacao e das rentabilidades."
         )
     if overview.patrimony is None:
         return f"[yellow]Nota:[/yellow] nenhuma posicao avaliavel no fechamento de {overview.as_of.isoformat()}."
+    if overview.twr_12m_is_shorter and overview.twr_12m_start is not None:
+        # Carteira com menos de 12 meses: a janela ancora na primeira transacao,
+        # entao a rentabilidade "12m" cobre menos que isso. A CLI diz o mesmo
+        # imprimindo a janela ao lado de cada periodo.
+        return (
+            f"[dim]{_TWR_LEGEND} A janela de 12m ancora na primeira transacao "
+            f"({overview.twr_12m_start.isoformat()}).[/dim]"
+        )
     return f"[dim]{_TWR_LEGEND}[/dim]"

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import ClassVar, override
 
+from rich.markup import escape
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
@@ -18,6 +19,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
+from textual.worker import get_current_worker
 
 from bogle import format as fmt
 from bogle.reports.snapshot import PortfolioSnapshot
@@ -93,12 +95,18 @@ class PositionScreen(Screen[None]):
 
     @work(thread=True, exclusive=True, group="position")
     def _fetch(self, with_prices: bool) -> None:
+        worker = get_current_worker()
         try:
             snapshot = services.load_snapshot(with_prices=with_prices)
         except HANDLED as exc:
-            self.app.call_from_thread(self._show_failure, message_for(exc))
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self._show_failure, message_for(exc))
             return
-        self.app.call_from_thread(self._show, snapshot)
+        # A thread nao para no meio: sem esse guard, uma carga lenta (com precos)
+        # que termina depois de o usuario alternar para "sem precos" sobrescreveria
+        # o resultado novo com dados velhos.
+        if not worker.is_cancelled:
+            self.app.call_from_thread(self._show, snapshot)
 
     def _show(self, snapshot: PortfolioSnapshot) -> None:
         self.snapshot = snapshot
@@ -128,7 +136,7 @@ class PositionScreen(Screen[None]):
         table.clear()
         table.loading = False
         self._show_totals("")
-        self._show_note(f"[red]{message}[/red]")
+        self._show_note(f"[red]{escape(message)}[/red]")
         self.notify(message, title="erro", severity="error", timeout=10, markup=False)
 
     def _show_totals(self, markup: str) -> None:
@@ -144,11 +152,17 @@ class PositionScreen(Screen[None]):
 
 def _totals_markup(snapshot: PortfolioSnapshot) -> str:
     summary = snapshot.summary
+    # Sem nenhuma posicao precificada (modo sem precos, ou todas as cotacoes
+    # falharam) os totais de mercado somam zero — o que nao e o mesmo que uma
+    # carteira valer zero, entao viram "-".
+    priced = any(p.market_value is not None for p in summary.positions)
+    value = fmt.money(summary.total_value) if priced else fmt.DASH
+    pnl = fmt.signed(summary.total_pnl, percent=False) if priced else fmt.DASH
+    pnl_percent = fmt.signed(summary.total_pnl_percent, percent=True) if priced else fmt.DASH
     lines = [
         f"[dim]Total investido[/dim] {fmt.money(summary.total_invested)}"
-        f"   [dim]Patrimonio total[/dim] {fmt.money(summary.total_value)}"
-        f"   [dim]Variacao[/dim] {fmt.signed(summary.total_pnl, percent=False)}"
-        f" ({fmt.signed(summary.total_pnl_percent, percent=True)})",
+        f"   [dim]Patrimonio total[/dim] {value}"
+        f"   [dim]Variacao[/dim] {pnl} ({pnl_percent})",
         f"[dim]Lucro do mes[/dim] {fmt.signed(snapshot.month_profit, percent=False)}"
         f"   [dim]Proventos (12m)[/dim] {fmt.signed(snapshot.income_12m, percent=False)}",
     ]
@@ -168,6 +182,6 @@ def _note_for(snapshot: PortfolioSnapshot) -> str:
     if not snapshot.summary.positions:
         return f"[yellow]{_EMPTY}[/yellow]"
     if snapshot.excluded:
-        excluded = ", ".join(snapshot.excluded)
+        excluded = escape(", ".join(snapshot.excluded))
         return f"[yellow]Nota:[/yellow] lucro do mes nao considera {excluded} (sem historico de precos)."
     return ""

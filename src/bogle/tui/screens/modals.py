@@ -3,6 +3,9 @@
 Two of them: confirm before writing, and ask what to do after writing. The
 second one exists because the common case is recording several tickers on the
 same day — going back to Home after each entry would be busywork.
+
+Titles and bodies are rendered as plain text (``markup=False``): they quote user
+data — a ticker, a provider's error message — which must never be read as markup.
 """
 
 from __future__ import annotations
@@ -33,8 +36,8 @@ class ConfirmModal(ModalScreen[bool]):
     @override
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label(self.dialog_title, id="dialog-title")
-            yield Label(self.body, id="dialog-body")
+            yield Label(self.dialog_title, id="dialog-title", markup=False)
+            yield Label(self.body, id="dialog-body", markup=False)
             with Horizontal(id="dialog-buttons"):
                 yield Button(self.confirm_label, id="confirm", variant="primary")
                 yield Button("Cancelar", id="cancel")
@@ -62,7 +65,7 @@ class NextStepModal(ModalScreen[str]):
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Label("Lancamento registrado", id="dialog-title")
-            yield Label(self.recorded, id="dialog-body")
+            yield Label(self.recorded, id="dialog-body", markup=False)
             yield Label("O que fazer agora?", id="dialog-question")
             with Horizontal(id="dialog-buttons"):
                 yield Button("Novo lancamento", id=NEW_ENTRY, variant="primary")

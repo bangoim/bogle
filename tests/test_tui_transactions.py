@@ -26,7 +26,7 @@ class LedgerSpy:
         self.error = error
         self.loads = 0
 
-    def load(self, ticker: str | None = None) -> Any:
+    def load(self) -> Any:
         self.loads += 1
         return list(self.transactions)
 
@@ -102,7 +102,7 @@ class TestListing:
     @pytest.mark.asyncio
     async def test_empty_ledger_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stub_services(monkeypatch)
-        monkeypatch.setattr(services, "load_transactions", lambda ticker=None: [])
+        monkeypatch.setattr(services, "load_transactions", list)
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_ledger(pilot)
@@ -142,6 +142,17 @@ class TestFilter:
             await pilot.pause()
             assert [row[3] for row in rows(screen)] == ["AUVP11", "AUVP11"]
             assert screen.note == "2 de 3 transacoes (filtro 'AUV')"
+
+    @pytest.mark.asyncio
+    async def test_filter_text_is_not_read_as_markup(self, ledger: LedgerSpy) -> None:
+        # O texto do filtro entra na nota, que e montada com markup: "[/]" sem
+        # escape e lido como tag de fechamento e estoura a atualizacao.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_ledger(pilot)
+            screen.query_one("#filter", Input).value = "[/]"
+            await pilot.pause()
+            assert screen.note == "Nenhuma transacao para '[/]'."
 
     @pytest.mark.asyncio
     async def test_filter_with_no_match(self, ledger: LedgerSpy) -> None:
@@ -202,7 +213,7 @@ class TestRemoval:
     @pytest.mark.asyncio
     async def test_nothing_selected_is_a_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stub_services(monkeypatch)
-        monkeypatch.setattr(services, "load_transactions", lambda ticker=None: [])
+        monkeypatch.setattr(services, "load_transactions", list)
         toasts = ToastSpy()
         toasts.install(monkeypatch, TransactionsScreen)
         app = make_app()
@@ -229,3 +240,8 @@ class TestRemoval:
             await pilot.press("enter")
             await settle(pilot)
             assert toasts.severity_of("Transacao 1 nao encontrada") == "error"
+            # A falha e da remocao, nao da carga: as linhas continuam na tela.
+            screen = app.screen
+            assert isinstance(screen, TransactionsScreen)
+            assert len(screen.shown) == 3
+            assert screen.query_one(DataTable).row_count == 3

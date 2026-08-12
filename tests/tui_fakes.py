@@ -36,7 +36,7 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "load_snapshot", lambda **_: make_snapshot())
     monkeypatch.setattr(services, "rebalance_notice", lambda **_: None)
     monkeypatch.setattr(services, "list_tickers", lambda: list(TICKERS))
-    monkeypatch.setattr(services, "load_transactions", lambda ticker=None: [])
+    monkeypatch.setattr(services, "load_transactions", list)
     monkeypatch.setattr(services, "delete_transaction", lambda transaction_id: None)
     monkeypatch.setattr(services, "record_buy", lambda **kwargs: make_transaction(TransactionType.BUY, **kwargs))
     monkeypatch.setattr(services, "record_sell", lambda **kwargs: make_transaction(TransactionType.SELL, **kwargs))
@@ -48,9 +48,17 @@ def stub_services(monkeypatch: Any) -> None:
 
 
 async def settle(pilot: Any) -> None:
-    """Let the worker threads finish and the UI process their updates."""
-    await pilot.app.workers.wait_for_complete()
-    await pilot.pause()
+    """Let the worker threads finish and the UI process their updates.
+
+    Loops because a worker's callback can start another one (removing a
+    transaction reloads the ledger), and ``wait_for_complete`` only awaits the
+    workers that existed when it was called.
+    """
+    for _ in range(5):
+        await pilot.app.workers.wait_for_complete()
+        await pilot.pause()
+        if not list(pilot.app.workers):
+            return
 
 
 def make_overview(**overrides: Any) -> PortfolioOverview:
@@ -61,6 +69,7 @@ def make_overview(**overrides: Any) -> PortfolioOverview:
         "patrimony": Decimal("7866.20"),
         "twr_12m": Decimal("0.1275"),
         "twr_total": Decimal("0.1840"),
+        "twr_12m_start": date(2025, 8, 11),
         "excluded": [],
     }
     fields.update(overrides)
@@ -68,7 +77,9 @@ def make_overview(**overrides: Any) -> PortfolioOverview:
 
 
 def empty_overview() -> PortfolioOverview:
-    return make_overview(inception=None, invested=Decimal("0"), patrimony=None, twr_12m=None, twr_total=None)
+    return make_overview(
+        inception=None, invested=Decimal("0"), patrimony=None, twr_12m=None, twr_total=None, twr_12m_start=None
+    )
 
 
 def make_position(ticker: str, asset_type: AssetType, **overrides: Any) -> Position:

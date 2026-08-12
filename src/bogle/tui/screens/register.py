@@ -12,8 +12,9 @@ same kind (the common case, several tickers on the same day) or back to Home.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime
 from typing import Any, ClassVar, override
+from zoneinfo import ZoneInfo
 
 from textual import work
 from textual.app import ComposeResult
@@ -25,6 +26,7 @@ from textual.widgets import Button, Footer, Header, Input, Label, Select
 
 from bogle import format as fmt
 from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.db import DEFAULT_TIMEZONE
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
@@ -36,6 +38,16 @@ from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
 
 Entry = dict[str, Any]
 """The validated values, already shaped as the service call's keyword arguments."""
+
+
+def _today() -> str:
+    """Today in America/Sao_Paulo — the same default ``bogle buy`` uses.
+
+    The machine's timezone would disagree with the CLI (and with the ledger) for
+    anyone running from a different one.
+    """
+    return datetime.now(tz=ZoneInfo(DEFAULT_TIMEZONE)).date().isoformat()
+
 
 _INCOME_LABELS = {
     TransactionType.DIVIDEND: "Dividendo",
@@ -252,7 +264,7 @@ class TradeFormScreen(FormScreen):
             yield Field(
                 "Data",
                 id="date",
-                value=date.today().isoformat(),
+                value=_today(),
                 placeholder="YYYY-MM-DD",
                 validators=[DateField("Data")],
             )
@@ -341,7 +353,7 @@ class IncomeFormScreen(FormScreen):
             yield Field(
                 "Data",
                 id="date",
-                value=date.today().isoformat(),
+                value=_today(),
                 placeholder="YYYY-MM-DD",
                 validators=[DateField("Data")],
             )
@@ -370,11 +382,11 @@ class IncomeFormScreen(FormScreen):
         for individuals, so the field does not apply and is disabled.
         """
         tax = self.field("tax")
-        if income_type is TransactionType.RENDIMENTO:
-            tax.set_enabled(False, placeholder="nao se aplica a RENDIMENTO (isento para PF)")
-            return
         required = income_type is TransactionType.JCP
-        tax.set_enabled(True, placeholder="obrigatorio para JCP" if required else "opcional")
+        # O textual valida o Input por conta propria e marca `-invalid`, entao o
+        # validador tem de acompanhar o tipo: sem isso, trocar de JCP para
+        # RENDIMENTO deixaria a borda vermelha e o erro do tipo anterior num
+        # campo que nem se aplica.
         tax.input.validators = [
             DecimalField(
                 "IR retido",
@@ -382,6 +394,10 @@ class IncomeFormScreen(FormScreen):
                 blank_message="IR retido e obrigatorio para JCP (15% retido na fonte).",
             )
         ]
+        if income_type is TransactionType.RENDIMENTO:
+            tax.set_enabled(False, placeholder="nao se aplica a RENDIMENTO (isento para PF)")
+            return
+        tax.set_enabled(True, placeholder="obrigatorio para JCP" if required else "opcional")
 
     @override
     def clear(self) -> None:

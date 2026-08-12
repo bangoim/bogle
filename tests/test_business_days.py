@@ -91,6 +91,3 @@ class TestPreviousBusinessDay:
     def test_walks_over_a_holiday(self) -> None:
         # 2/jan/2026 e sexta; o dia anterior (1/jan) e feriado, entao volta a 31/dez.
         assert previous_business_day(date(2026, 1, 2)) == date(2025, 12, 31)
-
-    def test_never_returns_the_day_itself(self) -> None:
-        assert previous_business_day(date(2026, 1, 2)) < date(2026, 1, 2)

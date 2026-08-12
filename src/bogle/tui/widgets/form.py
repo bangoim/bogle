@@ -121,7 +121,15 @@ class Field(Vertical):
         return failure
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Render the validation Textual already ran for this keystroke."""
+        """Render the validation Textual already ran for this keystroke.
+
+        A disabled field has no error to show: clearing its value (as the income
+        form does when the type stops accepting withheld tax) still fires this
+        event, and the old validators would light up an inapplicable field.
+        """
+        if self.input.disabled:
+            self.clear_error()
+            return
         result = event.validation_result
         if result is None or result.is_valid:
             self.clear_error()

@@ -4,6 +4,7 @@ no-prices toggle and the refresh.
 
 from __future__ import annotations
 
+import threading
 from decimal import Decimal
 from typing import Any
 
@@ -136,6 +137,25 @@ class TestTotals:
             assert "Proventos (12m) +145.00" in screen.totals
 
     @pytest.mark.asyncio
+    async def test_nothing_priced_shows_dashes_not_a_zero_portfolio(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Modo sem precos (ou todas as cotacoes falhando): os totais de mercado
+        # somam zero, o que nao e o mesmo que a carteira valer zero.
+        monkeypatch.setattr(
+            services,
+            "load_snapshot",
+            lambda **_: snapshot_of(
+                make_unpriced_position("PETR4", AssetType.STOCK, total_invested=Decimal("4550")),
+                month_profit=None,
+            ),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_position(pilot)
+            assert "Total investido 4550.00" in screen.totals
+            assert "Patrimonio total -" in screen.totals
+            assert "Variacao - (-)" in screen.totals
+
+    @pytest.mark.asyncio
     async def test_price_provenance_is_listed(self, spy: SnapshotSpy) -> None:
         app = make_app()
         async with app.run_test() as pilot:
@@ -152,7 +172,62 @@ class TestTotals:
             assert "lucro do mes nao considera TESOURO-SELIC-2029" in screen.note
 
 
+class TestLoading:
+    @pytest.mark.asyncio
+    async def test_table_shows_its_loading_state_while_fetching(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = threading.Event()
+
+        def slow(**_: Any) -> Any:
+            release.wait(timeout=5)
+            return make_snapshot()
+
+        monkeypatch.setattr(services, "load_snapshot", slow)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await pilot.app.push_screen(PositionScreen())
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, PositionScreen)
+            assert screen.query_one(DataTable).loading is True
+            release.set()
+            await settle(pilot)
+            assert screen.query_one(DataTable).loading is False
+
+
 class TestActions:
+    @pytest.mark.asyncio
+    async def test_a_slow_load_cannot_overwrite_the_view_it_was_replaced_by(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Alternar para "sem precos" enquanto a carga com precos ainda roda: a
+        # thread lenta nao para, e sem o guard de cancelamento ela sobrescreveria
+        # a tabela nova com os dados velhos.
+        release = threading.Event()
+        priced = make_snapshot()
+        unpriced = snapshot_of(make_unpriced_position("CDB01", AssetType.CDB))
+
+        def load(*, with_prices: bool, **_: Any) -> Any:
+            if with_prices:
+                release.wait(timeout=5)
+                return priced
+            return unpriced
+
+        monkeypatch.setattr(services, "load_snapshot", load)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await pilot.app.push_screen(PositionScreen())
+            await pilot.pause()
+            await pilot.press("p")  # cancela a carga com precos, pede a sem precos
+            await settle(pilot)
+            screen = app.screen
+            assert isinstance(screen, PositionScreen)
+            assert [r[0] for r in [row(screen, i) for i in range(screen.query_one(DataTable).row_count)]] == ["CDB01"]
+
+            release.set()  # a carga cancelada termina agora
+            await settle(pilot)
+            assert [r[0] for r in [row(screen, i) for i in range(screen.query_one(DataTable).row_count)]] == ["CDB01"]
+            assert screen.sub_title == "posicao - sem precos"
+
     @pytest.mark.asyncio
     async def test_opens_with_live_prices(self, spy: SnapshotSpy) -> None:
         app = make_app()

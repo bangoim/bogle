@@ -66,10 +66,12 @@ def list_tickers() -> list[str]:
         conn.close()
 
 
-def load_transactions(ticker: str | None = None) -> list[Transaction]:
+def load_transactions() -> list[Transaction]:
+    """The whole ledger. The Transactions screen filters it client-side, so that
+    typing in the filter never waits on a round trip."""
     conn = get_connection()
     try:
-        return TransactionRepository(conn).list(ticker)
+        return TransactionRepository(conn).list()
     finally:
         conn.close()
 

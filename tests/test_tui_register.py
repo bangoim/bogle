@@ -156,7 +156,9 @@ class TestValidation:
             assert error_of(screen, "date") == "Data deve ser uma data ISO (YYYY-MM-DD), recebido '10/03/2026'."
 
     @pytest.mark.asyncio
-    async def test_date_defaults_to_today(self) -> None:
+    async def test_date_defaults_to_today_in_sao_paulo(self) -> None:
+        # Mesmo default do `bogle buy` (_resolve_date): o fuso da maquina daria
+        # uma data diferente da que a CLI grava.
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
@@ -368,6 +370,27 @@ class TestIncomeFlow:
             await pilot.press("enter")
             await settle(pilot)
             assert spy.last["tax_withheld"] is None
+
+    @pytest.mark.asyncio
+    async def test_switching_to_rendimento_clears_the_jcp_error(self) -> None:
+        # O campo desabilitado nao pode ficar com o erro (nem a borda vermelha)
+        # do tipo anterior enquanto o placeholder diz "nao se aplica".
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_form(pilot, IncomeFormScreen())
+            select = screen.query_one(Select)
+            select.value = TransactionType.JCP
+            await pilot.pause()
+            fill(screen, ticker="PETR4", amount="200")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            assert error_of(screen, "tax")  # IR obrigatorio para JCP
+
+            select.value = TransactionType.RENDIMENTO
+            await pilot.pause()
+            tax = screen.field("tax")
+            assert tax.error == ""
+            assert not tax.input.has_class("-invalid")
 
     @pytest.mark.asyncio
     async def test_switching_back_from_rendimento_re_enables_the_field(self) -> None:

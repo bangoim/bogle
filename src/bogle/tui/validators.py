@@ -26,20 +26,6 @@ from bogle.domain.errors import ValidationError
 _ZERO = Decimal("0")
 
 
-class Required(Validator):
-    """Non-empty, for fields with no other rule (a ticker, for instance)."""
-
-    def __init__(self, label: str) -> None:
-        super().__init__()
-        self.label = label
-
-    @override
-    def validate(self, value: str) -> ValidationResult:
-        if not value.strip():
-            return self.failure(f"{self.label} e obrigatorio.")
-        return self.success()
-
-
 class DecimalField(Validator):
     """A decimal, optionally blank, optionally constrained in sign."""
 
