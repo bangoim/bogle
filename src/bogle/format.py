@@ -180,10 +180,11 @@ def read_number(value: str) -> Reading:
 
     if thousands in text:
         if thousands == CANONICAL_DECIMAL and text.count(thousands) == 1:
-            head, _, tail = text.partition(thousands)
+            _, _, tail = text.partition(thousands)
             # `1.000` com decimal virgula: milhar ou decimal canonico? As duas
-            # leituras diferem por mil, entao ninguem chuta.
-            if len(tail) == 3 and tail.isdigit() and head.isdigit():
+            # leituras diferem por mil, entao ninguem chuta. Ja `0.750` nao e
+            # ambiguo: nenhum agrupamento comeca com zero, logo e decimal.
+            if _grouped(text, thousands) and len(tail) == 3:
                 return Reading(None, AMBIGUOUS)
             return Reading(f"{sign}{text}")
         if not _grouped(text, thousands):
@@ -194,8 +195,15 @@ def read_number(value: str) -> Reading:
 
 
 def _grouped(text: str, thousands: str) -> bool:
-    """True when ``text`` carries no thousands mark, or carries them in threes."""
+    """True when ``text`` carries no thousands mark, or carries them in threes.
+
+    A grouped number never opens with a zero (``0,750`` is not seven hundred and
+    fifty in any convention), so rejecting that head keeps ``0.750`` readable as
+    a decimal and stops ``0,750`` from silently becoming ``750``.
+    """
     if thousands not in text:
         return True
     head, *groups = text.split(thousands)
-    return bool(head) and head.isdigit() and len(head) <= 3 and all(len(g) == 3 and g.isdigit() for g in groups)
+    if not head.isdigit() or len(head) > 3 or head.startswith("0"):
+        return False
+    return all(len(g) == 3 and g.isdigit() for g in groups)

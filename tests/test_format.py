@@ -173,7 +173,7 @@ class TestReadNumber:
     def test_dot_decimal(self, typed: str, expected: str) -> None:
         assert read_number(typed).canonical == expected
 
-    @pytest.mark.parametrize("typed", ["126,25", "1,2,3", "1,23", "1,2345"])
+    @pytest.mark.parametrize("typed", ["126,25", "1,2,3", "1,23", "1,2345", "0,750", "0,75"])
     def test_dot_decimal_rejects_a_misplaced_comma(self, typed: str) -> None:
         # Com decimal ponto, a virgula so pode agrupar milhar — e nao esta.
         reading = read_number(typed)
@@ -205,7 +205,16 @@ class TestReadNumber:
         assert reading.canonical is None
         assert reading.reason == MISPLACED
 
-    @pytest.mark.parametrize("typed", ["1.000", "12.500", "-1.000"])
+    def test_a_grouping_never_opens_with_a_zero(self, comma: None) -> None:
+        # `0.750` nao tem duas leituras: nenhuma convencao escreve 750 assim,
+        # entao o ponto so pode ser decimal. E com decimal ponto, `0,750` nao
+        # pode virar 750 caladamente — a diferenca e de mil vezes.
+        assert read_number("0.750").canonical == "0.750"
+        configure(".")
+        assert read_number("0,750").canonical is None
+        assert read_number("0,750").reason == MISPLACED
+
+    @pytest.mark.parametrize("typed", ["1.000", "12.500", "-1.000", "123.000"])
     def test_comma_decimal_refuses_to_guess_thousand_versus_one(self, comma: None, typed: str) -> None:
         # As duas leituras diferem por mil: melhor recusar do que chutar.
         reading = read_number(typed)
