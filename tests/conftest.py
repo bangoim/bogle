@@ -28,10 +28,12 @@ def _setup_test_db() -> None:
 
 @pytest.fixture(autouse=True)
 def _canonical_number_format() -> Iterator[None]:
-    """Reset the process-wide display format (bogle.format.configure) per test."""
+    """Reset the process-wide display preferences (format, privacy) per test."""
     fmt.configure(fmt.CANONICAL_DECIMAL)
+    fmt.hide_amounts(False)
     yield
     fmt.configure(fmt.CANONICAL_DECIMAL)
+    fmt.hide_amounts(False)
 
 
 @pytest.fixture

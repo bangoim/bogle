@@ -13,7 +13,9 @@ import psycopg
 import pytest
 from psycopg import errors as pg_errors
 
+from bogle import format as fmt
 from bogle.domain.errors import MarketDataError
+from bogle.format import MASK
 from bogle.tui import services
 from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.position import PositionScreen
@@ -170,6 +172,57 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             assert metric(app.screen, "variation") == "+150.00"  # type: ignore[arg-type]
+
+
+class TestHiddenAmounts:
+    @pytest.mark.asyncio
+    async def test_h_hides_the_amounts_and_keeps_the_percentages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            await pilot.press("h")
+            await pilot.pause()
+            assert metric(home, "patrimony") == MASK
+            assert metric(home, "variation") == f"{MASK}  (+7.02%)"
+            assert metric(home, "twr-12m") == "+12.75%"  # desempenho nao e valor
+            assert metric(home, "twr-total") == "+18.40%"
+
+    @pytest.mark.asyncio
+    async def test_h_again_brings_them_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            await pilot.press("h")
+            await pilot.pause()
+            assert metric(app.screen, "patrimony") == "7,866.20"  # type: ignore[arg-type]
+
+    @pytest.mark.asyncio
+    async def test_opens_hidden_when_the_setting_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # `hide_values` decide a abertura; a TUI aplica antes de subir a app.
+        use_overview(monkeypatch, make_overview())
+        fmt.hide_amounts(True)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert metric(app.screen, "patrimony") == MASK  # type: ignore[arg-type]
+
+    @pytest.mark.asyncio
+    async def test_reloading_while_hidden_keeps_them_hidden(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            await pilot.press("r")  # recarrega do zero
+            await settle(pilot)
+            assert metric(app.screen, "patrimony") == MASK  # type: ignore[arg-type]
 
 
 class TestNavigation:

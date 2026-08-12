@@ -67,6 +67,10 @@ class TransactionsScreen(Screen[None]):
 
     # --- acoes ----------------------------------------------------------
 
+    def render_amounts(self) -> None:
+        """Redraw the rows after the privacy toggle."""
+        self._refresh_rows(self.query_one("#filter", Input).value)
+
     def action_reload(self) -> None:
         self._load()
 

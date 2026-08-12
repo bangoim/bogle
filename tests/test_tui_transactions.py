@@ -11,6 +11,7 @@ from rich.text import Text
 from textual.widgets import DataTable, Input
 
 from bogle.domain.errors import TransactionNotFoundError
+from bogle.format import MASK
 from bogle.tui import services
 from bogle.tui.screens.modals import ConfirmModal
 from bogle.tui.screens.transactions import TransactionsScreen
@@ -118,6 +119,40 @@ class TestListing:
             await pilot.press("r")
             await settle(pilot)
             assert ledger.loads == 2
+
+
+class TestHiddenAmounts:
+    @pytest.mark.asyncio
+    async def test_masks_the_money_columns(self, ledger: LedgerSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_ledger(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            assert rows(screen)[0] == ["1", "2026-03-10", "BUY", "AUVP11", MASK, MASK, MASK, MASK, MASK]
+
+    @pytest.mark.asyncio
+    async def test_h_again_brings_them_back(self, ledger: LedgerSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_ledger(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            await pilot.press("h")
+            await pilot.pause()
+            assert rows(screen)[0][6] == "378.75"
+
+    @pytest.mark.asyncio
+    async def test_the_filter_still_works_while_hidden(self, ledger: LedgerSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_ledger(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            screen.query_one("#filter", Input).value = "AUVP"
+            await pilot.pause()
+            assert [r[3] for r in rows(screen)] == ["AUVP11", "AUVP11"]
+            assert rows(screen)[0][6] == MASK
 
 
 class TestFilter:

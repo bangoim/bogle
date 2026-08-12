@@ -24,6 +24,13 @@ canonical ``1,234.56``.
 separator, always the cents (``,`` or ``.``), and thousands with no separator at
 all. See :func:`to_canonical`.
 
+**Privacy.** :func:`hide_amounts` replaces every amount with :data:`MASK` —
+money *and* quantities, since a quantity times a public price is the amount
+again. Percentages, weights and returns stay: they say how the portfolio is
+doing without saying how much is in it. Only the TUI turns this on (``h``, or
+``hide_values`` at startup); the CLI is left alone so its output stays scriptable,
+and :func:`exact_or_none` (``--json``) is never masked either way.
+
 The machine-readable path never goes through the localized helpers:
 :func:`exact_or_none` (used by ``--json``) always emits a canonical decimal.
 """
@@ -35,6 +42,9 @@ from decimal import Decimal
 
 DASH = "-"
 """Rendered in place of a value that is not available."""
+
+MASK = "\u2022" * 6
+"""Rendered in place of an amount while amounts are hidden."""
 
 CANONICAL_DECIMAL = "."
 """What ``Decimal`` itself accepts, and what ``--json`` always emits."""
@@ -61,6 +71,7 @@ def separators_for(decimal_separator: str) -> Separators:
 
 
 _SEPARATORS = separators_for(CANONICAL_DECIMAL)
+_HIDDEN = False
 
 
 def configure(decimal_separator: str) -> None:
@@ -71,6 +82,16 @@ def configure(decimal_separator: str) -> None:
 
 def separators() -> Separators:
     return _SEPARATORS
+
+
+def hide_amounts(hidden: bool) -> None:
+    """Mask (or unmask) every amount rendered from here on."""
+    global _HIDDEN
+    _HIDDEN = hidden
+
+
+def amounts_hidden() -> bool:
+    return _HIDDEN
 
 
 def _localized(canonical: str) -> str:
@@ -86,13 +107,17 @@ def _localized(canonical: str) -> str:
 
 
 def money(value: Decimal | None) -> str:
-    """``1234.5`` -> ``"1,234.50"``."""
-    return _localized(f"{value:,.2f}") if value is not None else DASH
+    """``1234.5`` -> ``"1,234.50"``, or :data:`MASK` while amounts are hidden."""
+    if value is None:
+        return DASH
+    return MASK if _HIDDEN else _localized(f"{value:,.2f}")
 
 
 def signed_money(value: Decimal | None) -> str:
     """``1234.5`` -> ``"+1,234.50"``; ``-1.2`` -> ``"-1.20"``."""
-    return _localized(f"{value:+,.2f}") if value is not None else DASH
+    if value is None:
+        return DASH
+    return MASK if _HIDDEN else _localized(f"{value:+,.2f}")
 
 
 def pct(value: Decimal | None) -> str:
@@ -106,8 +131,14 @@ def signed_pct(value: Decimal | None) -> str:
 
 
 def exact(value: Decimal | None) -> str:
-    """Every digit that matters, no more: ``10.00000000`` -> ``"10"``, ``0E+4`` -> ``"0"``."""
-    return _localized(format(value.normalize(), ",f")) if value is not None else DASH
+    """Every digit that matters, no more: ``10.00000000`` -> ``"10"``, ``0E+4`` -> ``"0"``.
+
+    Masked with the amounts: a quantity and a public price multiply back into the
+    amount.
+    """
+    if value is None:
+        return DASH
+    return MASK if _HIDDEN else _localized(format(value.normalize(), ",f"))
 
 
 def exact_or_none(value: Decimal | None) -> str | None:
@@ -121,12 +152,17 @@ def sign_color(value: Decimal) -> str:
 
 
 def signed(value: Decimal | None, *, percent: bool) -> str:
-    """Signed, colored Rich markup — percentage when ``percent``, money otherwise."""
+    """Signed, colored Rich markup — percentage when ``percent``, money otherwise.
+
+    A masked amount comes back dim and uncolored: green on a row of dots would be
+    reading a value that is not shown.
+    """
     if value is None:
         return DASH
+    if _HIDDEN and not percent:
+        return f"[dim]{MASK}[/dim]"
     body = signed_pct(value) if percent else signed_money(value)
-    color = sign_color(value)
-    return f"[{color}]{body}[/{color}]"
+    return f"[{sign_color(value)}]{body}[/{sign_color(value)}]"
 
 
 # ------------------------------------------------------------------ entrada

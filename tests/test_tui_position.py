@@ -14,6 +14,7 @@ from textual.widgets import DataTable
 
 from bogle.domain.assets import AssetType
 from bogle.domain.errors import QuoteNotFoundError
+from bogle.format import MASK
 from bogle.tui import services
 from bogle.tui.screens.position import PositionScreen
 from tests.tui_fakes import (
@@ -122,6 +123,54 @@ class TestTable:
             screen = await open_position(pilot)
             assert screen.query_one(DataTable).row_count == 0
             assert screen.note == "Nenhuma posicao ativa."
+
+
+class TestHiddenAmounts:
+    @pytest.mark.asyncio
+    async def test_masks_amounts_and_quantities_but_not_weights(self, spy: SnapshotSpy) -> None:
+        # Qtd entra na mascara: quantidade x preco publico devolve o valor.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_position(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            assert row(screen, 0) == [
+                "PETR4",
+                "STOCK",
+                MASK,  # Qtd
+                MASK,  # Preco
+                MASK,  # Valor
+                "52.30%",  # Peso atual
+                "50.00%",  # Target
+                "+2.30%",  # Drift
+                MASK,  # PnL R$
+                "+9.74%",  # PnL %
+                "+12.75%",  # TWR
+            ]
+            assert f"Total investido {MASK}" in screen.totals
+            assert f"Variacao {MASK} (+8.27%)" in screen.totals
+
+    @pytest.mark.asyncio
+    async def test_h_again_brings_them_back(self, spy: SnapshotSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_position(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            await pilot.press("h")
+            await pilot.pause()
+            assert row(screen, 0)[4] == "4,115.00"
+
+    @pytest.mark.asyncio
+    async def test_a_refetch_while_hidden_stays_hidden(self, spy: SnapshotSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_position(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            await pilot.press("r")
+            await settle(pilot)
+            assert row(screen, 0)[4] == MASK
 
 
 class TestTotals:

@@ -121,3 +121,28 @@ class TestDecimalSeparator:
         assert result.returncode == 0
         totals = json.loads(result.stdout)["totals"]
         assert totals["invested"] == "3050"  # normalizado, sem milhar e sem virgula
+
+
+class TestHideValues:
+    """The privacy mode is the TUI's; the CLI stays scriptable."""
+
+    def test_default_is_visible(self) -> None:
+        result = run_cli("config", "get", "hide_values")
+        assert result.returncode == 0
+        assert result.stdout.strip() == "false"
+
+    def test_only_booleans_are_accepted(self) -> None:
+        result = run_cli("config", "set", "hide_values", "talvez")
+        assert result.returncode == 1
+        assert "nao e um booleano" in result.stderr
+
+    def test_a_command_output_is_not_masked(self) -> None:
+        # A configuracao vale para a interface interativa: mascarar a saida de
+        # texto quebraria quem le `bogle position` num script.
+        assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30.50", "--date", "2026-01-15").returncode == 0
+        assert run_cli("config", "set", "hide_values", "true").returncode == 0
+        result = run_cli("position", "--no-prices")
+        assert result.returncode == 0
+        assert "3,050.00" in result.stdout
+        assert "\u2022" not in result.stdout

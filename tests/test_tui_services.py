@@ -20,7 +20,13 @@ from bogle.domain.assets import AssetType
 from bogle.domain.errors import AssetNotFoundError, TransactionNotFoundError, ValidationError
 from bogle.domain.transactions import TransactionType
 from bogle.repositories.assets import AssetRepository
-from bogle.settings import DECIMAL_SEPARATOR, LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, set_value
+from bogle.settings import (
+    DECIMAL_SEPARATOR,
+    HIDE_VALUES,
+    LAST_REBALANCE_DATE,
+    REBALANCE_PERIOD_MONTHS,
+    set_value,
+)
 from bogle.tui import services
 
 WHEN = datetime(2026, 3, 10, 12, tzinfo=UTC)
@@ -173,23 +179,31 @@ class TestOverviewDate:
         assert services.overview_date() < date.today()
 
 
-class TestDisplayFormat:
+class TestDisplayPreferences:
     def test_loads_the_configured_separator(self, conn: psycopg.Connection[DictRow]) -> None:
         set_value(conn, DECIMAL_SEPARATOR, ",")
-        services.apply_display_format()
+        services.apply_display_preferences()
         assert fmt.separators().decimal == ","
 
-    def test_default_keeps_the_canonical_format(self, conn: psycopg.Connection[DictRow]) -> None:
-        services.apply_display_format()
-        assert fmt.separators().is_canonical
+    def test_opens_with_the_amounts_hidden_when_asked(self, conn: psycopg.Connection[DictRow]) -> None:
+        # E o que de fato protege a tela: lembrar de apertar `h` nao protege.
+        set_value(conn, HIDE_VALUES, True)
+        services.apply_display_preferences()
+        assert fmt.amounts_hidden()
 
-    def test_a_broken_database_leaves_the_canonical_format(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_defaults_keep_the_canonical_format_and_visible_amounts(self, conn: psycopg.Connection[DictRow]) -> None:
+        services.apply_display_preferences()
+        assert fmt.separators().is_canonical
+        assert not fmt.amounts_hidden()
+
+    def test_a_broken_database_leaves_the_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def boom(*_args: object, **_kwargs: object) -> object:
             raise psycopg.OperationalError("connection refused")
 
         monkeypatch.setattr(services, "get_connection", boom)
-        services.apply_display_format()
+        services.apply_display_preferences()
         assert fmt.separators().is_canonical
+        assert not fmt.amounts_hidden()
 
 
 class TestRebalanceNotice:

@@ -17,9 +17,12 @@ import pytest
 from bogle.format import (
     CANONICAL_DECIMAL,
     DASH,
+    MASK,
+    amounts_hidden,
     configure,
     exact,
     exact_or_none,
+    hide_amounts,
     money,
     pct,
     separators,
@@ -148,6 +151,45 @@ class TestSigned:
     def test_none_is_an_uncolored_dash(self) -> None:
         assert signed(None, percent=True) == DASH
         assert signed(None, percent=False) == DASH
+
+
+class TestHiddenAmounts:
+    """Privacy mode: amounts out, percentages in."""
+
+    @pytest.fixture(autouse=True)
+    def _hidden(self) -> None:
+        hide_amounts(True)
+
+    def test_money_and_quantities_are_masked(self) -> None:
+        assert money(Decimal("12772.9")) == MASK
+        assert signed_money(Decimal("-685.43")) == MASK
+        # Quantidade entra: quantidade x preco publico devolve o valor.
+        assert exact(Decimal("1250.5")) == MASK
+
+    def test_percentages_stay(self) -> None:
+        # Dizem como a carteira vai sem dizer quanto tem dentro.
+        assert pct(Decimal("0.5230")) == "52.30%"
+        assert signed_pct(Decimal("0.0567")) == "+5.67%"
+        assert signed(Decimal("0.0567"), percent=True) == "[green]+5.67%[/green]"
+
+    def test_a_masked_amount_carries_no_color(self) -> None:
+        # Verde numa fileira de pontos seria ler um valor que nao esta na tela.
+        assert signed(Decimal("685.43"), percent=False) == f"[dim]{MASK}[/dim]"
+        assert signed(Decimal("-685.43"), percent=False) == f"[dim]{MASK}[/dim]"
+
+    def test_unavailable_still_reads_as_unavailable(self) -> None:
+        # "-" e "nao tem valor"; a mascara e "tem, mas nao mostro".
+        assert money(None) == DASH
+        assert exact(None) == DASH
+        assert signed(None, percent=False) == DASH
+
+    def test_json_is_never_masked(self) -> None:
+        assert exact_or_none(Decimal("12772.9")) == "12772.9"
+
+    def test_showing_again_restores_the_numbers(self) -> None:
+        hide_amounts(False)
+        assert money(Decimal("12772.9")) == "12,772.90"
+        assert not amounts_hidden()
 
 
 class TestToCanonical:

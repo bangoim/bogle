@@ -374,6 +374,7 @@ bogle config set rebalance_period_months 6   # only 6 or 12 accepted
 bogle config unset rebalance_period_months   # back to the default
 
 bogle config set decimal_separator ,         # 1.234,56 instead of 1,234.56
+bogle config set hide_values true            # interface opens with amounts masked
 ```
 
 | Key | Type | Default | Meaning |
@@ -382,6 +383,7 @@ bogle config set decimal_separator ,         # 1.234,56 instead of 1,234.56
 | `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY |
 | `default_compare_indices` | list[str] | `IBOV,CDI` | Indices for future `bogle compare` without `--index` |
 | `decimal_separator` | str | `.` | Decimal separator on screen (`.` or `,`); the other character groups thousands |
+| `hide_values` | bool | `false` | Open the interactive interface with the amounts masked (`h` toggles) |
 | `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
 
 ### Number format
@@ -414,6 +416,34 @@ with the message saying what to type instead.
 
 `--json` output is never localized: it always uses a canonical dot decimal with
 no grouping, so scripts keep parsing it with `Decimal(...)`.
+
+### Hiding the amounts
+
+In the interactive interface, `h` masks every amount and `h` again brings it
+back. `hide_values` decides how the interface *opens* — which is what actually
+protects a screen someone else may be looking at, since remembering to press a
+key does not:
+
+```bash
+bogle config set hide_values true    # opens hidden
+```
+
+```text
+ ╭─ Carteira - fechamento de 2026-08-11 ───────────────────────╮
+ │ Patrimonio total                 Variacao                   │
+ │ ••••••                           ••••••  (+7.02%)           │
+ │ Rentabilidade 12m (TWR)          Rentabilidade total (TWR)  │
+ │ +12.75%                          +18.40%                    │
+ ╰─────────────────────────────────────────────────────────────╯
+```
+
+Money **and quantities** are masked (a quantity times a public price is the
+amount again); percentages, weights, drifts and returns stay — they say how the
+portfolio is doing without saying how much is in it. It applies to every screen
+that shows an amount, not only the home one.
+
+The direct commands are never masked: masking `bogle position` would break
+reading its output in a script. `--json` is untouched either way.
 
 ### Market data & sources
 

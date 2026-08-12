@@ -12,6 +12,7 @@ from psycopg.rows import DictRow
 from bogle.domain.errors import UnknownSettingError, ValidationError
 from bogle.settings import (
     DEFAULT_COMPARE_INDICES,
+    HIDE_VALUES,
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
     WEIGHT_DRIFT_THRESHOLD,
@@ -111,6 +112,7 @@ class TestUnsetAndList:
         entries = {e.key: e for e in list_settings(conn)}
         assert set(entries) == {
             "decimal_separator",
+            "hide_values",
             REBALANCE_PERIOD_MONTHS,
             DEFAULT_COMPARE_INDICES,
             WEIGHT_DRIFT_THRESHOLD,
@@ -134,3 +136,29 @@ class TestFormatValue:
 
     def test_decimal(self) -> None:
         assert format_value(Decimal("0.05")) == "0.05"
+
+
+class TestHideValues:
+    def test_default_is_visible(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert get_setting(conn, HIDE_VALUES) is False
+
+    @pytest.mark.parametrize("raw", ["true", "TRUE", "1", "sim", "yes", "on"])
+    def test_accepts_the_usual_spellings_of_true(self, conn: psycopg.Connection[DictRow], raw: str) -> None:
+        assert set_setting(conn, HIDE_VALUES, raw) is True
+
+    @pytest.mark.parametrize("raw", ["false", "0", "nao", "no", "off"])
+    def test_accepts_the_usual_spellings_of_false(self, conn: psycopg.Connection[DictRow], raw: str) -> None:
+        assert set_setting(conn, HIDE_VALUES, raw) is False
+
+    def test_rejects_anything_else(self, conn: psycopg.Connection[DictRow]) -> None:
+        with pytest.raises(ValidationError, match="nao e um booleano"):
+            set_setting(conn, HIDE_VALUES, "talvez")
+
+    def test_round_trips_through_jsonb(self, conn: psycopg.Connection[DictRow]) -> None:
+        set_setting(conn, HIDE_VALUES, "true")
+        assert get_setting(conn, HIDE_VALUES) is True
+
+    def test_reads_as_the_word_it_is_typed_with(self) -> None:
+        # `bogle config get hide_values` mostra o que se digita, nao "True".
+        assert format_value(True) == "true"
+        assert format_value(False) == "false"

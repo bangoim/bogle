@@ -78,6 +78,11 @@ class PositionScreen(Screen[None]):
 
     # --- acoes ----------------------------------------------------------
 
+    def render_amounts(self) -> None:
+        """Redraw the table and the totals after the privacy toggle."""
+        if self.snapshot is not None:
+            self._show(self.snapshot)
+
     def action_reload(self) -> None:
         self._load()
 

@@ -26,7 +26,13 @@ from bogle.reports.overview import PortfolioOverview, compute_overview
 from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
-from bogle.settings import DECIMAL_SEPARATOR, LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
+from bogle.settings import (
+    DECIMAL_SEPARATOR,
+    HIDE_VALUES,
+    LAST_REBALANCE_DATE,
+    REBALANCE_PERIOD_MONTHS,
+    get_setting,
+)
 
 _ZERO = Decimal("0")
 
@@ -35,18 +41,21 @@ def _today(today: date | None) -> date:
     return today if today is not None else date.today()
 
 
-def apply_display_format() -> None:
-    """Load the user's number format into :mod:`bogle.format`.
+def apply_display_preferences() -> None:
+    """Load the user's number format and privacy mode into :mod:`bogle.format`.
 
     Runs once, synchronously, before the app opens: it is a single local query,
-    and doing it in a worker would race with the first screen's rendering.
-    Best-effort, like the CLI's — a database that is down leaves the canonical
-    format and the Home screen reports the connection failure anyway.
+    and doing it in a worker would race with the first screen's rendering — and
+    a screen that renders amounts before the privacy mode lands would show what
+    it was asked to hide. Best-effort, like the CLI's: a database that is down
+    leaves the canonical format visible and the Home screen reports the failure
+    anyway.
     """
     try:
         conn = get_connection()
         try:
             fmt.configure(get_setting(conn, DECIMAL_SEPARATOR))
+            fmt.hide_amounts(get_setting(conn, HIDE_VALUES))
         finally:
             conn.close()
     except Exception:

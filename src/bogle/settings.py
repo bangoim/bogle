@@ -26,6 +26,7 @@ DEFAULT_COMPARE_INDICES = "default_compare_indices"
 WEIGHT_DRIFT_THRESHOLD = "weight_drift_threshold"
 LAST_REBALANCE_DATE = "last_rebalance_date"
 DECIMAL_SEPARATOR = "decimal_separator"
+HIDE_VALUES = "hide_values"
 
 _VALID_PERIODS = (6, 12)
 
@@ -62,6 +63,19 @@ def _parse_separator(raw: str) -> str:
     if separator not in (".", ","):
         raise ValidationError(f"Separador decimal deve ser '.' ou ',', recebido {raw!r}.")
     return separator
+
+
+_TRUE = ("true", "1", "sim", "yes", "on")
+_FALSE = ("false", "0", "nao", "no", "off")
+
+
+def _parse_bool(raw: str) -> bool:
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    raise ValidationError(f"'{raw}' nao e um booleano. Use {_TRUE[0]} ou {_FALSE[0]}.")
 
 
 def _parse_date(raw: str) -> date:
@@ -121,6 +135,15 @@ SETTINGS: dict[str, SettingSpec] = {
             parse=_parse_separator,
             to_json=str,
             from_json=str,
+        ),
+        SettingSpec(
+            key=HIDE_VALUES,
+            type_name="bool",
+            description="Abrir a interface interativa com os valores ocultos (a tecla 'h' alterna).",
+            default=False,
+            parse=_parse_bool,
+            to_json=bool,
+            from_json=bool,
         ),
         SettingSpec(
             key=LAST_REBALANCE_DATE,
@@ -218,6 +241,9 @@ def format_value(value: Any) -> str:
     """Human/scriptable rendering: lists comma-joined, dates ISO, None explicit."""
     if value is None:
         return "(nao definido)"
+    if isinstance(value, bool):
+        # Antes do ramo de int: em Python, bool *e* int.
+        return "true" if value else "false"
     if isinstance(value, list):
         return ",".join(str(item) for item in value)
     if isinstance(value, date):

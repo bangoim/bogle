@@ -23,5 +23,5 @@ def run_tui() -> None:
     from bogle.tui import services
     from bogle.tui.app import BogleApp
 
-    services.apply_display_format()
+    services.apply_display_preferences()
     BogleApp().run()

@@ -96,6 +96,11 @@ class HomeScreen(Screen[None]):
         self._load_overview()
         self._check_rebalance()
 
+    def render_amounts(self) -> None:
+        """Redraw the summary after the privacy toggle (see ``BogleApp``)."""
+        if self.overview is not None:
+            self._show_overview(self.overview)
+
     def on_screen_resume(self) -> None:
         # Voltando de outra tela (um lancamento novo, por exemplo) o resumo pode
         # estar velho. Enquanto a primeira carga nao terminou, ela ja cobre isso.
