@@ -133,6 +133,13 @@ HomeScreen.-narrow #metrics {
     background: $error 20%;
 }
 
+/* Tema ANSI nao mistura cor: o `20%` acima viraria vermelho solido e o campo
+   inteiro seria um bloco. Ali o erro fica no proprio texto digitado. */
+Input:ansi.field-input.-invalid {
+    background: transparent;
+    color: ansi_red;
+}
+
 .field-error {
     height: 1;
     padding-left: 22;
@@ -212,4 +219,18 @@ ConfirmModal, NextStepModal {
 Toast {
     padding: 0 1;
     width: auto;
+}
+
+/* ---------------------------------------------------------------- Tabelas */
+
+/* Nos temas ANSI o textual pinta o header do DataTable com `ansi_bright_blue`
+   de fundo e `ansi_default` de texto, assumindo que o azul do terminal e escuro.
+   Num terminal onde ele e ciano claro, isso da 2.4:1 de contraste — abaixo do
+   minimo legivel. Sem fundo sobram as cores default do proprio terminal (que
+   sao legiveis por definicao), e o sublinhado marca o cabecalho no lugar da
+   tarja. */
+DataTable:ansi > .datatable--header {
+    background: transparent;
+    color: ansi_default;
+    text-style: bold underline;
 }
