@@ -6,7 +6,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 
 ## Features
 
-- **Two frontends** — `bogle` with no arguments opens an interactive full-screen interface; `bogle <command>` runs the same operations non-interactively. See [Interactive mode](#interactive-mode).
+- **Two frontends** — `bogle` with no arguments opens an interactive full-screen interface covering every command (guided forms, tables and charts); `bogle <command>` runs the same operations non-interactively. See [Interactive mode](#interactive-mode).
 - **Portfolio registry** — assets with target weights; the total can never exceed 100%.
 - **Transaction ledger** — buys, sells and income (dividends, JCP, FII distributions, interest), with fees and tax withheld.
 - **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker, plus the portfolio totals, the month profit and income received (12m).
@@ -91,11 +91,11 @@ bogle position    # direct command, unchanged
 bogle --help      # still the help
 ```
 
-Use the interface to **register operations** without memorizing flags (guided
-forms with validation as you type) and to browse the position; use the direct
-commands for one-shot answers, scripting (`--json`) and everything the interface
-does not cover yet — reports, asset management, contribution suggestions and
-settings.
+The interface covers **every command** — registering operations without
+memorizing flags (guided forms with validation as you type), the position,
+reports with charts, assets, contributions, the rebalance cycle and the settings.
+Use the direct commands for one-shot answers and for scripting (`--json`, which
+is CLI-only).
 
 Piping or redirecting (`bogle | cat`) prints the help instead of opening the
 interface, since a full-screen interface needs a real terminal.
@@ -113,11 +113,16 @@ interface, since a full-screen interface needs a real terminal.
  │ Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera...  │
  ╰─────────────────────────────────────────────────────────────────────────────╯
  ╭─ Menu ──────────────────────────────────────────────────────────────────────╮
- │ 1  Posicao      precos ao vivo, pesos e drift                               │
- │ 2  Registrar    compra, venda ou provento                                   │
- │ 3  Transacoes   listar e remover lancamentos                                │
+ │ 1  Posicao     precos ao vivo, pesos e drift                                │
+ │ 2  Registrar   compra, venda ou provento                                    │
+ │ 3  Transacoes  listar e remover lancamentos                                 │
+ │ 4  Aporte      como dividir para reduzir o drift                            │
+ │ 5  Relatorios  rentabilidade, historico, proventos                          │
+ │ 6  Ativos      cadastrar, atualizar e remover                               │
+ │ 7  Status      ciclo de rebalanceamento                                     │
+ │ 8  Config      preferencias da interface e da carteira                      │
  ╰─────────────────────────────────────────────────────────────────────────────╯
- q Sair  r Atualizar
+ q Sair  r Atualizar  h Valores  f1 Ajuda
 ```
 
 The home screen opens on the **previous close (D-1)**, not on live quotes: the
@@ -132,15 +137,33 @@ arrives as a notification here instead of a line on stderr.
 | Posicao | Priced table (weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
 | Registrar | Guided forms for buy, sell and income, with a confirmation summary | `bogle buy` / `sell` / `income` |
 | Transacoes | Ledger with a ticker filter; `d` removes the selected row after confirming | `bogle transactions`, `bogle transaction remove` |
+| Aporte | Amount → suggested split; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
+| Relatorios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
+| Ativos | List with the fixed-income metadata + forms; `a` registers, `u` changes weight/type, `d` removes | `bogle list` / `add` / `update` / `remove` |
+| Status | The rebalance cycle: period, last and next evaluation | `bogle status` |
+| Config | Every setting, editable in place (`e`) or back to its default (`d`) | `bogle config list` / `set` / `unset` |
 
 Navigation: arrows or the item's number, `Enter` to open, `Esc` to go back, `q`
 to quit from the home screen, `Ctrl+S` to save a form. The footer always shows
-the keys available on the current screen.
+the keys available on the current screen, and `f1` (or `?`) lists them in full —
+including the ones the footer has no room for. `h` hides the amounts and
+`Ctrl+P` opens the command palette (themes included); inside a form, where a
+letter belongs to the field you are typing in, `f1` and `Ctrl+P` still work.
 
 A form never writes a bad value: bad input is reported next to the field that
 caused it, and an error from the database keeps you on the form with everything
 you typed still there. Income follows the same rule as the CLI — JCP requires
-the tax withheld at source, and RENDIMENTO does not accept it.
+the tax withheld at source, and RENDIMENTO does not accept it. The asset form
+goes further and only shows the fields the chosen type accepts: TESOURO asks for
+no issuer, a prefixed instrument for no indexer, and a maturity date stops being
+required the moment daily liquidity is checked.
+
+The charts are the same ones the commands draw (plotext through
+[textual-plotext](https://github.com/Textualize/textual-plotext)), and `o` writes
+the same interactive HTML `--output` writes. One deliberate difference: the
+history chart is **taken off the screen** while amounts are hidden (and the
+export is refused), because a curve is an amount drawn instead of written —
+masking the table and leaving the axis labelled in thousands would hide nothing.
 
 ### Adding assets
 
@@ -210,6 +233,10 @@ bogle update VTI --weight 0.45   # change a target weight
 bogle update VTI --type etf      # fix the type (variable income only: STOCK/BDR/FII/ETF)
 bogle remove VTI                 # only works while the asset has no transactions
 ```
+
+The `Ativos` screen in [interactive mode](#interactive-mode) does the same four
+operations as forms — and is the only view that lists the fixed-income metadata
+(issuer, indexer, rate, liquidity, dates) of each asset.
 
 ### Recording transactions
 
@@ -301,6 +328,10 @@ shows the total allocated vs the contribution and any leftover cash. A warning
 flags private fixed-income suggestions, since a new contribution is a new
 contract (own rate and date) — register it as a new asset when you execute it.
 
+The `Aporte` screen in [interactive mode](#interactive-mode) computes the same
+split — including the side effect below, since asking for a suggestion *is* the
+evaluation.
+
 Every run records the evaluation date. `bogle status` tells where the cycle
 stands, and any command emits a reminder once the period (6 or 12 months,
 `rebalance_period_months`) completes:
@@ -336,6 +367,10 @@ bogle profit --period 12m        # limita os proventos; ganho de capital e sempr
 bogle dividends                  # proventos por mes (12 meses-calendario)
 bogle dividends --by ticker --period all
 ```
+
+The five reports are screens in [interactive mode](#interactive-mode) too, with
+the window (`t`), the indices (`i`) and the grouping (`g`) switchable without
+leaving the screen.
 
 `compare` and `history` render a line chart in the terminal by default
 (plotext). For a richer, interactive view pass `--output <file>.html`: it writes
@@ -378,10 +413,11 @@ bogle config set hide_values true            # interface opens with amounts mask
 bogle config set theme ansi-dark             # any theme the installed textual has
 ```
 
-Two of these the interface changes from the inside — `h` for the amounts,
-`ctrl+p` for the theme — and both are **written back as they change**, so the
-next session opens the way the last one was left. Everything else is set through
-`bogle config`.
+The interface changes settings from the inside too: `h` toggles the amounts and
+`ctrl+p` picks a theme, both **written back as they change**, and its Config
+screen edits every key with the same validation this command uses. Theme, decimal
+separator and privacy mode are read once at startup, so editing one of those from
+the Config screen applies it immediately instead of waiting for the next session.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
