@@ -193,6 +193,57 @@ ConfirmModal, NextStepModal {
     margin-right: 2;
 }
 
+/* -------------------------------------------------------- Relatorios */
+
+#reports {
+    padding: 1 2;
+}
+
+#reports-menu {
+    width: 100%;
+    height: auto;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#returns, #compare, #history, #profit, #income {
+    padding: 0 1;
+}
+
+/* O campo de indices e uma linha de formulario solta no topo da tela. */
+#indices {
+    height: 1;
+    margin-bottom: 1;
+}
+
+/* Tabela curta (uma linha por serie ou por janela): cresce com o conteudo em
+   vez de ocupar a tela e empurrar o grafico para fora. */
+#series, #periods {
+    height: auto;
+    max-height: 50%;
+    margin-bottom: 1;
+}
+
+#points, #income-rows {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#chart {
+    height: 1fr;
+    min-height: 10;
+}
+
+#chart-hidden, #returns-note, #compare-note, #history-note, #income-note, #profit-note {
+    height: auto;
+}
+
+#profit-panel {
+    height: auto;
+    margin-bottom: 1;
+}
+
 /* --------------------------------------------------------- Transacoes */
 
 #transactions {

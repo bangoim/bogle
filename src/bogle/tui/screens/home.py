@@ -27,6 +27,7 @@ from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.menu import Entries, MenuScreen, items_of
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
+from bogle.tui.screens.reports import ReportsScreen
 from bogle.tui.screens.transactions import TransactionsScreen
 from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
 from bogle.tui.widgets.metric import Metric
@@ -44,6 +45,7 @@ _ENTRIES: Entries = (
     (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda ou provento"), RegisterScreen),
     (MenuItem("3", "transactions", "Transacoes", "listar e remover lancamentos"), TransactionsScreen),
+    (MenuItem("4", "reports", "Relatorios", "rentabilidade, historico, proventos"), ReportsScreen),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)

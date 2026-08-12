@@ -18,6 +18,7 @@ dependencies = [
     "plotext>=5.2",
     "plotly>=5.20",
     "textual>=8.2",
+    "textual-plotext>=1.0",
 ]
 
 [project.optional-dependencies]

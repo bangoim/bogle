@@ -43,3 +43,15 @@ def exact(value: Decimal | None) -> Text:
 def signed(value: Decimal | None, *, percent: bool) -> Text:
     """Signed and colored (green >= 0, red < 0), from the shared markup."""
     return Text.from_markup(fmt.signed(value, percent=percent), justify="right")
+
+
+def points(value: Decimal | None) -> Text:
+    """A difference between two returns in percentage points, colored by sign."""
+    if value is None:
+        return right(fmt.DASH)
+    return Text(fmt.points(value), style=fmt.sign_color(value), justify="right")
+
+
+def total(value: str) -> Text:
+    """A summary cell, set apart from the rows it adds up."""
+    return Text(value, style="bold", justify="right")

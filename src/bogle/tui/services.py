@@ -13,22 +13,39 @@ and the interface tested without a database or a network.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
+from tempfile import gettempdir
 
+from bogle import charts
 from bogle import format as fmt
 from bogle.analytics.business_days import previous_business_day
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.position import get_portfolio_summary
 from bogle.rebalancing import overdue_notice
+from bogle.reports.compare import CompareReport, compute_compare
+from bogle.reports.dividends import (
+    MonthlyIncome,
+    TickerIncome,
+    income_by_month,
+    income_by_ticker,
+    income_window_start,
+)
+from bogle.reports.history import HistoryReport, compute_history
 from bogle.reports.overview import PortfolioOverview, compute_overview
+from bogle.reports.profit import ProfitReport, compute_profit
+from bogle.reports.returns import ReturnsReport, compute_returns
 from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from bogle.settings import (
     DECIMAL_SEPARATOR,
+    DEFAULT_COMPARE_INDICES,
     DEFAULT_THEME,
     HIDE_VALUES,
     LAST_REBALANCE_DATE,
@@ -218,3 +235,115 @@ def rebalance_notice(*, today: date | None = None) -> str | None:
     except Exception:
         return None
     return overdue_notice(last, period, today=_today(today))
+
+
+# ------------------------------------------------------------------ relatorios
+
+
+@dataclass(frozen=True, slots=True)
+class IncomeReport:
+    """Income over one window, in both groupings the screen switches between.
+
+    One ledger read serves both: whether to look at income per month or per
+    ticker is a display choice, and it must not cost a round trip.
+    """
+
+    start: date | None
+    """``None`` = since inception."""
+    end: date
+    by_month: list[MonthlyIncome]
+    by_ticker: list[TickerIncome]
+
+
+def default_indices() -> tuple[str, ...]:
+    """The indices ``bogle compare`` uses without ``--index``."""
+    conn = get_connection()
+    try:
+        return tuple(get_setting(conn, DEFAULT_COMPARE_INDICES))
+    finally:
+        conn.close()
+
+
+def load_returns(*, indices: tuple[str, ...] = (), today: date | None = None) -> ReturnsReport:
+    """TWR over the three windows at once — the ``bogle return`` panel."""
+    conn = get_connection()
+    try:
+        return compute_returns(conn, default_dispatcher(), indices=indices, today=_today(today))
+    finally:
+        conn.close()
+
+
+def load_compare(*, period: str, indices: tuple[str, ...], today: date | None = None) -> CompareReport:
+    """Portfolio vs indices, base 100 at the start of the window."""
+    conn = get_connection()
+    try:
+        return compute_compare(conn, default_dispatcher(), period=period, indices=indices, today=_today(today))
+    finally:
+        conn.close()
+
+
+def load_history(*, period: str, today: date | None = None) -> HistoryReport:
+    """Patrimony sampled over the window's grid."""
+    conn = get_connection()
+    try:
+        return compute_history(conn, default_dispatcher(), period=period, today=_today(today))
+    finally:
+        conn.close()
+
+
+def load_profit(*, period: str, today: date | None = None) -> ProfitReport:
+    """Capital gain (always since inception) plus income over ``period``."""
+    now = _today(today)
+    conn = get_connection()
+    try:
+        summary = get_portfolio_summary(conn, default_dispatcher())
+        transactions = TransactionRepository(conn).list()
+    finally:
+        conn.close()
+    return compute_profit(summary, transactions, income_start=income_window_start(period, now), income_end=now)
+
+
+def load_income(*, period: str, today: date | None = None) -> IncomeReport:
+    """Income received over ``period``, grouped both ways."""
+    now = _today(today)
+    start = income_window_start(period, now)
+    conn = get_connection()
+    try:
+        transactions = TransactionRepository(conn).list()
+    finally:
+        conn.close()
+    return IncomeReport(
+        start=start,
+        end=now,
+        by_month=income_by_month(transactions, start=start, end=now),
+        by_ticker=income_by_ticker(transactions, start=start, end=now),
+    )
+
+
+def chart_path(name: str) -> Path:
+    """Where an exported chart is written: a stable name in the temp directory.
+
+    A stable name (instead of a timestamped one) means asking twice overwrites
+    the file rather than littering, and the toast can always say where it went.
+    """
+    return Path(gettempdir()) / f"bogle-{name}.html"
+
+
+def export_chart(
+    *,
+    title: str,
+    x_values: Sequence[object],
+    series: charts.Series,
+    path: Path,
+    y_title: str = "",
+    y_suffix: str = "",
+) -> Path:
+    """Write the interactive HTML chart and open it in the browser.
+
+    Same output as ``--output`` on ``bogle compare``/``history``: it is the same
+    function underneath. Blocking (a file write plus spawning a browser), hence
+    a service and not something a screen does on the event loop.
+    """
+    charts.export_line_chart_html(title, list(x_values), series, str(path), y_title=y_title, y_suffix=y_suffix)
+    charts.open_in_browser(str(path))
+    return path

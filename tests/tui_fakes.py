@@ -12,11 +12,21 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from rich.text import Text
+from textual.screen import Screen
+from textual.widgets import DataTable
+
 from bogle.domain.assets import AssetType
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.position import PortfolioSummary, Position
+from bogle.reports.compare import CompareReport, CompareSeries
+from bogle.reports.dividends import MonthlyIncome, TickerIncome
+from bogle.reports.history import HistoryReport
 from bogle.reports.overview import PortfolioOverview
+from bogle.reports.profit import ProfitReport
+from bogle.reports.returns import PeriodReturn, ReturnsReport
 from bogle.reports.snapshot import PortfolioSnapshot
+from bogle.reports.valuation import PatrimonyPoint
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 
@@ -24,6 +34,8 @@ TODAY = date(2026, 8, 12)
 AS_OF = date(2026, 8, 11)
 QUOTED_AT = datetime(2026, 8, 11, 18, 28, tzinfo=UTC)
 TICKERS = ["AUVP11", "MXRF11", "PETR4"]
+INDICES = ("IBOV", "CDI")
+GRID = [date(2025, 8, 12), date(2025, 12, 31), date(2026, 4, 30), TODAY]
 
 
 def stub_services(monkeypatch: Any) -> None:
@@ -41,6 +53,14 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "save_theme", lambda theme: None)
     monkeypatch.setattr(services, "list_tickers", lambda: list(TICKERS))
     monkeypatch.setattr(services, "load_transactions", list)
+    # Relatorios (issue #75): idem, para o submenu abrir qualquer tela.
+    monkeypatch.setattr(services, "default_indices", lambda: INDICES)
+    monkeypatch.setattr(services, "load_returns", lambda **_: make_returns())
+    monkeypatch.setattr(services, "load_compare", lambda **_: make_compare())
+    monkeypatch.setattr(services, "load_history", lambda **_: make_history())
+    monkeypatch.setattr(services, "load_profit", lambda **_: make_profit())
+    monkeypatch.setattr(services, "load_income", lambda **_: make_income())
+    monkeypatch.setattr(services, "export_chart", lambda **kwargs: kwargs["path"])
     monkeypatch.setattr(services, "delete_transaction", lambda transaction_id: None)
     monkeypatch.setattr(services, "record_buy", lambda **kwargs: make_transaction(TransactionType.BUY, **kwargs))
     monkeypatch.setattr(services, "record_sell", lambda **kwargs: make_transaction(TransactionType.SELL, **kwargs))
@@ -63,6 +83,27 @@ async def settle(pilot: Any) -> None:
         await pilot.pause()
         if not list(pilot.app.workers):
             return
+
+
+async def open_screen[S: Screen[None]](pilot: Any, screen: S) -> S:
+    """Push ``screen``, let its workers finish and hand it back on top of the stack."""
+    await pilot.app.push_screen(screen)
+    await settle(pilot)
+    assert pilot.app.screen is screen
+    return screen
+
+
+def table_columns(screen: Any) -> list[str]:
+    return [str(column.label) for column in screen.query_one(DataTable).columns.values()]
+
+
+def table_rows(screen: Any) -> list[list[str]]:
+    """Every row of the screen's table as plain text."""
+    table = screen.query_one(DataTable)
+    return [
+        [cell.plain if isinstance(cell, Text) else str(cell) for cell in table.get_row_at(index)]
+        for index in range(table.row_count)
+    ]
 
 
 def make_overview(**overrides: Any) -> PortfolioOverview:
@@ -169,6 +210,116 @@ def make_snapshot(**overrides: Any) -> PortfolioSnapshot:
 
 def empty_snapshot() -> PortfolioSnapshot:
     return snapshot_of(month_profit=None, income_12m=Decimal("0"))
+
+
+def make_returns(**overrides: Any) -> ReturnsReport:
+    """The three windows, with a resolvable index and one that failed."""
+    fields: dict[str, Any] = {
+        "rows": [
+            PeriodReturn(
+                period="total",
+                start=date(2024, 3, 1),
+                end=TODAY,
+                twr=Decimal("0.184"),
+                index_returns={"IBOV": Decimal("0.11"), "CDI": Decimal("0.205")},
+            ),
+            PeriodReturn(
+                period="12m",
+                start=date(2025, 8, 12),
+                end=TODAY,
+                twr=Decimal("0.1275"),
+                index_returns={"IBOV": Decimal("0.09"), "CDI": Decimal("0.1")},
+            ),
+            PeriodReturn(
+                period="1m",
+                start=date(2026, 7, 12),
+                end=TODAY,
+                twr=Decimal("-0.012"),
+                index_returns={"IBOV": Decimal("0.004"), "CDI": Decimal("0.009")},
+            ),
+        ],
+        "excluded": [],
+        "index_errors": {},
+    }
+    fields.update(overrides)
+    return ReturnsReport(**fields)
+
+
+def make_compare(**overrides: Any) -> CompareReport:
+    fields: dict[str, Any] = {
+        "grid": list(GRID),
+        "series": [
+            CompareSeries("Carteira", [Decimal("100"), Decimal("104"), Decimal("109.5"), Decimal("112.75")]),
+            CompareSeries("IBOV", [Decimal("100"), Decimal("101"), Decimal("98"), Decimal("105")]),
+        ],
+        "excluded": [],
+        "index_errors": {},
+        "data_as_of": AS_OF,
+    }
+    fields.update(overrides)
+    return CompareReport(**fields)
+
+
+def make_history(**overrides: Any) -> HistoryReport:
+    values = ("7000", "7350", "7600", "7866.20")
+    fields: dict[str, Any] = {
+        "points": [PatrimonyPoint(date=on, value=Decimal(v)) for on, v in zip(GRID, values, strict=True)],
+        "granularity": "monthly",
+        "excluded": [],
+    }
+    fields.update(overrides)
+    return HistoryReport(**fields)
+
+
+def make_profit(**overrides: Any) -> ProfitReport:
+    fields: dict[str, Any] = {
+        "since": date(2024, 3, 1),
+        "realized": Decimal("120.50"),
+        "unrealized": Decimal("395.70"),
+        "income_by_type": {
+            TransactionType.DIVIDEND: Decimal("45.50"),
+            TransactionType.JCP: Decimal("17"),
+            TransactionType.RENDIMENTO: Decimal("82.40"),
+            TransactionType.INTEREST: Decimal("0"),
+        },
+        "income_start": None,
+        "unpriced": [],
+    }
+    fields.update(overrides)
+    return ProfitReport(**fields)
+
+
+def make_income(**overrides: Any) -> services.IncomeReport:
+    fields: dict[str, Any] = {
+        "start": date(2025, 9, 1),
+        "end": TODAY,
+        "by_month": [
+            MonthlyIncome(
+                month=date(2026, 7, 1),
+                dividend=Decimal("45.50"),
+                jcp=Decimal("17"),
+                rendimento=Decimal("82.40"),
+                interest=Decimal("0"),
+            ),
+            MonthlyIncome(
+                month=date(2026, 8, 1),
+                dividend=Decimal("0"),
+                jcp=Decimal("0"),
+                rendimento=Decimal("30"),
+                interest=Decimal("12.10"),
+            ),
+        ],
+        "by_ticker": [
+            TickerIncome(ticker="MXRF11", income_type=TransactionType.RENDIMENTO, total=Decimal("112.40")),
+            TickerIncome(ticker="PETR4", income_type=TransactionType.DIVIDEND, total=Decimal("45.50")),
+        ],
+    }
+    fields.update(overrides)
+    return services.IncomeReport(**fields)
+
+
+def empty_income() -> services.IncomeReport:
+    return make_income(by_month=[], by_ticker=[])
 
 
 def make_transaction(kind: TransactionType, **entry: Any) -> Transaction:
