@@ -152,10 +152,7 @@ class PositionScreen(Screen[None]):
 
 def _totals_markup(snapshot: PortfolioSnapshot) -> str:
     summary = snapshot.summary
-    # Sem nenhuma posicao precificada (modo sem precos, ou todas as cotacoes
-    # falharam) os totais de mercado somam zero — o que nao e o mesmo que uma
-    # carteira valer zero, entao viram "-".
-    priced = any(p.market_value is not None for p in summary.positions)
+    priced = snapshot.has_prices
     value = fmt.money(summary.total_value) if priced else fmt.DASH
     pnl = fmt.signed(summary.total_pnl, percent=False) if priced else fmt.DASH
     pnl_percent = fmt.signed(summary.total_pnl_percent, percent=True) if priced else fmt.DASH

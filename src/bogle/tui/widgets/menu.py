@@ -51,4 +51,3 @@ class Menu(OptionList):
 
     def __init__(self, items: Sequence[MenuItem], *, id: str | None = None) -> None:
         super().__init__(*(Option(_prompt(item), id=item.id) for item in items), id=id)
-        self.items = tuple(items)

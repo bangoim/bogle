@@ -1,9 +1,12 @@
 """Interactive full-screen interface (epic 13, issue #73).
 
 A second frontend over the same domain layers the CLI uses (``domain/``,
-``repositories/``, ``reports/``, ``position.py``) — it does *not* go through
-``cli/``. ``bogle`` with no arguments lands here; ``bogle <comando>`` is
-untouched.
+``repositories/``, ``reports/``, ``position.py``): no command, no rendering and
+no business rule is reached through ``cli/``. The single exception is
+``cli/parsing.py``, a leaf module with the format rules (no typer involved),
+reused by the forms so both frontends accept and reject exactly the same input.
+
+``bogle`` with no arguments lands here; ``bogle <comando>`` is untouched.
 
 Everything that blocks (psycopg, price APIs) runs in Textual worker threads
 through :mod:`bogle.tui.services`, so the interface never freezes.

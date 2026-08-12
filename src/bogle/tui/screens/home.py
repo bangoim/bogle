@@ -59,7 +59,7 @@ _VARIATION_PARTIAL = "Variacao parcial"
 class HomeScreen(Screen[None]):
     AUTO_FOCUS = "#menu"
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("q", "app.quit", "Sair"),
+        
         Binding("r", "reload", "Atualizar"),
         *menu_bindings(MENU_ITEMS),
     ]

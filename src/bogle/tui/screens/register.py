@@ -387,6 +387,9 @@ class IncomeFormScreen(FormScreen):
         # validador tem de acompanhar o tipo: sem isso, trocar de JCP para
         # RENDIMENTO deixaria a borda vermelha e o erro do tipo anterior num
         # campo que nem se aplica.
+        if income_type is TransactionType.RENDIMENTO:
+            tax.set_enabled(False, placeholder="nao se aplica a RENDIMENTO (isento para PF)")
+            return
         tax.input.validators = [
             DecimalField(
                 "IR retido",
@@ -394,9 +397,6 @@ class IncomeFormScreen(FormScreen):
                 blank_message="IR retido e obrigatorio para JCP (15% retido na fonte).",
             )
         ]
-        if income_type is TransactionType.RENDIMENTO:
-            tax.set_enabled(False, placeholder="nao se aplica a RENDIMENTO (isento para PF)")
-            return
         tax.set_enabled(True, placeholder="obrigatorio para JCP" if required else "opcional")
 
     @override

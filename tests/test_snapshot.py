@@ -18,10 +18,14 @@ import psycopg
 import pytest
 from psycopg.rows import DictRow
 
+from bogle.data.cache import DiskCache
+from bogle.data.dispatcher import PriceDispatcher
+from bogle.data.models import Quote, TesouroQuote
+from bogle.domain.errors import QuoteNotFoundError
 from bogle.reports.snapshot import compute_snapshot
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
-from tests.test_valuation import FakeYfinance, bar, make_dispatcher
+from tests.test_valuation import FakeBcb, FakeYfinance, bar, make_dispatcher
 
 TODAY = date(2026, 7, 20)  # janela do mes: 2026-06-20 -> 2026-07-20
 
@@ -32,6 +36,45 @@ HISTORY = {
         bar("2026-07-17", "25"),  # ultimo fechamento antes de hoje
     ]
 }
+
+
+class FakeQuotes:
+    """A brapi-like source with one fixed price per ticker."""
+
+    def __init__(self, prices: dict[str, str]) -> None:
+        self.prices = prices
+
+    def get_quote(self, symbol: str) -> Quote:
+        if symbol not in self.prices:
+            raise QuoteNotFoundError(symbol, provider="fake")
+        return Quote(
+            symbol=symbol,
+            price=Decimal(self.prices[symbol]),
+            currency="BRL",
+            time=datetime(2026, 7, 20, 18, tzinfo=UTC),
+            requested_symbol=symbol,
+        )
+
+    def get_index_quote(self, index: str) -> Quote:
+        raise QuoteNotFoundError(index, provider="fake")
+
+
+class NoTesouro:
+    """A Tesouro source that never answers (no Tesouro title in these fixtures)."""
+
+    def get_quote(self, title: str) -> TesouroQuote:
+        raise QuoteNotFoundError(title, provider="fake")
+
+
+def priced_dispatcher(tmp_path: Any, prices: dict[str, str]) -> PriceDispatcher:
+    """Like ``make_dispatcher``, but with live quotes available."""
+    return PriceDispatcher(
+        brapi=FakeQuotes(prices),
+        yfinance=FakeYfinance(dict(HISTORY)),
+        tesouro=NoTesouro(),
+        bcb=FakeBcb(),
+        quote_cache=DiskCache("quotes", base_dir=tmp_path),
+    )
 
 
 @pytest.fixture
@@ -78,6 +121,16 @@ class TestComputeSnapshot:
         snapshot = compute_snapshot(conn, make_dispatcher(tmp_path), today=TODAY)
         assert snapshot.excluded == ["PETR4"]
         assert snapshot.month_profit is None
+
+    def test_has_prices_reports_whether_anything_could_be_valued(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O que separa "carteira vale zero" de "nao deu para precificar": os dois
+        # frontends decidem por aqui se mostram o total ou "-".
+        assert not compute_snapshot(conn, None, today=TODAY).has_prices
+        with_prices = compute_snapshot(conn, priced_dispatcher(tmp_path, {"PETR4": "25"}), today=TODAY)
+        assert with_prices.has_prices
+        assert with_prices.summary.total_value == Decimal("250")
 
     def test_empty_portfolio(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
         snapshot = compute_snapshot(conn, make_dispatcher(tmp_path), today=TODAY)

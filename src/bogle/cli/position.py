@@ -24,7 +24,7 @@ from rich.table import Table
 
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
-from bogle.format import exact, exact_or_none, money, pct, signed
+from bogle.format import DASH, exact, exact_or_none, money, pct, signed
 from bogle.position import PortfolioSummary, Position
 from bogle.reports.snapshot import compute_snapshot
 
@@ -79,6 +79,7 @@ def _render(
     month_profit: Decimal | None = None,
     income_12m: Decimal | None = None,
     excluded: Sequence[str] = (),
+    has_prices: bool = True,
 ) -> None:
     table = Table(title="Posicao", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
@@ -102,10 +103,13 @@ def _render(
     console.print(table)
 
     console.print(f"Total investido: {money(summary.total_invested)}")
-    console.print(f"Patrimonio total: {money(summary.total_value)}")
-    console.print(
-        f"Variacao: {signed(summary.total_pnl, percent=False)} ({signed(summary.total_pnl_percent, percent=True)})"
-    )
+    # Sem nenhuma posicao precificada os totais de mercado somam zero, o que nao
+    # e o mesmo que a carteira valer zero (issue #74, revisao).
+    value = money(summary.total_value) if has_prices else DASH
+    pnl = signed(summary.total_pnl, percent=False) if has_prices else DASH
+    pnl_percent = signed(summary.total_pnl_percent, percent=True) if has_prices else DASH
+    console.print(f"Patrimonio total: {value}")
+    console.print(f"Variacao: {pnl} ({pnl_percent})")
     console.print(f"Lucro do mes: {signed(month_profit, percent=False)}")
     console.print(f"Proventos (12m): {signed(income_12m, percent=False)}")
     sources = sorted({p.price_source for p in summary.positions if p.price_source})
@@ -150,4 +154,5 @@ def position(
         month_profit=snapshot.month_profit,
         income_12m=snapshot.income_12m,
         excluded=snapshot.excluded,
+        has_prices=snapshot.has_prices,
     )

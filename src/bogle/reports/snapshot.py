@@ -37,6 +37,17 @@ class PortfolioSnapshot:
     excluded: list[str]
     """Tickers left out of the month profit for lacking price history."""
 
+    @property
+    def has_prices(self) -> bool:
+        """``True`` when at least one position could be priced.
+
+        The market totals (``total_value``, ``total_pnl``) are sums over priced
+        positions, so with nothing priced they are zero — which is not the same
+        as a portfolio worth zero, and both frontends render them as unavailable
+        instead.
+        """
+        return any(p.market_value is not None for p in self.summary.positions)
+
 
 def compute_snapshot(
     conn: psycopg.Connection[DictRow],

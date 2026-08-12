@@ -251,6 +251,9 @@ portfolio totals (invested, patrimony, variation), the month profit and income
 received (12m), then the price source(s) and the latest quote timestamp. The
 month profit needs price history, so it is omitted (shown as `-`) under
 `--no-prices`; income (12m) comes straight from the ledger and is always shown.
+When nothing could be priced — `--no-prices`, or every quote failing — patrimony
+and variation also read `-` instead of `0.00`, which would claim the portfolio is
+worth nothing.
 
 ```bash
 bogle position               # live prices

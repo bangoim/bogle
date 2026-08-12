@@ -100,6 +100,19 @@ class TestValidation:
             assert error_of(screen, "shares") == "Quantidade deve ser um numero decimal, recebido 'abc'."
 
     @pytest.mark.asyncio
+    async def test_typing_markup_does_not_break_the_error_line(self) -> None:
+        # A mensagem de validacao cita o valor digitado ("recebido '[/i]'"), e a
+        # linha de erro nao pode tentar interpretar isso como markup.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
+            await pilot.press("tab")  # do ticker para a quantidade
+            await pilot.press(*"[/i]")
+            await pilot.pause()
+            assert app.is_running
+            assert error_of(screen, "shares") == "Quantidade deve ser um numero decimal, recebido '[/i]'."
+
+    @pytest.mark.asyncio
     async def test_submitting_an_incomplete_form_writes_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         spy = RecordSpy(TransactionType.BUY)
         monkeypatch.setattr(services, "record_buy", spy)

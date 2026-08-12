@@ -12,7 +12,6 @@ from typing import override
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.suggester import Suggester
 from textual.validation import Validator
 from textual.widgets import Input, Label
 
@@ -28,14 +27,12 @@ class Field(Vertical):
         value: str = "",
         placeholder: str = "",
         validators: list[Validator] | None = None,
-        suggester: Suggester | None = None,
     ) -> None:
         super().__init__(id=id, classes="field")
         self.label = label
         self._initial = value
         self._placeholder = placeholder
         self._validators = validators or []
-        self._suggester = suggester
         self._error = ""
 
     @override
@@ -49,12 +46,14 @@ class Field(Vertical):
                 value=self._initial,
                 placeholder=self._placeholder,
                 validators=self._validators,
-                suggester=self._suggester,
                 validate_on=("changed", "blur"),
                 compact=True,
                 classes="field-input",
             )
-        yield Label("", classes="field-error")
+        # markup=False: a mensagem cita o que o usuario digitou ("recebido
+        # '[/i]'"), e o parser de markup estouraria justo no fluxo que o epico
+        # existe para proteger.
+        yield Label("", classes="field-error", markup=False)
 
     # --- valor ----------------------------------------------------------
 
