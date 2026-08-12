@@ -15,7 +15,8 @@ from textual.binding import Binding
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
-_LABEL_WIDTH = 12
+_LABEL_GAP = 2
+"""Spaces between the widest label and the descriptions column."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,11 +29,11 @@ class MenuItem:
     description: str
 
 
-def _prompt(item: MenuItem) -> Text:
+def _prompt(item: MenuItem, width: int) -> Text:
     return Text.assemble(
         (item.key, "bold cyan"),
         "  ",
-        (item.label.ljust(_LABEL_WIDTH), "bold"),
+        (item.label.ljust(width), "bold"),
         (item.description, "dim"),
     )
 
@@ -50,4 +51,8 @@ class Menu(OptionList):
     """Navigable list of :class:`MenuItem`."""
 
     def __init__(self, items: Sequence[MenuItem], *, id: str | None = None) -> None:
-        super().__init__(*(Option(_prompt(item), id=item.id) for item in items), id=id)
+        # A coluna acompanha o rotulo mais largo do proprio menu: com largura
+        # fixa, um rotulo maior que ela (por exemplo "Rentabilidade") encostava na
+        # descricao e as duas viravam uma palavra so.
+        width = max((len(item.label) for item in items), default=0) + _LABEL_GAP
+        super().__init__(*(Option(_prompt(item, width), id=item.id) for item in items), id=id)

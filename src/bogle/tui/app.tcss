@@ -129,6 +129,13 @@ HomeScreen.-narrow #metrics {
     width: 1fr;
 }
 
+/* Um Checkbox sem rotulo mede 3 celulas em `auto` e corta o proprio marcador
+   ("▐X▌" vira "▐X…"). O rotulo dele e a coluna da esquerda, entao a largura vai
+   fixa. */
+.field-row Checkbox {
+    width: 5;
+}
+
 .field-input.-invalid {
     background: $error 20%;
 }
@@ -157,7 +164,7 @@ Input:ansi.field-input.-invalid {
 
 /* -------------------------------------------------------------- Modais */
 
-ConfirmModal, NextStepModal {
+ConfirmModal, NextStepModal, EditModal {
     align: center middle;
 }
 

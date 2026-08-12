@@ -60,8 +60,11 @@ class AssetsScreen(DataScreen[list[Asset]]):
     LOADING = "#assets"
     NOTE = "#assets-note"
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("a", "add", "Adicionar"),
-        Binding("u", "update", "Atualizar"),
+        # Rotulos curtos: com seis atalhos mais os globais, "Adicionar" nao cabia
+        # em 80 colunas. "Alterar" tambem evita dois "Atualizar" no mesmo footer
+        # (o `r` ja e recarregar), que nao diriam nada.
+        Binding("a", "add", "Novo"),
+        Binding("u", "update", "Alterar"),
         Binding("d", "remove", "Remover"),
     ]
 
