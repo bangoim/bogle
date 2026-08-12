@@ -13,7 +13,25 @@ from typing import override
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.validation import Validator
+from textual.widget import Widget
 from textual.widgets import Input, Label
+
+
+class ControlRow(Horizontal):
+    """A labeled row for a control that is not an ``Input`` (a Select, a Checkbox).
+
+    Same label column as :class:`Field`, so a form mixing the two still lines up.
+    """
+
+    def __init__(self, label: str, control: Widget, *, id: str) -> None:
+        super().__init__(id=id, classes="field-row")
+        self.label = label
+        self._control = control
+
+    @override
+    def compose(self) -> ComposeResult:
+        yield Label(self.label, classes="field-label")
+        yield self._control
 
 
 class Field(Vertical):
@@ -92,6 +110,16 @@ class Field(Vertical):
     @property
     def enabled(self) -> bool:
         return not self.input.disabled
+
+    def set_applicable(self, applicable: bool, *, placeholder: str = "") -> None:
+        """Show or hide the field, per the field table of the type being registered.
+
+        Hidden means "does not apply to this type": the input is disabled as well,
+        so :meth:`check` skips it and its value is cleared — a field the type does
+        not accept must not reach the service with something in it.
+        """
+        self.display = applicable
+        self.set_enabled(applicable, placeholder=placeholder)
 
     # --- erros ----------------------------------------------------------
 

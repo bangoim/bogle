@@ -24,10 +24,14 @@ from bogle import format as fmt
 from bogle.reports.overview import PortfolioOverview
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
+from bogle.tui.screens.assets import AssetsScreen
+from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.menu import Entries, MenuScreen, items_of
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
 from bogle.tui.screens.reports import ReportsScreen
+from bogle.tui.screens.status import StatusScreen
+from bogle.tui.screens.suggest import SuggestScreen
 from bogle.tui.screens.transactions import TransactionsScreen
 from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
 from bogle.tui.widgets.metric import Metric
@@ -45,7 +49,11 @@ _ENTRIES: Entries = (
     (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda ou provento"), RegisterScreen),
     (MenuItem("3", "transactions", "Transacoes", "listar e remover lancamentos"), TransactionsScreen),
-    (MenuItem("4", "reports", "Relatorios", "rentabilidade, historico, proventos"), ReportsScreen),
+    (MenuItem("4", "suggest", "Aporte", "como dividir para reduzir o drift"), SuggestScreen),
+    (MenuItem("5", "reports", "Relatorios", "rentabilidade, historico, proventos"), ReportsScreen),
+    (MenuItem("6", "assets", "Ativos", "cadastrar, atualizar e remover"), AssetsScreen),
+    (MenuItem("7", "status", "Status", "ciclo de rebalanceamento"), StatusScreen),
+    (MenuItem("8", "config", "Config", "preferencias da interface e da carteira"), ConfigScreen),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)

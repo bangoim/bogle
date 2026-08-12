@@ -16,7 +16,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label
+from textual.widgets import Button, Input, Label
 
 NEW_ENTRY = "new"
 GO_HOME = "home"
@@ -50,6 +50,51 @@ class ConfirmModal(ModalScreen[bool]):
 
     def action_cancel(self) -> None:
         self.dismiss(False)
+
+
+class EditModal(ModalScreen[str | None]):
+    """One value, editable in place: ``Enter`` confirms, ``Esc`` cancels.
+
+    Hands back the raw string, never a parsed value: whoever opened it is the one
+    that knows the type (for a setting, ``settings.set_setting`` both parses and
+    refuses), and its error message is what the user needs to see.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancelar")]
+
+    def __init__(self, title: str, body: str, *, value: str = "", placeholder: str = "") -> None:
+        super().__init__()
+        self.dialog_title = title
+        self.body = body
+        self.value = value
+        self.placeholder = placeholder
+
+    @override
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Label(self.dialog_title, id="dialog-title", markup=False)
+            yield Label(self.body, id="dialog-body", markup=False)
+            yield Input(value=self.value, placeholder=self.placeholder, compact=True, id="dialog-input")
+            with Horizontal(id="dialog-buttons"):
+                yield Button("Salvar", id="confirm", variant="primary")
+                yield Button("Cancelar", id="cancel")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    @property
+    def typed(self) -> str:
+        return self.query_one(Input).value
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.dismiss(event.value)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(self.typed if event.button.id == "confirm" else None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class NextStepModal(ModalScreen[str]):

@@ -12,7 +12,7 @@ the way the last one was left.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, Protocol, override, runtime_checkable
+from typing import Any, ClassVar, Protocol, override, runtime_checkable
 
 from textual import work
 from textual.app import App
@@ -20,9 +20,10 @@ from textual.binding import Binding, BindingType
 from textual.screen import Screen
 
 from bogle import format as fmt
-from bogle.settings import DEFAULT_THEME
+from bogle.settings import DECIMAL_SEPARATOR, DEFAULT_THEME, HIDE_VALUES, THEME
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
+from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.home import HomeScreen
 
 
@@ -63,10 +64,13 @@ class BogleApp(App[None]):
         if self._preferred_theme in self.available_themes:
             self.theme = self._preferred_theme
             return
+        self._warn_unknown_theme(self._preferred_theme)
+
+    def _warn_unknown_theme(self, theme: str) -> None:
         # So acontece se um tema sair do textual entre duas sessoes: `config set`
         # valida o nome contra a lista da versao instalada.
         self.notify(
-            f"tema '{self._preferred_theme}' nao existe nesta versao; usando {self.theme}.",
+            f"tema '{theme}' nao existe nesta versao; usando {self.theme}.",
             severity="warning",
             markup=False,
         )
@@ -81,11 +85,43 @@ class BogleApp(App[None]):
         """
         hidden = not fmt.amounts_hidden()
         fmt.hide_amounts(hidden)
+        self.redraw_amounts()
+        self.notify("Valores ocultos." if hidden else "Valores visiveis.", timeout=3)
+        self._remember_hidden(hidden)
+
+    def redraw_amounts(self) -> None:
+        """Redraw the current screen's amounts from the data it already holds."""
         screen = self.screen
         if isinstance(screen, ShowsAmounts):
             screen.render_amounts()
-        self.notify("Valores ocultos." if hidden else "Valores visiveis.", timeout=3)
-        self._remember_hidden(hidden)
+
+    def on_config_screen_preference_changed(self, event: ConfigScreen.PreferenceChanged) -> None:
+        self.apply_preference(event.key, event.value)
+
+    def apply_preference(self, key: str, value: Any) -> None:
+        """Make a setting written from the Config screen take effect right away.
+
+        Three of the keys are read once, at startup (theme, decimal separator,
+        privacy mode). Without this, editing them from the inside would only show
+        up in the next session — which reads as the edit not having worked.
+        """
+        if key == THEME and isinstance(value, str):
+            self._show_theme(value)
+        elif key == HIDE_VALUES:
+            fmt.hide_amounts(bool(value))
+            self.redraw_amounts()
+        elif key == DECIMAL_SEPARATOR and isinstance(value, str):
+            fmt.configure(value)
+            self.redraw_amounts()
+
+    def _show_theme(self, theme: str) -> None:
+        if theme not in self.available_themes:
+            self._warn_unknown_theme(theme)
+            return
+        # A tela de Config acabou de gravar: marcar como salvo evita a segunda
+        # escrita que o watcher faria.
+        self._saved_theme = theme
+        self.theme = theme
 
     def watch_theme(self, theme_name: str) -> None:
         """Remember a theme picked in the command palette (``ctrl+p``)."""

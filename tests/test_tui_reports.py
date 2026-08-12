@@ -92,7 +92,7 @@ class TestSubmenu:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            await pilot.press("4")
+            await pilot.press("5")
             await settle(pilot)
             assert isinstance(app.screen, ReportsScreen)
 

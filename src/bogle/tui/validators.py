@@ -14,7 +14,7 @@ only complain after a round trip.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from decimal import Decimal
 from typing import override
 
@@ -26,8 +26,22 @@ from bogle.domain.errors import ValidationError
 _ZERO = Decimal("0")
 
 
+class TextField(Validator):
+    """Required free text (a ticker being registered, an issuer's name)."""
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.label = label
+
+    @override
+    def validate(self, value: str) -> ValidationResult:
+        if not value.strip():
+            return self.failure(f"{self.label} e obrigatorio.")
+        return self.success()
+
+
 class DecimalField(Validator):
-    """A decimal, optionally blank, optionally constrained in sign."""
+    """A decimal, optionally blank, optionally constrained in sign or in range."""
 
     def __init__(
         self,
@@ -36,6 +50,7 @@ class DecimalField(Validator):
         allow_blank: bool = False,
         positive: bool = False,
         blank_message: str | None = None,
+        parse: Callable[[str, str], Decimal] = parse_decimal,
     ) -> None:
         super().__init__()
         self.label = label
@@ -44,6 +59,10 @@ class DecimalField(Validator):
         """``True`` requires > 0; otherwise >= 0 (fees, taxes)."""
         self.blank_message = blank_message
         """Overrides the "obrigatorio" message (JCP explains *why* it is)."""
+        self.parse = parse
+        """Which shared parser to run: a weight and a rate have their own ranges,
+        and reusing ``cli/parsing``'s means the form refuses exactly what the
+        command refuses, with the same wording."""
 
     @override
     def validate(self, value: str) -> ValidationResult:
@@ -53,7 +72,7 @@ class DecimalField(Validator):
                 return self.success()
             return self.failure(self.blank_message or f"{self.label} e obrigatorio.")
         try:
-            parsed = parse_decimal(text, self.label)
+            parsed = self.parse(text, self.label)
         except ValidationError as exc:
             return self.failure(str(exc))
         if self.positive and parsed <= _ZERO:
@@ -64,14 +83,19 @@ class DecimalField(Validator):
 
 
 class DateField(Validator):
-    def __init__(self, label: str) -> None:
+    def __init__(self, label: str, *, allow_blank: bool = False) -> None:
         super().__init__()
         self.label = label
+        self.allow_blank = allow_blank
+        """``True`` where the date is genuinely optional (a maturity date on a
+        daily-liquidity instrument)."""
 
     @override
     def validate(self, value: str) -> ValidationResult:
         text = value.strip()
         if not text:
+            if self.allow_blank:
+                return self.success()
             return self.failure(f"{self.label} e obrigatoria.")
         try:
             parse_date(text, self.label)

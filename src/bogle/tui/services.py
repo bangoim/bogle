@@ -25,9 +25,12 @@ from bogle import format as fmt
 from bogle.analytics.business_days import previous_business_day
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
+from bogle.domain.assets import Asset, AssetType, Indexer
+from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.domain.validation import validate_asset_metadata, validate_type_change
 from bogle.position import get_portfolio_summary
-from bogle.rebalancing import overdue_notice
+from bogle.rebalancing import AporteSuggestion, next_evaluation_date, overdue_notice, suggest_allocation
 from bogle.reports.compare import CompareReport, compute_compare
 from bogle.reports.dividends import (
     MonthlyIncome,
@@ -51,8 +54,12 @@ from bogle.settings import (
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
     THEME,
+    SettingEntry,
     get_setting,
+    list_settings,
+    set_setting,
     set_value,
+    unset_setting,
 )
 
 _ZERO = Decimal("0")
@@ -347,3 +354,178 @@ def export_chart(
     charts.export_line_chart_html(title, list(x_values), series, str(path), y_title=y_title, y_suffix=y_suffix)
     charts.open_in_browser(str(path))
     return path
+
+
+# ---------------------------------------------------------------------- ativos
+
+
+def list_assets() -> list[Asset]:
+    """Every registered asset, ticker order — the rows of ``bogle list``."""
+    conn = get_connection()
+    try:
+        return AssetRepository(conn).list()
+    finally:
+        conn.close()
+
+
+def add_asset(
+    *,
+    ticker: str,
+    target_weight: Decimal,
+    asset_type: AssetType,
+    issuer: str | None = None,
+    indexer: Indexer | None = None,
+    rate: Decimal | None = None,
+    is_prefixed: bool | None = None,
+    daily_liquidity: bool | None = None,
+    purchase_date: datetime | None = None,
+    maturity_date: datetime | None = None,
+) -> Asset:
+    """Register an asset, validating the field combination for its type first.
+
+    The domain validator runs here, not in the form: it is the same last line of
+    defense ``bogle add`` uses, and its aggregated message mentions CLI flags. The
+    form aims to never reach it — it only shows the fields the type accepts and
+    marks the required ones as it is typed.
+    """
+    metadata = validate_asset_metadata(
+        asset_type,
+        issuer=issuer,
+        indexer=indexer,
+        rate=rate,
+        is_prefixed=is_prefixed,
+        daily_liquidity=daily_liquidity,
+        purchase_date=purchase_date,
+        maturity_date=maturity_date,
+    )
+    conn = get_connection()
+    try:
+        return AssetRepository(conn).add(
+            ticker,
+            target_weight,
+            asset_type=asset_type,
+            issuer=metadata.issuer,
+            indexer=metadata.indexer,
+            rate=metadata.rate,
+            is_prefixed=metadata.is_prefixed,
+            daily_liquidity=metadata.daily_liquidity,
+            purchase_date=metadata.purchase_date,
+            maturity_date=metadata.maturity_date,
+        )
+    finally:
+        conn.close()
+
+
+def update_asset(*, ticker: str, target_weight: Decimal | None = None, asset_type: AssetType | None = None) -> Asset:
+    """Change the target weight and/or the type, exactly as ``bogle update`` does.
+
+    A type change is only sound between variable-income types (they carry no
+    metadata); ``validate_type_change`` refuses anything that would leave
+    metadata missing or orphaned.
+    """
+    conn = get_connection()
+    try:
+        repo = AssetRepository(conn)
+        asset = repo.get(ticker)
+        if asset is None:
+            raise AssetNotFoundError(ticker.upper())
+        if asset_type is not None and asset_type != asset.asset_type:
+            validate_type_change(asset.ticker, asset.asset_type, asset_type)
+            asset = repo.update_type(ticker, asset_type)
+        if target_weight is not None:
+            asset = repo.update_weight(ticker, target_weight)
+        return asset
+    finally:
+        conn.close()
+
+
+def remove_asset(ticker: str) -> None:
+    conn = get_connection()
+    try:
+        AssetRepository(conn).remove(ticker)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------- aporte
+
+
+def load_suggestion(amount: Decimal, *, today: date | None = None) -> AporteSuggestion:
+    """How to split ``amount`` to shrink drift, recording the evaluation.
+
+    Suggesting a contribution *is* the rebalance cycle's evaluation (issue #24),
+    so it stamps ``last_rebalance_date`` — the same side effect ``bogle suggest``
+    has, which is what makes the overdue reminder stop nagging.
+    """
+    conn = get_connection()
+    try:
+        summary = get_portfolio_summary(conn, default_dispatcher())
+        suggestion = suggest_allocation(summary, amount)
+        set_value(conn, LAST_REBALANCE_DATE, _today(today))
+        return suggestion
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------- status
+
+
+@dataclass(frozen=True, slots=True)
+class CycleStatus:
+    """Where the rebalance evaluation cycle stands, as ``bogle status`` reports it."""
+
+    period_months: int
+    last_evaluation: date | None
+    """``None`` = never evaluated; ``bogle suggest`` (or the Aporte screen) records the first."""
+    next_evaluation: date | None
+    days: int | None
+    """Days until the next evaluation; negative means overdue."""
+
+
+def load_cycle(*, today: date | None = None) -> CycleStatus:
+    conn = get_connection()
+    try:
+        period = get_setting(conn, REBALANCE_PERIOD_MONTHS)
+        last = get_setting(conn, LAST_REBALANCE_DATE)
+    finally:
+        conn.close()
+    if last is None:
+        return CycleStatus(period_months=period, last_evaluation=None, next_evaluation=None, days=None)
+    next_evaluation = next_evaluation_date(last, period)
+    return CycleStatus(
+        period_months=period,
+        last_evaluation=last,
+        next_evaluation=next_evaluation,
+        days=(next_evaluation - _today(today)).days,
+    )
+
+
+# --------------------------------------------------------------- configuracoes
+
+
+def load_settings() -> list[SettingEntry]:
+    """Every supported key with its current value — the rows of ``bogle config list``."""
+    conn = get_connection()
+    try:
+        return list_settings(conn)
+    finally:
+        conn.close()
+
+
+def save_setting(key: str, raw: str) -> object:
+    """Parse and store one setting, returning the typed value it became."""
+    conn = get_connection()
+    try:
+        return set_setting(conn, key, raw)
+    finally:
+        conn.close()
+
+
+def reset_setting(key: str) -> object:
+    """Drop the row so ``key`` goes back to its default, and return that default."""
+    conn = get_connection()
+    try:
+        unset_setting(conn, key)
+        return get_setting(conn, key)
+    finally:
+        conn.close()

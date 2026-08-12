@@ -262,6 +262,87 @@ ConfirmModal, NextStepModal {
     height: auto;
 }
 
+/* ------------------------------------------------------------- Aporte */
+
+#suggest {
+    padding: 0 1;
+}
+
+#amount {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#allocation {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#suggest-totals, #suggest-note {
+    height: auto;
+}
+
+/* -------------------------------------------------------------- Ativos */
+
+#assets-screen {
+    padding: 0 1;
+}
+
+#assets {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#assets-note {
+    height: auto;
+}
+
+#asset-form {
+    padding: 0 2;
+    margin: 1 2;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#update-note {
+    height: auto;
+    margin-top: 1;
+}
+
+/* -------------------------------------------------------------- Status */
+
+#status {
+    padding: 1 2;
+}
+
+#cycle, #status-note {
+    height: auto;
+}
+
+#status-note {
+    margin-top: 1;
+}
+
+/* -------------------------------------------------------------- Config */
+
+#config {
+    padding: 0 1;
+}
+
+#settings {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#config-note {
+    height: auto;
+}
+
+#dialog-input {
+    margin-top: 1;
+}
+
 /* ------------------------------------------------------------------ Toasts */
 
 /* O default do textual reserva uma linha em branco acima e outra abaixo do

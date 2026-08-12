@@ -16,9 +16,10 @@ from rich.text import Text
 from textual.screen import Screen
 from textual.widgets import DataTable
 
-from bogle.domain.assets import AssetType
+from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.position import PortfolioSummary, Position
+from bogle.rebalancing import AporteSuggestion, TickerSuggestion
 from bogle.reports.compare import CompareReport, CompareSeries
 from bogle.reports.dividends import MonthlyIncome, TickerIncome
 from bogle.reports.history import HistoryReport
@@ -27,6 +28,7 @@ from bogle.reports.profit import ProfitReport
 from bogle.reports.returns import PeriodReturn, ReturnsReport
 from bogle.reports.snapshot import PortfolioSnapshot
 from bogle.reports.valuation import PatrimonyPoint
+from bogle.settings import SETTINGS, SettingEntry
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 
@@ -61,6 +63,16 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "load_profit", lambda **_: make_profit())
     monkeypatch.setattr(services, "load_income", lambda **_: make_income())
     monkeypatch.setattr(services, "export_chart", lambda **kwargs: kwargs["path"])
+    # Ativos, aporte, ciclo e configuracoes (issue #76).
+    monkeypatch.setattr(services, "list_assets", make_assets)
+    monkeypatch.setattr(services, "add_asset", lambda **kwargs: make_asset(**kwargs))
+    monkeypatch.setattr(services, "update_asset", lambda **kwargs: make_asset(**kwargs))
+    monkeypatch.setattr(services, "remove_asset", lambda ticker: None)
+    monkeypatch.setattr(services, "load_suggestion", lambda amount, **_: make_suggestion(amount=amount))
+    monkeypatch.setattr(services, "load_cycle", lambda **_: make_cycle())
+    monkeypatch.setattr(services, "load_settings", make_settings)
+    monkeypatch.setattr(services, "save_setting", lambda key, raw: raw)
+    monkeypatch.setattr(services, "reset_setting", lambda key: SETTINGS[key].default)
     monkeypatch.setattr(services, "delete_transaction", lambda transaction_id: None)
     monkeypatch.setattr(services, "record_buy", lambda **kwargs: make_transaction(TransactionType.BUY, **kwargs))
     monkeypatch.setattr(services, "record_sell", lambda **kwargs: make_transaction(TransactionType.SELL, **kwargs))
@@ -320,6 +332,107 @@ def make_income(**overrides: Any) -> services.IncomeReport:
 
 def empty_income() -> services.IncomeReport:
     return make_income(by_month=[], by_ticker=[])
+
+
+def make_asset(**overrides: Any) -> Asset:
+    """A registered asset, as the repository would return it.
+
+    Takes the same keyword arguments as ``add_asset``/``update_asset``, so a fake
+    can echo back what a form asked to write.
+    """
+    fields: dict[str, Any] = {"ticker": "PETR4", "target_weight": Decimal("0.2"), "asset_type": AssetType.STOCK}
+    fields.update({key: value for key, value in overrides.items() if value is not None})
+    return Asset(**fields)
+
+
+def make_assets() -> list[Asset]:
+    """A portfolio with one of each shape: variable income, Tesouro, private CDB."""
+    return [
+        make_asset(ticker="AUVP11", asset_type=AssetType.FII, target_weight=Decimal("0.3")),
+        make_asset(
+            ticker="CDB-XP-2027",
+            asset_type=AssetType.CDB,
+            target_weight=Decimal("0.1"),
+            issuer="XP Investimentos",
+            indexer=Indexer.CDI,
+            rate=Decimal("1.10"),
+            is_prefixed=False,
+            daily_liquidity=False,
+            purchase_date=datetime(2026, 4, 1, tzinfo=UTC),
+            maturity_date=datetime(2027, 4, 1, tzinfo=UTC),
+        ),
+        make_asset(ticker="PETR4", target_weight=Decimal("0.2")),
+        make_asset(
+            ticker="TESOURO-IPCA-2035",
+            asset_type=AssetType.TESOURO,
+            target_weight=Decimal("0.2"),
+            indexer=Indexer.IPCA_PLUS,
+            rate=Decimal("0.065"),
+            is_prefixed=False,
+            purchase_date=datetime(2026, 1, 10, tzinfo=UTC),
+            maturity_date=datetime(2035, 5, 15, tzinfo=UTC),
+        ),
+    ]
+
+
+def make_suggestion(*, amount: Decimal | None = None, **overrides: Any) -> AporteSuggestion:
+    value = amount if amount is not None else Decimal("1500")
+    fields: dict[str, Any] = {
+        "amount": value,
+        "items": [
+            TickerSuggestion(
+                ticker="AUVP11",
+                asset_type=AssetType.FII,
+                price=Decimal("126.25"),
+                allocation=Decimal("1010.00"),
+                quantity=Decimal("8"),
+                effective_cost=Decimal("1010.00"),
+                target_weight=Decimal("0.3"),
+                weight_after=Decimal("0.2840"),
+            ),
+            TickerSuggestion(
+                ticker="CDB-XP-2027",
+                asset_type=AssetType.CDB,
+                price=Decimal("811.20"),
+                allocation=Decimal("489.50"),
+                quantity=None,  # renda fixa vai por valor, nao por cota
+                effective_cost=Decimal("489.50"),
+                target_weight=Decimal("0.1"),
+                weight_after=Decimal("0.0980"),
+            ),
+        ],
+        "total_allocated": Decimal("1499.50"),
+        "leftover": Decimal("0.50"),
+        "warnings": [],
+    }
+    fields.update(overrides)
+    return AporteSuggestion(**fields)
+
+
+def make_cycle(**overrides: Any) -> services.CycleStatus:
+    fields: dict[str, Any] = {
+        "period_months": 12,
+        "last_evaluation": date(2026, 2, 10),
+        "next_evaluation": date(2027, 2, 10),
+        "days": 182,
+    }
+    fields.update(overrides)
+    return services.CycleStatus(**fields)
+
+
+def make_settings(**changed: Any) -> list[SettingEntry]:
+    """Every supported key at its default, except the ones passed in as set."""
+    return [
+        SettingEntry(
+            key=key,
+            value=changed.get(key, spec.default),
+            type_name=spec.type_name,
+            description=spec.description,
+            is_default=key not in changed,
+            updated_at=None if key not in changed else datetime(2026, 8, 12, 9, 30, tzinfo=UTC),
+        )
+        for key, spec in sorted(SETTINGS.items())
+    ]
 
 
 def make_transaction(kind: TransactionType, **entry: Any) -> Transaction:

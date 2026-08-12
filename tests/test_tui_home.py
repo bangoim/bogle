@@ -276,6 +276,22 @@ class TestNavigation:
             assert isinstance(app.screen, HomeScreen)
 
     @pytest.mark.asyncio
+    async def test_every_menu_item_opens_the_screen_it_promises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A lista pareia item e tela justamente para nao sair de sincronia; este
+        # teste percorre a lista inteira em vez de fixar um numero.
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            for item, factory in HomeScreen.ENTRIES:
+                await pilot.press(item.key)
+                await settle(pilot)
+                assert isinstance(app.screen, type(factory())), f"{item.key} ({item.label})"
+                await pilot.press("escape")
+                await settle(pilot)
+                assert isinstance(app.screen, HomeScreen)
+
+    @pytest.mark.asyncio
     async def test_enter_on_the_menu_opens_the_highlighted_item(self, monkeypatch: pytest.MonkeyPatch) -> None:
         use_overview(monkeypatch, make_overview())
         app = make_app()
