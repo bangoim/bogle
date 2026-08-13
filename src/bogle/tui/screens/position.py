@@ -188,5 +188,5 @@ def _note_for(snapshot: PortfolioSnapshot) -> str:
         return f"[yellow]{_EMPTY}[/yellow]"
     if snapshot.excluded:
         excluded = escape(", ".join(snapshot.excluded))
-        return f"[yellow]Nota:[/yellow] lucro do mes nao considera {excluded} (sem historico de precos)."
+        return f"[yellow]Nota:[/yellow] lucro do mes nao considera {excluded} (sem historico de precos no periodo)."
     return ""

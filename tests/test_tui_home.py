@@ -116,7 +116,7 @@ class TestSummary:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
             assert "TESOURO-IPCA-2035" in note
-            assert "sem historico de precos" in note
+            assert "sem historico de precos no periodo" in note
 
     @pytest.mark.asyncio
     async def test_a_partial_reading_is_not_labelled_total(self, monkeypatch: pytest.MonkeyPatch) -> None:

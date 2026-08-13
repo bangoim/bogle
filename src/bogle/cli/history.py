@@ -75,5 +75,5 @@ def history(
         _render_chart(report)
     if report.excluded:
         _CONSOLE.print(
-            f"[yellow]Nota:[/yellow] patrimonio nao considera {', '.join(report.excluded)} (sem historico de precos)."
+            f"[yellow]Nota:[/yellow] patrimonio nao considera {', '.join(report.excluded)} (sem historico de precos no periodo)."
         )

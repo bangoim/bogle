@@ -233,6 +233,44 @@ class TestPortfolioValuation:
         series = patrimony_series(valuation, [date(2026, 1, 2), date(2026, 1, 5), date(2026, 7, 20)])
         assert [p.value for p in series] == [_ZERO, Decimal("200"), Decimal("250")]
 
+    def test_a_series_that_starts_after_the_position_is_excluded(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O provider pode devolver uma serie curta demais para a janela (listagem
+        # nova, simbolo fino). Sem tratar isso, o valuator so descobre no meio da
+        # caminhada do TWR e estoura com ValueError, que nenhum frontend espera:
+        # o comando termina em traceback e a interface morre junto.
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-07-01", "25"), bar("2026-07-15", "26")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.excluded == ["PETR4", "TESOURO SELIC 2029"]
+        assert valuation.valuator is None
+        assert portfolio_twr(valuation) is None
+
+    def test_a_position_opened_inside_the_window_only_needs_history_from_there(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Comprado depois do inicio da janela: exigir preco no inicio dela
+        # excluiria uma posicao perfeitamente avaliavel.
+        AssetRepository(conn).add("VALE3", Decimal("0.2"))
+        # Meio-dia UTC: a sessao le TIMESTAMPTZ em America/Sao_Paulo, e meia-noite
+        # UTC regrediria a data local para o dia anterior ao da primeira barra.
+        TransactionRepository(conn).add_buy(
+            "VALE3", shares=Decimal("5"), unit_price=Decimal("60"), date=datetime(2026, 6, 10, 12, tzinfo=UTC)
+        )
+        yf = FakeYfinance(
+            {
+                "PETR4.SA": [bar("2026-01-05", "20"), bar("2026-07-01", "25")],
+                "VALE3.SA": [bar("2026-06-10", "60"), bar("2026-07-01", "66")],
+            }
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.excluded == ["TESOURO SELIC 2029"]
+        assert patrimony_at(valuation, date(2026, 7, 20)) == Decimal("250") + Decimal("330")
+
     def test_all_excluded_gives_none(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
         from bogle.domain.assets import AssetType
 

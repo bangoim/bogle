@@ -120,7 +120,7 @@ def _render(
         console.print(f"Cotacao mais recente: {max(timestamps):%Y-%m-%d %H:%M}")
     if excluded:
         console.print(
-            f"[yellow]Nota:[/yellow] lucro do mes nao considera {', '.join(excluded)} (sem historico de precos)."
+            f"[yellow]Nota:[/yellow] lucro do mes nao considera {', '.join(excluded)} (sem historico de precos no periodo)."
         )
 
 

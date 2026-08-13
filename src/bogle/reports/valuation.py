@@ -4,10 +4,10 @@ Combines the per-asset valuators from :meth:`PriceDispatcher.build_twr_valuator`
 into a single portfolio :data:`~bogle.analytics.twr.Valuator`, so the TWR engine
 and the patrimony series work over the whole portfolio at once.
 
-Tickers without a historical source (TESOURO — see #17 — or a variable-income
-ticker whose history fetch failed) are **excluded**, together with their
-transactions, and reported in ``excluded`` so every consumer can warn the user
-instead of silently distorting values.
+Tickers without a historical source (TESOURO — see #17 — a variable-income ticker
+whose history fetch failed, or one whose series starts after the position does)
+are **excluded**, together with their transactions, and reported in ``excluded``
+so every consumer can warn the user instead of silently distorting values.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from psycopg.rows import DictRow
 
 from bogle.analytics.twr import Valuator, compute_twr, shares_held
 from bogle.data.dispatcher import PriceDispatcher
+from bogle.domain.errors import BogleError
 from bogle.domain.transactions import Transaction
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
@@ -78,6 +79,40 @@ def _combined(valuators: list[Valuator]) -> Valuator:
     return valuate
 
 
+def _as_date(value: date) -> date:
+    return value.date() if isinstance(value, datetime) else value
+
+
+def _first_valued_date(transactions: list[Transaction], ticker: str, start: date) -> date:
+    """The earliest date the window needs a price for ``ticker``.
+
+    The position's own start when it was bought inside the window, the window's
+    start when it was already held.
+    """
+    dates = [_as_date(t.date) for t in transactions if t.ticker == ticker]
+    return max(start, min(dates)) if dates else start
+
+
+def _can_value(valuator: Valuator, ticker: str, *, since: date) -> bool:
+    """Whether the ticker can really be priced from the date it is first held.
+
+    A provider's series can begin *after* the position does — a young listing, a
+    thin symbol, a provider that only keeps a few weeks of a given ticker. The
+    valuator only discovers it when asked, and unasked it blows up in the middle
+    of the TWR walk with a ``ValueError`` no frontend expects: the command ends in
+    a traceback and the interface dies with it (the worker takes the app down).
+
+    Asking once, here, turns that into the exclusion the policy already has for a
+    ticker with no history at all. It costs nothing: the series is already in
+    memory by now, and the probe is a lookup in it.
+    """
+    try:
+        valuator({ticker: Decimal("1")}, since)
+    except (BogleError, ValueError):
+        return False
+    return True
+
+
 def build_portfolio_valuation(
     conn: psycopg.Connection[DictRow], dispatcher: PriceDispatcher, *, start: date, end: date
 ) -> PortfolioValuation:
@@ -98,7 +133,8 @@ def build_portfolio_valuation(
         valuator = dispatcher.build_twr_valuator(
             asset, unit_principal=unit_principal, start=start - _HISTORY_PAD, end=end
         )
-        if valuator is None:
+        since = _first_valued_date(transactions, holding.ticker, start)
+        if valuator is None or not _can_value(valuator, holding.ticker, since=since):
             excluded.append(holding.ticker)
             continue
         scoped.append(_scoped(valuator, holding.ticker))

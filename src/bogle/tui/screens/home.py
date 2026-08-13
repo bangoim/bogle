@@ -237,7 +237,7 @@ def _note_for(overview: PortfolioOverview) -> str:
     if overview.excluded:
         excluded = escape(", ".join(overview.excluded))
         return (
-            f"[yellow]Nota:[/yellow] sem historico de precos para {excluded} — "
+            f"[yellow]Nota:[/yellow] sem historico de precos no periodo para {excluded} — "
             "fora do patrimonio, da variacao e das rentabilidades."
         )
     if overview.patrimony is None:

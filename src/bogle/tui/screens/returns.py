@@ -122,7 +122,7 @@ def _note_for(report: ReturnsReport) -> str:
     lines = [f"[dim]{_TWR_LEGEND}[/dim]"]
     if report.excluded:
         excluded = escape(", ".join(report.excluded))
-        lines.append(f"[yellow]Nota:[/yellow] TWR nao considera {excluded} (sem historico de precos).")
+        lines.append(f"[yellow]Nota:[/yellow] TWR nao considera {excluded} (sem historico de precos no periodo).")
     lines.extend(
         f"[yellow]Nota:[/yellow] {escape(index)}: {escape(message)}" for index, message in report.index_errors.items()
     )

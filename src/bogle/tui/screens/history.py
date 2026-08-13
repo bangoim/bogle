@@ -140,5 +140,7 @@ def _note_for(report: HistoryReport) -> str:
     lines = [f"[dim]{len(report.points)} pontos, amostragem {granularity}[/dim]"]
     if report.excluded:
         excluded = escape(", ".join(report.excluded))
-        lines.append(f"[yellow]Nota:[/yellow] patrimonio nao considera {excluded} (sem historico de precos).")
+        lines.append(
+            f"[yellow]Nota:[/yellow] patrimonio nao considera {excluded} (sem historico de precos no periodo)."
+        )
     return "\n".join(lines)

@@ -47,7 +47,7 @@ def _render(report: ReturnsReport, indices: tuple[str, ...], console: Console) -
 
     if report.excluded:
         console.print(
-            f"\n[yellow]Nota:[/yellow] TWR nao considera {', '.join(report.excluded)} (sem historico de precos)."
+            f"\n[yellow]Nota:[/yellow] TWR nao considera {', '.join(report.excluded)} (sem historico de precos no periodo)."
         )
     for index, message in report.index_errors.items():
         console.print(f"[yellow]Nota:[/yellow] {index}: {message}")
