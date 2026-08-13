@@ -36,6 +36,7 @@ def _position_json(p: Position) -> dict[str, Any]:
         "ticker": p.ticker,
         "type": p.asset_type.value,
         "quantity": exact_or_none(p.quantity),
+        "average_price": exact_or_none(p.average_price),
         "price": exact_or_none(p.price),
         "market_value": exact_or_none(p.market_value),
         "current_weight": exact_or_none(p.current_weight),
@@ -84,13 +85,14 @@ def _render(
     table = Table(title="Posicao", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Tipo", no_wrap=True)
-    for header in ("Qtd", "Preco", "Valor", "Peso atual", "Target", "Drift", "PnL R$", "PnL %", "TWR"):
+    for header in ("Qtd", "Preco medio", "Cotacao", "Montante", "Peso", "Target", "Drift", "PnL R$", "PnL %", "TWR"):
         table.add_column(header, justify="right")
     for p in summary.positions:
         table.add_row(
             p.ticker,
             p.asset_type.value,
             exact(p.quantity),
+            money(p.average_price),
             money(p.price),
             money(p.market_value),
             pct(p.current_weight),

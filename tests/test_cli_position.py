@@ -46,7 +46,8 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 def sample_summary() -> PortfolioSummary:
     priced = Position(
         ticker="PETR4", asset_type=AssetType.STOCK, quantity=Decimal("10"), total_invested=Decimal("200"),
-        target_weight=Decimal("0.4"), dividends=Decimal("5"), price=Decimal("22"), market_value=Decimal("220"),
+        target_weight=Decimal("0.4"), dividends=Decimal("5"), average_price=Decimal("20.5"),
+        price=Decimal("22"), market_value=Decimal("220"),
         current_weight=Decimal("1"), drift=Decimal("0.6"), pnl=Decimal("20"), pnl_percent=Decimal("0.1"),
         twr=Decimal("0.1275"), price_source="brapi", as_of=datetime(2026, 2, 1, 18, 30, tzinfo=UTC),
     )  # fmt: skip
@@ -62,6 +63,7 @@ class TestJson:
         data = _summary_json(sample_summary())
         json.dumps(data)  # must not raise
         petr4 = data["positions"][0]
+        assert petr4["average_price"] == "20.5"
         assert petr4["price"] == "22"
         assert petr4["current_weight"] == "1"
         assert petr4["twr"] == "0.1275"
@@ -71,6 +73,7 @@ class TestJson:
     def test_unpriced_fields_are_null(self) -> None:
         data = _summary_json(sample_summary())
         cdb = data["positions"][1]
+        assert cdb["average_price"] is None
         assert cdb["price"] is None
         assert cdb["market_value"] is None
         assert cdb["as_of"] is None
@@ -177,3 +180,16 @@ def test_live_priced_json() -> None:
     petr4 = next(p for p in json.loads(result.stdout)["positions"] if p["ticker"] == "PETR4")
     assert petr4["price"] is not None
     assert petr4["price_source"] in {"brapi", "yfinance"}
+
+
+def test_table_columns_are_the_ones_the_interface_shows() -> None:
+    # A tela de Posicao promete as mesmas colunas do comando: se uma das duas
+    # mudar sozinha, a promessa vira mentira.
+    from bogle.tui.screens.position import _COLUMNS
+
+    buffer = io.StringIO()
+    _render(sample_summary(), Console(file=buffer, width=200))
+    out = buffer.getvalue()
+    for header in _COLUMNS:
+        assert header in out, header
+    assert "20.50" in out  # preco medio da posicao precificada

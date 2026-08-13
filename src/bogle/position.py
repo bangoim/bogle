@@ -24,7 +24,8 @@ from psycopg.rows import DictRow
 from bogle.analytics.twr import compute_twr
 from bogle.data.dispatcher import PriceDispatcher
 from bogle.domain.assets import Asset, AssetType
-from bogle.domain.errors import BogleError
+from bogle.domain.cost_basis import replay_cost_basis
+from bogle.domain.errors import BogleError, ValidationError
 from bogle.domain.holdings import Holding
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.repositories.assets import AssetRepository
@@ -53,6 +54,12 @@ class Position:
     total_invested: Decimal
     target_weight: Decimal
     dividends: Decimal
+    average_price: Decimal | None = None
+    """Weighted-average cost of the units still held, fees included (the RFB's
+    "preco medio"). It is *not* ``total_invested / quantity``: the holdings view
+    nets sale proceeds out of the invested capital, so after a partial sale that
+    division stops being the cost of what is left. ``None`` when the history is
+    inconsistent enough that the replay refuses it."""
     price: Decimal | None = None
     market_value: Decimal | None = None
     current_weight: Decimal | None = None
@@ -81,6 +88,7 @@ class PortfolioSummary:
 class _Priced:
     holding: Holding
     dividends: Decimal
+    average_price: Decimal | None = None
     price: Decimal | None = None
     value: Decimal | None = None
     source: str | None = None
@@ -94,6 +102,22 @@ def _to_date(value: date) -> date:
 
 def _dividends(transactions: list[Transaction]) -> Decimal:
     return sum((t.total_investment for t in transactions if t.transaction_type in _INCOME_TYPES), _ZERO)
+
+
+def _average_price(ticker: str, transactions: list[Transaction]) -> Decimal | None:
+    """The RFB average cost of the units still held, from the sequential replay.
+
+    Degrades to ``None`` instead of raising: a history the replay refuses (a sale
+    larger than the position at the time) is a real problem, but it is
+    ``bogle profit``'s job to say so — the position view exists to show the rest
+    of the portfolio, and it already renders what it cannot compute as a dash.
+    """
+    try:
+        states, _ = replay_cost_basis(transactions)
+    except ValidationError:
+        return None
+    state = states.get(ticker)
+    return state.average_cost if state is not None else None
 
 
 def _price(
@@ -140,14 +164,15 @@ def get_portfolio_summary(
             continue
         txns = transactions.list(holding.ticker)
         dividends = _dividends(txns)
+        average = _average_price(holding.ticker, txns)
         if dispatcher is None:
-            priced.append(_Priced(holding, dividends))
+            priced.append(_Priced(holding, dividends, average))
             continue
         quantity = holding.total_shares
         unit_principal = holding.total_invested / quantity if quantity != _ZERO else _ZERO
         price, value, source, as_of = _price(dispatcher, asset, quantity, unit_principal, today)
         twr = _twr(dispatcher, asset, txns, unit_principal, today)
-        priced.append(_Priced(holding, dividends, price, value, source, as_of, twr))
+        priced.append(_Priced(holding, dividends, average, price, value, source, as_of, twr))
 
     total_value = sum((p.value for p in priced if p.value is not None), _ZERO)
 
@@ -173,6 +198,7 @@ def get_portfolio_summary(
                 total_invested=holding.total_invested,
                 target_weight=holding.target_weight,
                 dividends=p.dividends,
+                average_price=p.average_price,
                 price=p.price,
                 market_value=p.value,
                 current_weight=current_weight,

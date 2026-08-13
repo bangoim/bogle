@@ -78,9 +78,10 @@ class TestTable:
                 "Ticker",
                 "Tipo",
                 "Qtd",
-                "Preco",
-                "Valor",
-                "Peso atual",
+                "Preco medio",
+                "Cotacao",
+                "Montante",
+                "Peso",
                 "Target",
                 "Drift",
                 "PnL R$",
@@ -91,6 +92,7 @@ class TestTable:
                 "PETR4",
                 "STOCK",
                 "100",
+                "37.50",
                 "41.15",
                 "4,115.00",
                 "52.30%",
@@ -113,7 +115,7 @@ class TestTable:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
-            assert row(screen, 0) == ["CDB01", "CDB", "1", "-", "-", "-", "40.00%", "-", "-", "-", "-"]
+            assert row(screen, 0) == ["CDB01", "CDB", "1", "37.50", "-", "-", "-", "40.00%", "-", "-", "-", "-"]
 
     @pytest.mark.asyncio
     async def test_empty_portfolio_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -138,8 +140,9 @@ class TestHiddenAmounts:
                 "PETR4",
                 "STOCK",
                 MASK,  # Qtd
-                MASK,  # Preco
-                MASK,  # Valor
+                MASK,  # Preco medio
+                MASK,  # Cotacao
+                MASK,  # Montante
                 "52.30%",  # Peso atual
                 "50.00%",  # Target
                 "+2.30%",  # Drift
@@ -159,7 +162,7 @@ class TestHiddenAmounts:
             await pilot.pause()
             await pilot.press("h")
             await pilot.pause()
-            assert row(screen, 0)[4] == "4,115.00"
+            assert row(screen, 0)[5] == "4,115.00"
 
     @pytest.mark.asyncio
     async def test_a_refetch_while_hidden_stays_hidden(self, spy: SnapshotSpy) -> None:
@@ -170,7 +173,7 @@ class TestHiddenAmounts:
             await pilot.pause()
             await pilot.press("r")
             await settle(pilot)
-            assert row(screen, 0)[4] == MASK
+            assert row(screen, 0)[5] == MASK
 
 
 class TestTotals:

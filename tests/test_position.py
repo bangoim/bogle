@@ -25,6 +25,7 @@ from bogle.repositories.transactions import TransactionRepository
 _DT = datetime(2026, 7, 20, tzinfo=UTC)
 BUY = datetime(2026, 1, 5, 12, 0, tzinfo=UTC)  # noon UTC -> same calendar day in America/Sao_Paulo
 DIV = datetime(2026, 1, 10, 12, 0, tzinfo=UTC)
+SELL = datetime(2026, 1, 20, 12, 0, tzinfo=UTC)
 ON_DATE = date(2026, 2, 1)
 
 
@@ -165,6 +166,38 @@ class TestPortfolioSummary:
         assert cdb.market_value == expected
         assert cdb.price == expected  # quantity == 1
         assert cdb.twr is not None
+
+    def test_average_price_folds_in_the_purchase_fees(
+        self, conn: psycopg.Connection[DictRow], repo: AssetRepository, trepo: TransactionRepository, tmp_path: Path
+    ) -> None:
+        # Corretagem e emolumentos compoem o custo (regra da RFB), entao o preco
+        # medio nao e o preco pago por cota.
+        seed_portfolio(repo, trepo)
+        repo.add("VALE3", Decimal("0.2"))
+        trepo.add_buy("VALE3", BUY, Decimal("10"), Decimal("20"), fees=Decimal("5"))
+        summary = get_portfolio_summary(
+            conn, make_dispatcher(tmp_path, brapi=FakeBrapi({"PETR4": Decimal("22")})), on_date=ON_DATE
+        )
+        assert next(p for p in summary.positions if p.ticker == "PETR4").average_price == Decimal("20")
+        assert next(p for p in summary.positions if p.ticker == "VALE3").average_price == Decimal("20.5")
+
+    def test_average_price_is_the_cost_of_what_is_left_after_a_sale(
+        self, conn: psycopg.Connection[DictRow], repo: AssetRepository, trepo: TransactionRepository, tmp_path: Path
+    ) -> None:
+        # A conta ingenua (`total_invested / quantity`) desanda aqui: a view de
+        # holdings desconta o produto da venda do capital investido, entao ela
+        # passa a medir outra coisa. O preco medio das cotas que ficaram nao muda
+        # com a venda (regra da RFB).
+        seed_portfolio(repo, trepo)
+        trepo.add_sale("PETR4", SELL, shares=Decimal("4"), unit_price=Decimal("30"))
+        summary = get_portfolio_summary(
+            conn, make_dispatcher(tmp_path, brapi=FakeBrapi({"PETR4": Decimal("22")})), on_date=ON_DATE
+        )
+        petr4 = next(p for p in summary.positions if p.ticker == "PETR4")
+        assert petr4.quantity == Decimal("6")
+        assert petr4.average_price == Decimal("20")
+        naive = petr4.total_invested / petr4.quantity
+        assert naive != petr4.average_price  # 80 / 6, que nao e preco de nada
 
     def test_weights_sum_to_one(
         self, conn: psycopg.Connection[DictRow], repo: AssetRepository, trepo: TransactionRepository, tmp_path: Path

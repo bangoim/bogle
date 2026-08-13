@@ -136,7 +136,7 @@ arrives as a notification here instead of a line on stderr.
 
 | Screen | What it covers | Equivalent commands |
 |--------|----------------|---------------------|
-| Posicao | Priced table (weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
+| Posicao | Priced table (average price, quote, weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
 | Registrar | Guided forms for buy, sell and income, with a confirmation summary | `bogle buy` / `sell` / `income` |
 | Transacoes | Ledger with a ticker filter; `d` removes the selected row after confirming | `bogle transactions`, `bogle transaction remove` |
 | Aporte | Amount → suggested split; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
@@ -296,14 +296,14 @@ bogle position --json        # machine-readable output for scripts
 ```
 
 ```text
-                                                Posicao
-┏━━━━━━━━┳━━━━━━━┳━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┓
-┃ Ticker ┃ Tipo  ┃ Qtd ┃  Preco ┃   Valor ┃ Peso atual ┃ Target ┃  Drift ┃  PnL R$ ┃  PnL % ┃     TWR ┃
-┡━━━━━━━━╇━━━━━━━╇━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━┩
-│ PETR4  │ STOCK │ 100 │  41.15 │ 4,115.00 │    52.30% │ 50.00% │ +2.30% │ +365.00 │ +9.74% │ +12.75% │
-│ MXRF11 │ FII   │ 300 │   9.80 │ 2,940.00 │    37.36% │ 40.00% │ -2.64% │ +140.00 │ +5.00% │  +6.10% │
-│ CDB01  │ CDB   │   1 │ 811.20 │   811.20 │    10.31% │ 10.00% │ +0.31% │  +11.20 │ +1.40% │  +1.40% │
-└────────┴───────┴─────┴────────┴──────────┴───────────┴────────┴────────┴─────────┴────────┴─────────┘
+                                                     Posicao
+┏━━━━━━━━┳━━━━━━━┳━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┓
+┃ Ticker ┃ Tipo  ┃ Qtd ┃ Preco medio ┃ Cotacao ┃ Montante ┃   Peso ┃ Target ┃  Drift ┃  PnL R$ ┃  PnL % ┃     TWR ┃
+┡━━━━━━━━╇━━━━━━━╇━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━┩
+│ PETR4  │ STOCK │ 100 │       37.50 │   41.15 │ 4,115.00 │ 52.30% │ 50.00% │ +2.30% │ +365.00 │ +9.74% │ +12.75% │
+│ MXRF11 │ FII   │ 300 │        9.33 │    9.80 │ 2,940.00 │ 37.36% │ 40.00% │ -2.64% │ +140.00 │ +5.00% │  +6.10% │
+│ CDB01  │ CDB   │   1 │      800.00 │  811.20 │   811.20 │ 10.31% │ 10.00% │ +0.31% │  +11.20 │ +1.40% │  +1.40% │
+└────────┴───────┴─────┴─────────────┴─────────┴──────────┴────────┴────────┴────────┴─────────┴────────┴─────────┘
 Total investido: 7,350.00
 Patrimonio total: 7,866.20
 Variacao: +516.20 (+7.02%)
