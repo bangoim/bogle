@@ -40,6 +40,7 @@ class ReportsScreen(MenuScreen):
     AUTO_FOCUS = "#reports-menu"
     ENTRIES = _ENTRIES
     MENU_TITLE = "Relatorios"
+    MENU_FRAME = "#reports-menu"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Voltar"),
         *menu_bindings(MENU_ITEMS),

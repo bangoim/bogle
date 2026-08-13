@@ -119,11 +119,13 @@ interface, since a full-screen interface needs a real terminal.
  │ 4  Aporte      como dividir para reduzir o drift                            │
  │ 5  Relatorios  rentabilidade, historico, proventos                          │
  │ 6  Ativos      cadastrar, atualizar e remover                               │
- │ 7  Status      ciclo de rebalanceamento                                     │
- │ 8  Config      preferencias da interface e da carteira                      │
  ╰─────────────────────────────────────────────────────────────────────────────╯
- q Sair  r Atualizar  h Valores  f1 Ajuda
+ q Sair  r Atualizar  s Status  c Config  h Valores  f1 Ajuda
 ```
+
+On a wide terminal (108 columns or more) the menu splits into two columns of
+three, so the summary and the logo fit without scrolling on a normal-height
+window; the side arrows move between the columns.
 
 The home screen opens on the **previous close (D-1)**, not on live quotes: the
 four numbers come from the database plus cached price history, so startup does
@@ -140,8 +142,12 @@ arrives as a notification here instead of a line on stderr.
 | Aporte | Amount → suggested split; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
 | Relatorios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
 | Ativos | List with the fixed-income metadata + forms; `a` registers, `u` changes weight/type, `d` removes | `bogle list` / `add` / `update` / `remove` |
-| Status | The rebalance cycle: period, last and next evaluation | `bogle status` |
-| Config | Every setting, editable in place (`e`) or back to its default (`d`) | `bogle config list` / `set` / `unset` |
+| Status (`s`) | The rebalance cycle: period, last and next evaluation | `bogle status` |
+| Config (`c`) | Every setting, editable in place (`e`) or back to its default (`d`) | `bogle config list` / `set` / `unset` |
+
+The last two are footer shortcuts instead of menu items — they are the screens
+you consult now and then, and the menu is what decides how tall the home screen
+is.
 
 Navigation: arrows or the item's number, `Enter` to open, `Esc` to go back, `q`
 to quit from the home screen, `Ctrl+S` to save a form. The footer always shows

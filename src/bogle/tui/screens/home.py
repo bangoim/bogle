@@ -16,7 +16,7 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Grid, Vertical, VerticalScroll
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Header, Static
 from textual.worker import get_current_worker
 
@@ -45,6 +45,10 @@ LOGO = r"""
 █▄▄▀ ▀▄▄▀ ▀▄▄▀ █▄▄▄ █▄▄▄
 """.strip("\n")
 
+# Seis itens, e nao oito: Status e Config viraram atalhos do rodape (`s` e `c`).
+# Sao as duas telas que se consulta de vez em quando, e o menu e o que decide a
+# altura da Home — com elas dentro, o resumo empurrava o logo para fora do scroll
+# em terminais de altura normal.
 _ENTRIES: Entries = (
     (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda ou provento"), RegisterScreen),
@@ -52,11 +56,17 @@ _ENTRIES: Entries = (
     (MenuItem("4", "suggest", "Aporte", "como dividir para reduzir o drift"), SuggestScreen),
     (MenuItem("5", "reports", "Relatorios", "rentabilidade, historico, proventos"), ReportsScreen),
     (MenuItem("6", "assets", "Ativos", "cadastrar, atualizar e remover"), AssetsScreen),
-    (MenuItem("7", "status", "Status", "ciclo de rebalanceamento"), StatusScreen),
-    (MenuItem("8", "config", "Config", "preferencias da interface e da carteira"), ConfigScreen),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)
+
+_COLUMNS = 2
+"""O menu e servido em duas colunas: cada item ocupa meia largura e o bloco
+inteiro cabe em tres linhas. Num terminal estreito as duas empilham (app.tcss),
+o que devolve a lista de uma coluna sem mudar nada aqui."""
+
+_LEFT = MENU_ITEMS[: (len(MENU_ITEMS) + 1) // _COLUMNS]
+_RIGHT = MENU_ITEMS[(len(MENU_ITEMS) + 1) // _COLUMNS :]
 
 _TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
 
@@ -67,11 +77,16 @@ _VARIATION_PARTIAL = "Variacao parcial"
 
 
 class HomeScreen(MenuScreen):
-    AUTO_FOCUS = "#menu"
+    AUTO_FOCUS = "#menu-left"
     ENTRIES = _ENTRIES
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "app.quit", "Sair"),
         Binding("r", "reload", "Atualizar"),
+        Binding("s", "status", "Status"),
+        Binding("c", "config", "Config"),
+        # Setas entre as colunas: a lista consome cima/baixo, esquerda/direita nao.
+        Binding("left", "focus_column(-1)", "Coluna", show=False),
+        Binding("right", "focus_column(1)", "Coluna", show=False),
         *menu_bindings(MENU_ITEMS),
     ]
 
@@ -96,7 +111,9 @@ class HomeScreen(MenuScreen):
                     yield Metric("Rentabilidade 12m (TWR)", id="twr-12m")
                     yield Metric("Rentabilidade total (TWR)", id="twr-total")
                 yield Static(id="summary-note")
-            yield Menu(MENU_ITEMS, id="menu")
+            with Horizontal(id="menu"):
+                yield Menu(_LEFT, id="menu-left")
+                yield Menu(_RIGHT, id="menu-right")
         yield Footer()
 
     @override
@@ -124,6 +141,29 @@ class HomeScreen(MenuScreen):
     def action_open(self, item_id: str) -> None:
         self._may_be_stale = True
         super().action_open(item_id)
+
+    def action_status(self) -> None:
+        self._open(StatusScreen())
+
+    def action_config(self) -> None:
+        self._open(ConfigScreen())
+
+    def _open(self, screen: StatusScreen | ConfigScreen) -> None:
+        # Pelo mesmo caminho do menu: a Config grava, entao o resumo pode mudar.
+        self._may_be_stale = True
+        self.app.push_screen(screen)
+
+    def action_focus_column(self, direction: int) -> None:
+        """Move between the two columns of the menu, keeping the row in mind."""
+        columns = list(self.query(Menu))
+        current = next((index for index, menu in enumerate(columns) if menu.has_focus), 0)
+        target = columns[max(0, min(len(columns) - 1, current + direction))]
+        # A linha acompanha: sair da terceira da esquerda e cair na primeira da
+        # direita seria uma volta ao topo sem motivo.
+        row = columns[current].highlighted
+        target.focus()
+        if row is not None and target.option_count:
+            target.highlighted = min(row, target.option_count - 1)
 
     def action_reload(self) -> None:
         for metric in self.query(Metric):

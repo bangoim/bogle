@@ -63,12 +63,31 @@ HomeScreen.-narrow #metrics {
     margin-top: 1;
 }
 
+/* Uma coluna por padrao; em terminal largo (-wide) o menu vira duas, o que
+   corta o bloco de seis para tres linhas e ocupa o espaco que sobrava a direita
+   das descricoes. Abaixo disso as descricoes quebrariam em duas linhas cada e a
+   troca sairia pior que a lista simples. */
 #menu {
+    layout: vertical;
     width: 100%;
     height: auto;
+    padding: 0 1;
     border: round $primary;
     border-title-color: $text;
     border-title-style: bold;
+}
+
+/* Sem borda propria: quem emoldura o menu e o container, e duas caixas dentro
+   da caixa sao ruido. */
+#menu-left, #menu-right {
+    width: 1fr;
+    height: auto;
+    border: none;
+    padding: 0;
+}
+
+HomeScreen.-wide #menu {
+    layout: horizontal;
 }
 
 /* ------------------------------------------------------------ Posicao */

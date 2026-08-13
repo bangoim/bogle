@@ -57,7 +57,9 @@ class BogleApp(App[None]):
         # Definidos aqui, e nao no corpo da classe, porque a anotacao da base e
         # `ClassVar[...] | None` — que nenhum dos dois linters aceita como valida.
         self.VERTICAL_BREAKPOINTS = [(0, "-short"), (24, "-tall")]
-        self.HORIZONTAL_BREAKPOINTS = [(0, "-narrow"), (72, "-normal")]
+        # `-wide` e onde o menu da Home cabe em duas colunas sem quebrar as
+        # descricoes: duas colunas de ~50 mais as bordas e o respiro da tela.
+        self.HORIZONTAL_BREAKPOINTS = [(0, "-narrow"), (72, "-normal"), (108, "-wide")]
         self._preferred_theme = theme
         self._saved_theme = theme
         """The theme currently in ``user_settings``; guards a pointless write."""

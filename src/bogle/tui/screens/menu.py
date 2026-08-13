@@ -33,9 +33,12 @@ class MenuScreen(Screen[None]):
 
     ENTRIES: ClassVar[Entries] = ()
     MENU_TITLE: ClassVar[str] = "Menu"
+    MENU_FRAME: ClassVar[str] = "#menu"
+    """What carries the border and its title — the list itself on a screen with
+    one column, the container around them when the menu is split in two."""
 
     def on_mount(self) -> None:
-        self.query_one(Menu).border_title = self.MENU_TITLE
+        self.query_one(self.MENU_FRAME).border_title = self.MENU_TITLE
 
     def action_open(self, item_id: str) -> None:
         screens = {item.id: factory for item, factory in self.ENTRIES}

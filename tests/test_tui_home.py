@@ -18,9 +18,12 @@ from bogle.domain.errors import MarketDataError
 from bogle.format import MASK
 from bogle.tui import services
 from bogle.tui.app import BogleApp
+from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
+from bogle.tui.screens.reports import ReportsScreen
+from bogle.tui.screens.status import StatusScreen
 from bogle.tui.widgets.menu import Menu
 from bogle.tui.widgets.metric import PLACEHOLDER, Metric
 from tests.tui_fakes import (
@@ -297,7 +300,7 @@ class TestNavigation:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert app.screen.query_one(Menu).has_focus
+            assert app.screen.query_one("#menu-left", Menu).has_focus
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, PositionScreen)
@@ -311,6 +314,96 @@ class TestNavigation:
             await pilot.press("down", "enter")  # segundo item: Registrar
             await settle(pilot)
             assert isinstance(app.screen, RegisterScreen)
+
+    @pytest.mark.asyncio
+    async def test_s_and_c_open_the_two_screens_that_left_the_menu(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("s")
+            await settle(pilot)
+            assert isinstance(app.screen, StatusScreen)
+            await pilot.press("escape")
+            await settle(pilot)
+            await pilot.press("c")
+            await settle(pilot)
+            assert isinstance(app.screen, ConfigScreen)
+
+    @pytest.mark.asyncio
+    async def test_coming_back_from_config_refreshes_the_summary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A Config grava (separador, privacidade, indices): o resumo pode mudar,
+        # entao ela conta como tela que suja a Home, igual as do menu.
+        loads = []
+
+        def load(**_: Any) -> Any:
+            loads.append(1)
+            return make_overview()
+
+        monkeypatch.setattr(services, "load_overview", load)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("c")
+            await settle(pilot)
+            await pilot.press("escape")
+            await settle(pilot)
+            assert len(loads) == 2
+
+    @pytest.mark.asyncio
+    async def test_the_menu_splits_in_two_columns_on_a_wide_terminal(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Seis itens em tres linhas: e o que faz o resumo e o logo caberem sem
+        # scroll num terminal de altura normal.
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test(size=(148, 30)) as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            assert home.has_class("-wide")
+            assert home.query_one("#menu").size.height == 3  # tres linhas de itens
+            assert [menu.option_count for menu in home.query(Menu)] == [3, 3]
+
+    @pytest.mark.asyncio
+    async def test_a_narrower_terminal_keeps_the_single_column(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Abaixo de -wide as descricoes quebrariam em duas linhas cada, e a troca
+        # sairia pior que a lista simples.
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test(size=(90, 30)) as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            assert not home.has_class("-wide")
+            assert home.query_one("#menu").size.height == 6  # os seis itens, um por linha
+
+    @pytest.mark.asyncio
+    async def test_the_side_arrows_move_between_the_columns_keeping_the_row(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test(size=(148, 30)) as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            left = home.query_one("#menu-left", Menu)
+            right = home.query_one("#menu-right", Menu)
+
+            await pilot.press("down")  # segunda linha da esquerda: Registrar
+            await pilot.press("right")
+            await pilot.pause()
+            assert right.has_focus
+            assert right.highlighted == 1  # Relatorios, a segunda da direita
+            await pilot.press("enter")
+            await settle(pilot)
+            assert isinstance(app.screen, ReportsScreen)
+
+            await pilot.press("escape")
+            await settle(pilot)
+            await pilot.press("left")
+            await pilot.pause()
+            assert left.has_focus
 
     @pytest.mark.asyncio
     async def test_q_quits_from_the_home_screen(self, monkeypatch: pytest.MonkeyPatch) -> None:

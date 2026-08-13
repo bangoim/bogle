@@ -78,6 +78,7 @@ class RegisterScreen(MenuScreen):
     AUTO_FOCUS = "#register-menu"
     ENTRIES = _ENTRIES
     MENU_TITLE = "Registrar"
+    MENU_FRAME = "#register-menu"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Voltar"),
         *menu_bindings(MENU_ITEMS),

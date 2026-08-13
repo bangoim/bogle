@@ -177,7 +177,10 @@ class TestHelpOverlay:
             assert isinstance(modal, HelpModal)
             keys = dict(modal.shortcuts)
             assert keys["1"] == "Posicao"
-            assert keys["8"] == "Config"
+            assert keys["6"] == "Ativos"
+            # Status e Config sairam do menu para o rodape.
+            assert keys["s"] == "Status"
+            assert keys["c"] == "Config"
             assert keys["q"] == "Sair"
             assert modal.subject == ""  # a Home nao tem subtitulo proprio
 
