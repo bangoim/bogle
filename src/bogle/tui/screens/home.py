@@ -22,6 +22,7 @@ from textual.worker import get_current_worker
 
 from bogle import format as fmt
 from bogle.reports.overview import PortfolioOverview
+from bogle.reports.valuation import RETRIABLE
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.assets import AssetsScreen
@@ -231,15 +232,28 @@ def _variation(overview: PortfolioOverview) -> str:
     return absolute if percent is None else f"{absolute}  ({fmt.signed(percent, percent=True)})"
 
 
+def _excluded_note(overview: PortfolioOverview) -> str:
+    """Which tickers are out of the four numbers, and why each one is.
+
+    The reason matters: "no price history" reads like a fact about the asset, but
+    two of the three causes are the provider having a bad minute — and those the
+    user can do something about, which is why the retry line only shows up then.
+    """
+    listed = ", ".join(
+        f"{escape(ticker)} ({escape(overview.excluded_reasons.get(ticker, ''))})".replace(" ()", "")
+        for ticker in overview.excluded
+    )
+    note = f"[yellow]Nota:[/yellow] fora do patrimonio, da variacao e das rentabilidades: {listed}."
+    if RETRIABLE & set(overview.excluded_reasons.values()):
+        note += " [dim]'r' pede de novo; se insistir, feche e abra o bogle.[/dim]"
+    return note
+
+
 def _note_for(overview: PortfolioOverview) -> str:
     if overview.is_empty:
         return "[yellow]Nenhuma transacao registrada ainda.[/yellow]"
     if overview.excluded:
-        excluded = escape(", ".join(overview.excluded))
-        return (
-            f"[yellow]Nota:[/yellow] sem historico de precos no periodo para {excluded} — "
-            "fora do patrimonio, da variacao e das rentabilidades."
-        )
+        return _excluded_note(overview)
     if overview.patrimony is None:
         return f"[yellow]Nota:[/yellow] nenhuma posicao avaliavel no fechamento de {overview.as_of.isoformat()}."
     if overview.twr_12m_is_shorter and overview.twr_12m_start is not None:

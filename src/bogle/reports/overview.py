@@ -29,7 +29,7 @@ should say so.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -62,6 +62,10 @@ class PortfolioOverview:
     """Where the 12m window actually starts — the inception when the portfolio
     is younger than 12 months, in which case the window is shorter than its name."""
     excluded: list[str]
+    excluded_reasons: dict[str, str] = field(default_factory=dict)
+    """Why each excluded ticker is out (see :mod:`bogle.reports.valuation`). The
+    Home screen shows it: "no price history" reads like a permanent fact about the
+    asset, and one of the three reasons is a provider hiccup worth retrying."""
 
     @property
     def is_empty(self) -> bool:
@@ -160,4 +164,5 @@ def compute_overview(
         twr_total=twr_total,
         twr_12m_start=start_12m,
         excluded=valuation.excluded,
+        excluded_reasons=valuation.reasons,
     )

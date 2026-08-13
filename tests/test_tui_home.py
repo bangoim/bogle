@@ -16,6 +16,7 @@ from psycopg import errors as pg_errors
 from bogle import format as fmt
 from bogle.domain.errors import MarketDataError
 from bogle.format import MASK
+from bogle.reports.valuation import NO_SOURCE, SHORT_SERIES
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 from bogle.tui.screens.config import ConfigScreen
@@ -109,14 +110,49 @@ class TestSummary:
             assert metric(home, "variation") == "-"
 
     @pytest.mark.asyncio
-    async def test_excluded_tickers_are_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        use_overview(monkeypatch, make_overview(excluded=["TESOURO-IPCA-2035"]))
+    async def test_excluded_tickers_are_reported_with_the_reason(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(
+            monkeypatch,
+            make_overview(
+                excluded=["TESOURO-IPCA-2035"],
+                excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
+            ),
+        )
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
             assert "TESOURO-IPCA-2035" in note
-            assert "sem historico de precos no periodo" in note
+            assert NO_SOURCE in note
+            assert "fora do patrimonio, da variacao e das rentabilidades" in note
+
+    @pytest.mark.asyncio
+    async def test_a_provider_hiccup_says_it_is_worth_trying_again(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # "Sem historico" lia como fato permanente do ativo; a serie curta e o
+        # provedor tendo um minuto ruim, e reabrir resolve.
+        use_overview(
+            monkeypatch,
+            make_overview(excluded=["VWRA11"], excluded_reasons={"VWRA11": SHORT_SERIES}),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert SHORT_SERIES in note
+            assert "feche e abra o bogle" in note
+
+    @pytest.mark.asyncio
+    async def test_a_permanent_exclusion_does_not_suggest_retrying(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Nada que o usuario faca traz historico de Tesouro (#17): sugerir tentar
+        # de novo seria mandar bater numa porta fechada.
+        use_overview(
+            monkeypatch,
+            make_overview(excluded=["TESOURO-IPCA-2035"], excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE}),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert "feche e abra" not in app.screen.note  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_a_partial_reading_is_not_labelled_total(self, monkeypatch: pytest.MonkeyPatch) -> None:

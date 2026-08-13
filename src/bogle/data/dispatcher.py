@@ -93,6 +93,11 @@ def _yahoo_symbol(ticker: str) -> str:
     return ticker if "." in ticker else f"{ticker}.SA"
 
 
+def _reaches(history: Sequence[HistPoint], since: date) -> bool:
+    """Whether the series has a bar on or before ``since`` — what makes it usable."""
+    return bool(history) and _as_date(history[0].date) <= since
+
+
 def _as_date(value: date) -> date:
     return value.date() if isinstance(value, datetime) else value
 
@@ -359,7 +364,9 @@ class PriceDispatcher:
 
     # --- historical valuation (for TWR) --------------------------------
 
-    def build_twr_valuator(self, asset: Asset, *, unit_principal: Decimal, start: date, end: date) -> Valuator | None:
+    def build_twr_valuator(
+        self, asset: Asset, *, unit_principal: Decimal, start: date, end: date, covering: date | None = None
+    ) -> Valuator | None:
         """A valuator ``(holdings, on_date) -> Decimal`` for the TWR engine, or None.
 
         Variable income marks to the ticker's historical close (long history via
@@ -367,21 +374,49 @@ class PriceDispatcher:
         (BCB series fetched once for the whole window). Returns ``None`` for
         TESOURO — no free historical price series is wired — so the caller reports
         TWR as unavailable.
+
+        ``covering`` is the date the series has to reach back to for the caller to
+        be able to use it (usually when the position starts). Given it, a first
+        answer that falls short is asked again a different way — see
+        :meth:`_variable_income_history`.
         """
         from bogle.analytics.twr import price_history_valuator
 
         if asset.asset_type in VARIABLE_INCOME_TYPES:
-            history = self._variable_income_history(asset.ticker, start, end)
+            history = self._variable_income_history(asset.ticker, start, end, covering=covering)
             return price_history_valuator({asset.ticker: history}) if history else None
         if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
             return self._fixed_income_valuator(asset, unit_principal, end)
         return None
 
-    def _variable_income_history(self, ticker: str, start: date, end: date) -> list[HistPoint]:
-        # Long history via yfinance (.SA for B3); brapi's free plan only covers ~3 months.
+    def _variable_income_history(
+        self, ticker: str, start: date, end: date, *, covering: date | None = None
+    ) -> list[HistPoint]:
+        """Historical closes for ``[start, end]``, best-effort.
+
+        Long history via yfinance (.SA for B3); brapi's free plan only covers ~3
+        months. Yahoo sometimes answers a dated range with just its last weeks —
+        no error, simply a short series — and the caller would drop the position
+        from every historical number because of it. When ``covering`` says how far
+        back the series has to reach, a short answer is asked again as the whole
+        series (a different request shape, which sometimes comes back complete)
+        and trimmed here. It is a second chance, not a guarantee: when the provider
+        insists, the short series is returned and the caller reports the ticker as
+        excluded.
+        """
+        symbol = _yahoo_symbol(ticker)
+        history = self._history_or_empty(symbol, start=start, end=end)
+        if covering is None or _reaches(history, covering):
+            return history
+        widest = [point for point in self._history_or_empty(symbol) if start <= _as_date(point.date) <= end]
+        return widest if _reaches(widest, covering) else history
+
+    def _history_or_empty(self, symbol: str, *, start: date | None = None, end: date | None = None) -> list[HistPoint]:
         try:
+            if start is None:
+                return self._yfinance.get_history(symbol, range_="max")
             return self._yfinance.get_history(
-                _yahoo_symbol(ticker), start=start.isoformat(), end=(end + timedelta(days=1)).isoformat()
+                symbol, start=start.isoformat(), end=(end + timedelta(days=1)).isoformat() if end else None
             )
         except MarketDataError:
             return []

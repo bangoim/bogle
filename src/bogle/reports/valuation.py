@@ -21,6 +21,7 @@ from psycopg.rows import DictRow
 
 from bogle.analytics.twr import Valuator, compute_twr, shares_held
 from bogle.data.dispatcher import PriceDispatcher
+from bogle.domain.assets import AssetType
 from bogle.domain.errors import BogleError
 from bogle.domain.transactions import Transaction
 from bogle.repositories.assets import AssetRepository
@@ -29,6 +30,18 @@ from bogle.repositories.transactions import TransactionRepository
 
 _ZERO = Decimal("0")
 _HISTORY_PAD = timedelta(days=7)  # bar "on or before start" even on weekends/holidays
+
+NO_SOURCE = "sem fonte de historico gratuita"
+"""TESOURO: nothing is wired, and nothing the user does changes it (see #17)."""
+
+NOTHING_RETURNED = "o provedor nao devolveu historico"
+"""The fetch came back empty (unknown symbol, provider down, network)."""
+
+SHORT_SERIES = "a serie do provedor nao cobre o periodo da posicao"
+"""Yahoo sometimes answers with just the last weeks; asking again often fixes it."""
+
+RETRIABLE = frozenset({NOTHING_RETURNED, SHORT_SERIES})
+"""The reasons worth trying again — the provider's, not the portfolio's."""
 
 GRANULARITY_BY_PERIOD = {
     "1m": "daily",
@@ -52,6 +65,10 @@ class PortfolioValuation:
     transactions: list[Transaction]
     """Only the transactions of tickers with history (excluded ones would corrupt TWR)."""
     excluded: list[str]
+    reasons: dict[str, str]
+    """Why each excluded ticker is out, keyed by ticker — the same names as
+    ``excluded``. "No price history" covers three different situations, and only
+    one of them is worth the user trying again."""
     start: date
     end: date
 
@@ -123,19 +140,22 @@ def build_portfolio_valuation(
 
     scoped: list[Valuator] = []
     included: set[str] = set()
-    excluded: list[str] = []
+    reasons: dict[str, str] = {}
     for holding in holdings:
         asset = assets.get(holding.ticker)
         if asset is None:  # a holding always has an asset row (FK); defensive
             continue
         quantity = holding.total_shares
         unit_principal = holding.total_invested / quantity if quantity != _ZERO else _ZERO
-        valuator = dispatcher.build_twr_valuator(
-            asset, unit_principal=unit_principal, start=start - _HISTORY_PAD, end=end
-        )
         since = _first_valued_date(transactions, holding.ticker, start)
-        if valuator is None or not _can_value(valuator, holding.ticker, since=since):
-            excluded.append(holding.ticker)
+        valuator = dispatcher.build_twr_valuator(
+            asset, unit_principal=unit_principal, start=start - _HISTORY_PAD, end=end, covering=since
+        )
+        if valuator is None:
+            reasons[holding.ticker] = NO_SOURCE if asset.asset_type is AssetType.TESOURO else NOTHING_RETURNED
+            continue
+        if not _can_value(valuator, holding.ticker, since=since):
+            reasons[holding.ticker] = SHORT_SERIES
             continue
         scoped.append(_scoped(valuator, holding.ticker))
         included.add(holding.ticker)
@@ -143,7 +163,8 @@ def build_portfolio_valuation(
     return PortfolioValuation(
         valuator=_combined(scoped) if scoped else None,
         transactions=[t for t in transactions if t.ticker in included],
-        excluded=sorted(excluded),
+        excluded=sorted(reasons),
+        reasons=reasons,
         start=start,
         end=end,
     )

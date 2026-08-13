@@ -16,6 +16,9 @@ from bogle.data.dispatcher import PriceDispatcher
 from bogle.data.models import HistPoint, SeriesPoint
 from bogle.domain.errors import MarketDataError, QuoteNotFoundError
 from bogle.reports.valuation import (
+    NO_SOURCE,
+    NOTHING_RETURNED,
+    SHORT_SERIES,
     build_portfolio_valuation,
     date_grid,
     first_transaction_date,
@@ -76,9 +79,7 @@ class _Unused:
         raise QuoteNotFoundError("unused", provider="fake")
 
 
-def make_dispatcher(
-    tmp_path: Any, *, yfinance: FakeYfinance | None = None, bcb: FakeBcb | None = None
-) -> PriceDispatcher:
+def make_dispatcher(tmp_path: Any, *, yfinance: Any = None, bcb: FakeBcb | None = None) -> PriceDispatcher:
     return PriceDispatcher(
         brapi=_Unused(),
         yfinance=yfinance if yfinance is not None else FakeYfinance(),
@@ -295,3 +296,86 @@ class TestFirstTransactionDate:
 
     def test_empty(self) -> None:
         assert first_transaction_date([]) is None
+
+
+class TestProviderShortSeries:
+    """Yahoo answers a dated range with just its last weeks now and then."""
+
+    class ShortThenFull:
+        """Short on the dated request, complete when asked for the whole series."""
+
+        def __init__(self, short: list[HistPoint], full: list[HistPoint]) -> None:
+            self.short, self.full = short, full
+            self.calls: list[str] = []
+
+        def get_quote(self, symbol: str) -> Any:
+            raise QuoteNotFoundError(symbol, provider="fake")
+
+        def get_history(self, symbol: str, **kwargs: Any) -> list[HistPoint]:
+            dated = kwargs.get("start") is not None
+            self.calls.append("dated" if dated else kwargs.get("range_", "max"))
+            return list(self.short if dated else self.full)
+
+    def test_a_short_answer_is_asked_again_the_other_way(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        yf = self.ShortThenFull(
+            short=[bar("2026-07-01", "25")],  # so as ultimas semanas
+            full=[bar("2026-01-05", "20"), bar("2026-07-01", "25")],
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert yf.calls == ["dated", "max"]  # pediu de novo, de outro jeito
+        assert valuation.excluded == []
+        assert patrimony_at(valuation, date(2026, 7, 20)) == Decimal("250")
+
+    def test_a_series_that_covers_is_not_asked_twice(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        yf = self.ShortThenFull(short=[bar("2026-01-05", "20")], full=[])
+        build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert yf.calls == ["dated"]
+
+    def test_the_reason_says_which_of_the_three_it_is(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
+        # Tres causas moram sob "sem historico": so duas valem uma segunda tentativa.
+        from bogle.domain.assets import AssetType
+
+        assets = AssetRepository(conn)
+        assets.add("PETR4", Decimal("0.5"))
+        assets.add("TESOURO SELIC 2029", Decimal("0.3"), asset_type=AssetType.TESOURO)
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        transactions.add_buy(
+            "TESOURO SELIC 2029",
+            shares=Decimal("1"),
+            unit_price=Decimal("1000"),
+            date=datetime(2026, 1, 5, 12, tzinfo=UTC),
+        )
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-07-01", "25")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.reasons["PETR4"] == SHORT_SERIES
+        assert valuation.reasons["TESOURO SELIC 2029"] == NO_SOURCE
+        assert sorted(valuation.reasons) == valuation.excluded
+
+    def test_an_empty_answer_is_its_own_reason(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.reasons == {"PETR4": NOTHING_RETURNED}
