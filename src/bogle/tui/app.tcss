@@ -86,6 +86,13 @@ HomeScreen.-narrow #metrics {
     padding: 0;
 }
 
+/* A tarja do item selecionado ocupa a largura inteira da lista: sem esta
+   margem ela encosta na coluna vizinha, e as duas viram um bloco so. A margem
+   fica *fora* do widget, entao o fundo branco para antes dela. */
+#menu-left {
+    margin-right: 3;
+}
+
 HomeScreen.-wide #menu {
     layout: horizontal;
 }
