@@ -128,5 +128,7 @@ class KnownTicker(Validator):
         if not self.known:  # lista ainda nao carregou
             return self.success()
         if ticker not in self.known:
-            return self.failure(f"Ativo '{ticker}' nao encontrado. Cadastre com 'bogle add' antes de lancar.")
+            # A mensagem e da interface: mandar para o `bogle add` seria mandar
+            # fechar a tela para fazer o que a tela ao lado faz.
+            return self.failure(f"Ativo '{ticker}' nao encontrado. Cadastre em Ativos (6) antes de lancar.")
         return self.success()
