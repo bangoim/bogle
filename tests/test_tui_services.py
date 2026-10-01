@@ -22,6 +22,7 @@ from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import (
     AssetHasTransactionsError,
     AssetNotFoundError,
+    InsufficientSharesError,
     TransactionNotFoundError,
     UnknownSettingError,
     ValidationError,
@@ -85,7 +86,7 @@ class TestRecordTrades:
         services.record_buy(
             ticker="PETR4", when=WHEN, shares=Decimal("100"), unit_price=Decimal("30"), fees=Decimal("0")
         )
-        transaction = services.record_sell(
+        outcome = services.record_sell(
             ticker="PETR4",
             when=WHEN,
             shares=Decimal("40"),
@@ -93,10 +94,75 @@ class TestRecordTrades:
             fees=Decimal("2.50"),
             tax_withheld=Decimal("0.07"),
         )
+        transaction = outcome.transaction
         assert transaction.transaction_type is TransactionType.SELL
         assert transaction.total_investment == Decimal("1400")
         assert transaction.total_cost == Decimal("2.50")
         assert transaction.tax_withheld == Decimal("0.07")
+        # Venda parcial: a posicao continua aberta, e o target fica onde estava.
+        assert outcome.cleared is None
+
+    def test_a_total_sale_clears_the_target_it_leaves_behind(self, seeded: None) -> None:
+        # A outra metade da politica de bogle.closeout: sem isso o target orfao
+        # levaria o proximo aporte para um ativo que o usuario acabou de deixar.
+        services.record_buy(
+            ticker="PETR4", when=WHEN, shares=Decimal("100"), unit_price=Decimal("30"), fees=Decimal("0")
+        )
+        outcome = services.record_sell(
+            ticker="PETR4",
+            when=WHEN,
+            shares=Decimal("100"),
+            unit_price=Decimal("35"),
+            fees=Decimal("0"),
+            tax_withheld=Decimal("0"),
+        )
+        assert outcome.cleared is not None
+        assert outcome.cleared.ticker == "PETR4"
+        assert outcome.cleared.previous_target == Decimal("0.4")
+        weights = {asset.ticker: asset.target_weight for asset in services.list_assets()}
+        assert weights["PETR4"] == Decimal("0")
+        assert weights["MXRF11"] == Decimal("0.1")  # o vizinho nao e tocado
+
+    def test_a_failure_to_clear_the_target_takes_the_sale_with_it(
+        self, seeded: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Uma venda gravada e reportada como falha e uma venda que o usuario
+        # registra de novo: as duas escritas vivem na mesma transacao.
+        services.record_buy(
+            ticker="PETR4", when=WHEN, shares=Decimal("100"), unit_price=Decimal("30"), fees=Decimal("0")
+        )
+
+        def explode(*_: Any, **__: Any) -> None:
+            raise ValidationError("banco fora do ar")
+
+        monkeypatch.setattr(services, "clear_closed_target", explode)
+        with pytest.raises(ValidationError):
+            services.record_sell(
+                ticker="PETR4",
+                when=WHEN,
+                shares=Decimal("100"),
+                unit_price=Decimal("35"),
+                fees=Decimal("0"),
+                tax_withheld=Decimal("0"),
+            )
+        assert [t.transaction_type for t in services.load_transactions()] == [TransactionType.BUY]
+
+    def test_selling_more_than_the_position_has_writes_nothing(self, seeded: None) -> None:
+        # O formulario ja recusa isso enquanto se digita; aqui e a mesma regra
+        # lida contra o ledger na hora de gravar, que e a leitura confiavel.
+        services.record_buy(
+            ticker="PETR4", when=WHEN, shares=Decimal("100"), unit_price=Decimal("30"), fees=Decimal("0")
+        )
+        with pytest.raises(InsufficientSharesError, match="tem 100 cotas"):
+            services.record_sell(
+                ticker="PETR4",
+                when=WHEN,
+                shares=Decimal("150"),
+                unit_price=Decimal("35"),
+                fees=Decimal("0"),
+                tax_withheld=Decimal("0"),
+            )
+        assert [t.transaction_type for t in services.load_transactions()] == [TransactionType.BUY]
 
     def test_unknown_ticker_is_a_domain_error(self, conn: psycopg.Connection[DictRow]) -> None:
         with pytest.raises(AssetNotFoundError):
@@ -281,6 +347,44 @@ class TestLoadSnapshot:
         monkeypatch.setattr(services, "default_dispatcher", lambda **kwargs: built.append(kwargs))
         services.load_snapshot(with_prices=False, refresh=True, today=date(2026, 3, 20))
         assert built == []
+
+
+class TestOpenPositions:
+    """As linhas da tela que escolhe de qual posicao a venda sai."""
+
+    def test_only_what_is_actually_held_shows_up(self, seeded: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        # MXRF11 esta cadastrada e tem target, mas nunca foi comprada: concorre ao
+        # aporte e nao tem nada para vender.
+        monkeypatch.setattr(services, "default_dispatcher", lambda **_: None)
+        services.record_buy(
+            ticker="PETR4", when=WHEN, shares=Decimal("10"), unit_price=Decimal("30"), fees=Decimal("0")
+        )
+        assert [p.ticker for p in services.list_open_positions()] == ["PETR4"]
+
+    def test_a_position_sold_out_leaves_the_list(self, seeded: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(services, "default_dispatcher", lambda **_: None)
+        services.record_buy(
+            ticker="PETR4", when=WHEN, shares=Decimal("10"), unit_price=Decimal("30"), fees=Decimal("0")
+        )
+        services.record_sell(
+            ticker="PETR4",
+            when=WHEN,
+            shares=Decimal("10"),
+            unit_price=Decimal("35"),
+            fees=Decimal("0"),
+            tax_withheld=Decimal("0"),
+        )
+        assert services.list_open_positions() == []
+
+    def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(
+        self, seeded: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built: list[dict[str, Any]] = []
+        monkeypatch.setattr(services, "default_dispatcher", lambda **kwargs: built.append(kwargs))
+        services.list_open_positions(refresh=True)
+        assert built == [{"ignore_cached_quotes": True}]
+        services.list_open_positions()
+        assert built[-1] == {"ignore_cached_quotes": False}
 
 
 class TestAssets:

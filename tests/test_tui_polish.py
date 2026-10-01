@@ -31,7 +31,7 @@ from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.income import IncomeScreen
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.profit import ProfitScreen
-from bogle.tui.screens.register import IncomeFormScreen, RegisterScreen, TradeFormScreen
+from bogle.tui.screens.register import IncomeFormScreen, RegisterScreen, SellPickerScreen, TradeFormScreen
 from bogle.tui.screens.reports import MENU_ITEMS as REPORT_ITEMS
 from bogle.tui.screens.reports import ReportsScreen
 from bogle.tui.screens.returns import ReturnsScreen
@@ -39,7 +39,16 @@ from bogle.tui.screens.status import StatusScreen
 from bogle.tui.screens.suggest import SuggestScreen
 from bogle.tui.screens.transactions import TransactionsScreen
 from bogle.tui.widgets.menu import Menu
-from tests.tui_fakes import make_app, make_asset, make_assets, make_overview, open_screen, settle, stub_services
+from tests.tui_fakes import (
+    make_app,
+    make_asset,
+    make_assets,
+    make_overview,
+    open_screen,
+    sale_position,
+    settle,
+    stub_services,
+)
 
 NARROW = (80, 24)
 """The size the plan committed to: the position table has eleven columns."""
@@ -48,7 +57,8 @@ SCREENS: dict[str, Callable[[], Screen[None]]] = {
     "posicao": PositionScreen,
     "registrar": RegisterScreen,
     "compra": lambda: TradeFormScreen(kind=TransactionType.BUY),
-    "venda": lambda: TradeFormScreen(kind=TransactionType.SELL),
+    "escolher venda": SellPickerScreen,
+    "venda": lambda: TradeFormScreen(kind=TransactionType.SELL, position=sale_position()),
     "provento": IncomeFormScreen,
     "transacoes": TransactionsScreen,
     "aporte": SuggestScreen,

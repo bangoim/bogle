@@ -1,8 +1,9 @@
 """Modal dialogs (issue #74).
 
-Two of them: confirm before writing, and ask what to do after writing. The
-second one exists because the common case is recording several tickers on the
-same day — going back to Home after each entry would be busywork.
+Confirm before writing, edit one value, ask what to do after writing, and report
+a change the app made on its own. The "what next" one exists because the common
+case is recording several tickers on the same day — going back to Home after each
+entry would be busywork.
 
 Titles and bodies are rendered as plain text (``markup=False``): they quote user
 data — a ticker, a provider's error message — which must never be read as markup.
@@ -29,6 +30,7 @@ from bogle.tui.navigation import ARROW_FOCUS
 # e centralizacao, e deixavam este botao mais alto e mais largo que o vizinho.
 NEW_ENTRY = "dialog-new"
 GO_HOME = "dialog-home"
+REVERT = "dialog-revert"
 
 
 class ButtonRowModal[T](ModalScreen[T]):
@@ -114,6 +116,41 @@ class EditModal(ButtonRowModal[str | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+class ClearedTargetModal(ButtonRowModal[bool]):
+    """Something the app decided by itself, with the way back in the same breath.
+
+    Dismisses ``True`` when the user wants it undone. "Manter assim" is the
+    focused button and what ``Esc`` does: the change is already applied and it is
+    the expected outcome of the sale — reverting is the deliberate choice, so it
+    is the one that has to be reached for.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "keep", "Manter")]
+
+    def __init__(self, notice: str) -> None:
+        super().__init__()
+        self.notice = notice
+
+    @override
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Label("Target removido", id="dialog-title")
+            yield Label(self.notice, id="dialog-body", markup=False)
+            yield Label("Reverter e devolver o peso-alvo ao ativo.", id="dialog-question")
+            with Horizontal(id="dialog-buttons"):
+                yield Button("Manter assim", id="confirm", variant="primary")
+                yield Button("Reverter", id=REVERT)
+
+    def on_mount(self) -> None:
+        self.query_one("#confirm", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == REVERT)
+
+    def action_keep(self) -> None:
+        self.dismiss(False)
 
 
 class NextStepModal(ButtonRowModal[str]):

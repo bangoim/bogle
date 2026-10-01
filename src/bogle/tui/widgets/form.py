@@ -111,6 +111,27 @@ class Field(Vertical):
     def enabled(self) -> bool:
         return not self.input.disabled
 
+    def set_locked(self, locked: bool, *, value: str = "") -> None:
+        """Fill the field with a value the app worked out, and stop it being edited.
+
+        The opposite direction of :meth:`set_enabled`, which empties the field on
+        the way out because a field that does not apply must not reach the
+        service with anything in it. Here the disabled input is exactly what has
+        to be *read* on submit: "Vender tudo" writes the whole position into the
+        quantity. :meth:`check` skipping a disabled field is right for the same
+        reason — the value did not come from the keyboard, so there is nothing to
+        correct about it.
+
+        Unlocking leaves the value in place instead of clearing it: it is the
+        number the user was just shown, and "quase tudo" starts from "tudo".
+        Emptying the field here would also light up the "obrigatorio" error one
+        keystroke before anyone could have typed anything.
+        """
+        self.clear_error()
+        if locked:
+            self.set_value(value)
+        self.input.disabled = locked
+
     def set_applicable(self, applicable: bool, *, placeholder: str = "") -> None:
         """Show or hide the field, per the field table of the type being registered.
 

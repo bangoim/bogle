@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from bogle import format as fmt
+
 
 class BogleError(Exception):
     """Base class for every domain-level error raised by bogle.
@@ -37,6 +39,28 @@ class AssetHasTransactionsError(BogleError):
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
         super().__init__(f"Ativo '{ticker}' possui transacoes vinculadas e nao pode ser removido.")
+
+
+class InsufficientSharesError(BogleError):
+    """A sale asking for more shares than the position has.
+
+    Raised above the repository, never by it: the ledger writes what it is told
+    and the ``holdings`` view answers an oversold ticker by hiding the position
+    (issue #9). See :mod:`bogle.sales` for why the refusal lives one layer up.
+
+    The quantities go through :mod:`bogle.format`, so they are masked with every
+    other amount while the privacy mode is on — a message is not a way around it.
+    """
+
+    def __init__(self, ticker: str, held: Decimal, requested: Decimal) -> None:
+        self.ticker = ticker
+        self.held = held
+        self.requested = requested
+        super().__init__(
+            f"Nao ha posicao aberta em '{ticker}' para vender."
+            if held <= 0
+            else f"Posicao de '{ticker}' tem {fmt.exact(held)} cotas, e a venda pede {fmt.exact(requested)}."
+        )
 
 
 class TransactionNotFoundError(BogleError):

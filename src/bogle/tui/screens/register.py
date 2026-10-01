@@ -8,6 +8,19 @@ through the same ``TransactionRepository`` the CLI uses.
 
 After a successful write the screen asks what comes next: another entry of the
 same kind (the common case, several tickers on the same day) or back to Home.
+
+A buy is typed from nothing — any registered ticker can be bought, including one
+that has never been bought before. A sale is not: it can only come out of a
+position that exists, so it starts from the list of them
+(:class:`SellPickerScreen`). The ticker is chosen instead of typed and then
+checked against a list the user cannot see, and the choice carries what bounds
+the form: how many shares there are to sell, which is both the ceiling on the
+quantity and what "Vender tudo" fills in.
+
+A sale that empties the position also clears the asset's target weight (see
+:mod:`bogle.closeout`), and the form says so before anything else, with a button
+that puts the target back — an intention the app changed on its own is exactly
+what has to be shown and be undoable in one keystroke.
 """
 
 from __future__ import annotations
@@ -16,26 +29,51 @@ from datetime import datetime
 from typing import ClassVar, override
 from zoneinfo import ZoneInfo
 
+from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.suggester import SuggestFromList
-from textual.widgets import Button, Footer, Header, Label, Select
+from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Label, Select, Static
 
 from bogle import format as fmt
 from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.closeout import ClearedTarget, cleared_notice
 from bogle.db import DEFAULT_TIMEZONE
 from bogle.domain.transactions import Transaction, TransactionType
-from bogle.tui import services
-from bogle.tui.errors import HANDLED
+from bogle.position import Position
+from bogle.tui import cells, services
+from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.navigation import back_to_home
+from bogle.tui.screens.data import DataScreen
 from bogle.tui.screens.menu import Entries, MenuScreen, items_of
-from bogle.tui.screens.modals import GO_HOME, NextStepModal
+from bogle.tui.screens.modals import GO_HOME, ClearedTargetModal, NextStepModal
 from bogle.tui.screens.write import Entry, WriteScreen
-from bogle.tui.validators import DateField, DecimalField, KnownTicker
-from bogle.tui.widgets.form import Field
+from bogle.tui.validators import DateField, DecimalField, HeldShares, KnownTicker
+from bogle.tui.widgets.form import ControlRow, Field
 from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
+
+
+def _position_line(position: Position) -> Text:
+    """What is being sold, in the same shape the Position screen states totals.
+
+    Assembled instead of marked up: it is the one line on the form made of
+    numbers the privacy mode masks, and a mask is not something to run a markup
+    parser over.
+    """
+    fields = [
+        ("Posicao", f"{fmt.exact(position.quantity)} cotas"),
+        ("Preco medio", fmt.money(position.average_price)),
+    ]
+    if position.price is not None:
+        fields.append(("Cotacao", fmt.money(position.price)))
+    parts: list[str | tuple[str, str]] = []
+    for label, value in fields:
+        if parts:
+            parts.append("   ")
+        parts.extend([(label, "dim"), " ", value])
+    return Text.assemble(*parts)
 
 
 def _today() -> str:
@@ -46,6 +84,12 @@ def _today() -> str:
     """
     return datetime.now(tz=ZoneInfo(DEFAULT_TIMEZONE)).date().isoformat()
 
+
+_PICKER_COLUMNS = ("Ticker", "Tipo", "Qtd", "Preco medio", "Cotacao", "Montante")
+
+_PICKER_LEGEND = "enter (ou s) abre a venda da posicao selecionada."
+
+_NO_POSITIONS = "[yellow]Nenhuma posicao aberta: so ha o que vender depois de uma compra.[/yellow]"
 
 _INCOME_LABELS = {
     TransactionType.DIVIDEND: "Dividendo",
@@ -62,8 +106,8 @@ _ENTRIES: Entries = (
         lambda: TradeFormScreen(kind=TransactionType.BUY),
     ),
     (
-        MenuItem("2", "sell", "Venda", "igual a compra, com IR retido"),
-        lambda: TradeFormScreen(kind=TransactionType.SELL),
+        MenuItem("2", "sell", "Venda", "posicao aberta, inteira ou em parte"),
+        lambda: SellPickerScreen(),
     ),
     (MenuItem("3", "income", "Provento", "dividendo, JCP, rendimento ou juros"), lambda: IncomeFormScreen()),
 )
@@ -92,10 +136,95 @@ class RegisterScreen(MenuScreen):
         yield Footer()
 
 
+class SellPickerScreen(DataScreen[list[Position]]):
+    """Which position the sale comes out of.
+
+    Everything a sale needs to be bounded is already known before the first
+    keystroke — which tickers are held, and how many shares of each — so asking
+    for the ticker as free text was asking the user to recall a list the app has.
+    Worse, the form validated it against the *registered* assets, which include
+    the ones never bought and the ones already sold out.
+
+    The quote sits next to the average price on purpose: it is not what gets
+    recorded (the sale is written at the price actually executed), but it is what
+    the decision is made against, and it saves a trip to the Position screen.
+    """
+
+    SUB_TITLE = "venda - escolher a posicao"
+    AUTO_FOCUS = "#sell-positions"
+    LOADING = "#sell-positions"
+    NOTE = "#sell-note"
+    LIVE_PRICES = True
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("s", "sell", "Vender")]
+
+    @override
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical(id="sell-picker"):
+            table = DataTable(id="sell-positions", cursor_type="row", zebra_stripes=True)
+            table.add_columns(*_PICKER_COLUMNS)
+            yield table
+            yield Static(id="sell-note")
+        yield Footer()
+
+    # --- selecao --------------------------------------------------------
+
+    @property
+    def selected(self) -> Position | None:
+        positions = self.report
+        table = self.query_one(DataTable)
+        if not positions or table.cursor_row < 0 or table.cursor_row >= len(positions):
+            return None
+        return positions[table.cursor_row]
+
+    # --- acoes ----------------------------------------------------------
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        event.stop()
+        self.action_sell()
+
+    def action_sell(self) -> None:
+        position = self.selected
+        if position is None:
+            return
+        # Recarrega ao voltar: a venda que acabou de ser gravada mudou a
+        # quantidade desta linha (ou tirou a linha da lista).
+        self.app.push_screen(TradeFormScreen(kind=TransactionType.SELL, position=position), lambda _: self.fetch())
+
+    # --- carga ----------------------------------------------------------
+
+    @override
+    def load(self) -> list[Position]:
+        return services.list_open_positions(refresh=self.refresh_quotes)
+
+    @override
+    def clear_content(self) -> None:
+        self.query_one(DataTable).clear()
+
+    @override
+    def render_report(self, report: list[Position]) -> None:
+        table = self.query_one(DataTable)
+        table.clear()  # mantem as colunas
+        for position in report:
+            table.add_row(
+                cells.ticker(position.ticker),
+                cells.text(position.asset_type.value),
+                cells.exact(position.quantity),
+                cells.money(position.average_price),
+                cells.money(position.price),
+                cells.money(position.market_value),
+                key=position.ticker,
+            )
+        self.show_note(_NO_POSITIONS if not report else _PICKER_LEGEND)
+
+
 class FormScreen(WriteScreen[Transaction]):
     """The three ledger forms: validate, confirm, write, ask what comes next."""
 
-    AUTO_FOCUS = "#ticker Input"
+    # Os dois seletores, e nao so o ticker: a venda nao tem campo de ticker (ele
+    # foi escolhido na lista), e o `query` devolve na ordem do DOM — o ticker
+    # ganha onde existe, a quantidade onde ele nao existe.
+    AUTO_FOCUS = "#ticker Input, #shares Input"
     CONFIRM_TITLE = "Confirmar lancamento"
     CONFIRM_LABEL = "Registrar"
     WRITING_MESSAGE = "gravando o lancamento; um instante."
@@ -146,30 +275,56 @@ class FormScreen(WriteScreen[Transaction]):
 
 
 class TradeFormScreen(FormScreen):
-    """Buy and sell: the same fields, plus the withheld tax on a sale."""
+    """Buy and sell: the same fields, plus what only a sale has.
 
-    def __init__(self, *, kind: TransactionType) -> None:
+    A sale arrives with its :class:`~bogle.position.Position` already chosen by
+    :class:`SellPickerScreen`, which is what lets the form drop the ticker field,
+    put a ceiling on the quantity and offer to fill it with the whole position. A
+    buy arrives with nothing: any registered ticker can be bought, so it is typed.
+
+    The two go together — a sale without a position and a buy with one are both
+    states this screen has no shape for, and the constructor says so rather than
+    quietly rendering the wrong form.
+    """
+
+    def __init__(self, *, kind: TransactionType, position: Position | None = None) -> None:
         super().__init__()
         self.kind = kind
         self.is_sale = kind is TransactionType.SELL
+        if self.is_sale != (position is not None):
+            raise ValueError("a venda sai de uma posicao escolhida, e a compra nao tem posicao de partida.")
+        self.position = position
+        """A posicao sendo vendida; ``None`` na compra."""
+        self.position_line = ""
+        """Plain text of the position summary above the fields (read by the tests)."""
         self.sub_title = "registrar venda" if self.is_sale else "registrar compra"
+        self.cleared: ClearedTarget | None = None
+        """Target zerado pela ultima venda gravada, ate o dialogo resolve-lo."""
 
     @override
     def compose(self) -> ComposeResult:
         yield Header()
         with VerticalScroll(id="form"):
-            yield Field(
-                "Ticker",
-                id="ticker",
-                placeholder="ativo cadastrado (ex: AUVP11)",
-                validators=[self.tickers],
-            )
+            if self.position is None:
+                yield Field(
+                    "Ticker",
+                    id="ticker",
+                    placeholder="ativo cadastrado (ex: AUVP11)",
+                    validators=[self.tickers],
+                )
+            else:
+                # A posicao fica acima dos campos, e nao so no titulo da moldura:
+                # a quantidade que se pode vender e o preco medio sao os numeros
+                # contra os quais os proximos dois campos sao preenchidos.
+                yield Static(id="sell-position")
             yield Field(
                 "Quantidade",
                 id="shares",
                 placeholder="cotas negociadas",
-                validators=[DecimalField("Quantidade", positive=True)],
+                validators=[self._shares_validator()],
             )
+            if self.position is not None:
+                yield ControlRow("Vender tudo", Checkbox(id="sell-all", compact=True), id="sell-all-row")
             yield Field(
                 "Preco unitario",
                 id="price",
@@ -203,16 +358,43 @@ class TradeFormScreen(FormScreen):
                 yield Button("Voltar", id="back")
         yield Footer()
 
+    def _shares_validator(self) -> DecimalField | HeldShares:
+        """A quantidade da venda tem teto; a da compra, nao."""
+        if self.position is None:
+            return DecimalField("Quantidade", positive=True)
+        return HeldShares(self.position.ticker, self.position.quantity)
+
     def on_mount(self) -> None:
-        self.query_one("#form").border_title = "Venda" if self.is_sale else "Compra"
-        self.load_tickers()
+        position = self.position
+        self.query_one("#form").border_title = "Compra" if position is None else f"Venda - {position.ticker}"
+        if position is None:
+            self.load_tickers()  # so a compra digita o ticker
+            return
+        self.render_amounts()
+
+    def render_amounts(self) -> None:
+        """Redraw the position line after the privacy toggle (see ``BogleApp``)."""
+        if self.position is None:
+            return
+        line = _position_line(self.position)
+        self.position_line = line.plain
+        self.query_one("#sell-position", Static).update(line)
+
+    # --- vender tudo ----------------------------------------------------
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id != "sell-all" or self.position is None:
+            return
+        # Valor canonico, e nao `fmt.exact`: este e o texto que volta pelo parser
+        # (e que o modo privacidade mascararia, gravando uma venda de "••••••").
+        self.field("shares").set_locked(event.value, value=fmt.exact_or_none(self.position.quantity) or "")
 
     @override
     def collect(self) -> Entry | None:
         if not self.check_fields():
             return None
         entry: Entry = {
-            "ticker": self.field("ticker").value.upper(),
+            "ticker": self.position.ticker if self.position is not None else self.field("ticker").value.upper(),
             "when": parse_date(self.field("date").value, "Data"),
             "shares": parse_decimal(self.field("shares").value, "Quantidade"),
             "unit_price": parse_decimal(self.field("price").value, "Preco unitario"),
@@ -239,9 +421,63 @@ class TradeFormScreen(FormScreen):
 
     @override
     def write(self, entry: Entry) -> Transaction:
-        if self.is_sale:
-            return services.record_sell(**entry)
-        return services.record_buy(**entry)
+        if not self.is_sale:
+            return services.record_buy(**entry)
+        outcome = services.record_sell(**entry)
+        # Guardado aqui e lido em written(): a venda e o que o formulario gravou,
+        # e o target zerado e uma consequencia dela que a tela tem de contar.
+        self.cleared = outcome.cleared
+        return outcome.transaction
+
+    @override
+    def written(self, transaction: Transaction) -> None:
+        cleared, self.cleared = self.cleared, None
+        if cleared is None:
+            super().written(transaction)
+            return
+        # O dialogo do target vem antes do "o que fazer agora": e consequencia da
+        # venda, e perguntar para onde ir antes de contar o que mudou esconderia
+        # a mudanca atras de uma navegacao.
+        self.app.push_screen(
+            ClearedTargetModal(cleared_notice(cleared)),
+            lambda revert: self._resolve_cleared(cleared, transaction, revert=bool(revert)),
+        )
+
+    def _resolve_cleared(self, cleared: ClearedTarget, transaction: Transaction, *, revert: bool) -> None:
+        if revert:
+            self._restore_target(cleared)
+        super().written(transaction)
+
+    @work(thread=True, group="restore")
+    def _restore_target(self, cleared: ClearedTarget) -> None:
+        try:
+            services.update_asset(ticker=cleared.ticker, target_weight=cleared.previous_target)
+        except HANDLED as exc:
+            self.app.call_from_thread(self._restore_failed, message_for(exc))
+            return
+        self.app.call_from_thread(
+            self.notify,
+            f"target de {cleared.ticker} de volta em {fmt.pct(cleared.previous_target)}.",
+            title="revertido",
+            markup=False,
+        )
+
+    def _restore_failed(self, message: str) -> None:
+        self.notify(message, title="erro", severity="error", timeout=10, markup=False)
+
+    @override
+    def clear(self) -> None:
+        """ "Novo lancamento", which for a sale means another *position*.
+
+        The ticker of this form was chosen on the way in and cannot be retyped,
+        so emptying the fields would offer a second sale of the same position —
+        with a quantity that the first sale just changed. Back to the list, which
+        reloads as it comes into view.
+        """
+        if self.position is None:
+            super().clear()
+            return
+        self.dismiss()
 
 
 class IncomeFormScreen(FormScreen):

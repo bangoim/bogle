@@ -25,13 +25,14 @@ import psycopg
 from bogle import charts
 from bogle import format as fmt
 from bogle.analytics.business_days import previous_business_day
+from bogle.closeout import ClearedTarget, clear_closed_target
 from bogle.data import default_dispatcher
 from bogle.db import get_connection, migrate_if_pending
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
-from bogle.position import get_allocation_summary, get_portfolio_summary
+from bogle.position import Position, get_allocation_summary, get_portfolio_summary
 from bogle.rebalancing import AporteSuggestion, next_evaluation_date, overdue_notice, suggest_allocation
 from bogle.reports.compare import CompareReport, compute_compare
 from bogle.reports.dividends import (
@@ -48,6 +49,7 @@ from bogle.reports.returns import ReturnsReport, compute_returns
 from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
+from bogle.sales import resolve_sale_shares
 from bogle.settings import (
     DECIMAL_SEPARATOR,
     DEFAULT_COMPARE_INDICES,
@@ -175,6 +177,21 @@ def list_tickers() -> list[str]:
         conn.close()
 
 
+def list_open_positions(*, refresh: bool = False) -> list[Position]:
+    """The positions a sale can come out of — the rows of the sell picker.
+
+    ``get_portfolio_summary`` and not ``get_allocation_summary``: a target with
+    no position competes for a contribution, but there is nothing in it to sell.
+    Priced, because the quote next to the average price is what the sale is being
+    decided against; ``refresh`` skips the quote cache, as in :func:`load_snapshot`.
+    """
+    conn = get_connection()
+    try:
+        return get_portfolio_summary(conn, default_dispatcher(ignore_cached_quotes=refresh)).positions
+    finally:
+        conn.close()
+
+
 def load_transactions() -> list[Transaction]:
     """The whole ledger. The Transactions screen filters it client-side, so that
     typing in the filter never waits on a round trip."""
@@ -201,6 +218,15 @@ def record_buy(*, ticker: str, when: datetime, shares: Decimal, unit_price: Deci
         conn.close()
 
 
+@dataclass(frozen=True, slots=True)
+class SaleOutcome:
+    """A recorded sale, plus the target it may have closed along with itself."""
+
+    transaction: Transaction
+    cleared: ClearedTarget | None
+    """``None`` unless this sale emptied the position (see :mod:`bogle.closeout`)."""
+
+
 def record_sell(
     *,
     ticker: str,
@@ -209,12 +235,28 @@ def record_sell(
     unit_price: Decimal,
     fees: Decimal,
     tax_withheld: Decimal,
-) -> Transaction:
+) -> SaleOutcome:
+    """Record a sale and, when it empties the position, clear the target with it.
+
+    The two go together on purpose: leaving the target behind would send the next
+    contribution to a ticker the user just walked away from. The form reports it
+    and offers to undo — same policy the command prints.
+
+    One transaction for all of it, so a failure in any part takes the sale down
+    with it: a sale that is recorded and reported as failed is a sale the user
+    records a second time. That includes the quantity check
+    (:func:`~bogle.sales.resolve_sale_shares`), which the form has already run as
+    the number was typed — this is the same rule read against the ledger at the
+    moment of writing, which is the only reading that can be trusted.
+    """
     conn = get_connection()
     try:
-        return TransactionRepository(conn).add_sale(
-            ticker, when, shares=shares, unit_price=unit_price, fees=fees, tax_withheld=tax_withheld
-        )
+        with conn.transaction():
+            quantity = resolve_sale_shares(conn, ticker, shares)
+            transaction = TransactionRepository(conn).add_sale(
+                ticker, when, shares=quantity, unit_price=unit_price, fees=fees, tax_withheld=tax_withheld
+            )
+            return SaleOutcome(transaction, clear_closed_target(conn, transaction.ticker))
     finally:
         conn.close()
 

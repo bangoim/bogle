@@ -132,6 +132,35 @@ HomeScreen.-wide #menu {
     border-title-style: bold;
 }
 
+/* A escolha da posicao a vender e uma tabela, como a tela de Posicao — as
+   mesmas medidas, para a lista nao mudar de forma entre uma tela e a outra. */
+#sell-picker {
+    padding: 0 1;
+}
+
+#sell-positions {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#sell-note {
+    height: auto;
+}
+
+/* A posicao que esta sendo vendida, acima dos campos. A folga embaixo a separa
+   do formulario: e contexto, nao mais uma linha para preencher. */
+#sell-position {
+    height: 1;
+    margin-bottom: 1;
+}
+
+/* Um ControlRow nao tem a linha de erro que separa um Field do seguinte, e sem
+   ela a caixa encostava no "Preco unitario" — parecendo pertencer a ele, e nao
+   a quantidade logo acima, que e o campo que ela preenche. */
+#sell-all-row {
+    margin-bottom: 1;
+}
+
 #form {
     padding: 0 2;
     margin: 1 2;

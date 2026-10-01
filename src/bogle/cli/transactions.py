@@ -10,11 +10,13 @@ from rich.console import Console
 from rich.table import Table
 
 from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.closeout import clear_closed_target, cleared_notice
 from bogle.db import DEFAULT_TIMEZONE, get_connection
 from bogle.domain.errors import ValidationError
 from bogle.domain.transactions import Transaction, TransactionType
-from bogle.format import exact
+from bogle.format import exact, rate
 from bogle.repositories.transactions import TransactionRepository
+from bogle.sales import resolve_sale_shares
 
 
 class IncomeType(StrEnum):
@@ -65,27 +67,50 @@ def buy(
 
 def sell(
     ticker: str = typer.Argument(..., help="Ticker do ativo."),
-    shares: str = typer.Option(..., "--shares", "-s", help="Quantidade vendida."),
+    shares: str | None = typer.Option(None, "--shares", "-s", help="Quantidade vendida. Omita com --all."),
+    sell_all: bool = typer.Option(False, "--all", help="Vende a posicao inteira, sem precisar saber a quantidade."),
     price: str = typer.Option(..., "--price", "-p", help="Preco unitario de venda."),
     fees: str = typer.Option("0", "--fees", help="Taxas/corretagem da operacao."),
     tax_withheld: str = typer.Option("0", "--tax-withheld", help="IR retido na fonte (dedo-duro de 0,005% em vendas)."),
     date: str | None = typer.Option(None, "--date", help="Data da operacao (YYYY-MM-DD). Default: hoje."),
 ) -> None:
+    # Um dos dois, nunca os dois: `--all` e uma quantidade, e duas quantidades
+    # em desacordo nao teriam um vencedor obvio.
+    if sell_all and shares is not None:
+        raise ValidationError("--all ja e a quantidade: use um ou outro, nao os dois.")
+    if not sell_all and shares is None:
+        raise ValidationError("informe --shares, ou --all para vender a posicao inteira.")
+
     # Parse antes de abrir conexao (erro de formato nao precisa de banco).
     when = _resolve_date(date)
-    shares_dec = parse_decimal(shares, "--shares")
+    shares_dec = parse_decimal(shares, "--shares") if shares is not None else None
     price_dec = parse_decimal(price, "--price")
     fees_dec = parse_decimal(fees, "--fees")
     tax_dec = parse_decimal(tax_withheld, "--tax-withheld")
     conn = get_connection()
     try:
-        tx = TransactionRepository(conn).add_sale(
-            ticker, when, shares=shares_dec, unit_price=price_dec, fees=fees_dec, tax_withheld=tax_dec
-        )
+        # Tudo numa transacao so: a quantidade e lida da posicao (`--all`) ou
+        # conferida contra ela, e zerar a posicao encerra tambem a intencao de ter
+        # o ativo (ver bogle.closeout). Se qualquer parte falhar a venda tem de
+        # voltar atras — uma venda gravada e reportada como falha seria registrada
+        # de novo.
+        with conn.transaction():
+            quantity = resolve_sale_shares(conn, ticker, shares_dec)
+            tx = TransactionRepository(conn).add_sale(
+                ticker, when, shares=quantity, unit_price=price_dec, fees=fees_dec, tax_withheld=tax_dec
+            )
+            cleared = clear_closed_target(conn, tx.ticker)
     finally:
         conn.close()
+    if sell_all:
+        typer.echo(f"--all: vendendo a posicao inteira, {exact(quantity)} cotas.")
     _echo_recorded(tx)
     typer.echo(f"produto bruto da venda: {exact(tx.total_investment)}; custo da operacao: {exact(tx.total_cost)}.")
+    if cleared is not None:
+        typer.echo(cleared_notice(cleared))
+        # A linha exata que desfaz: e o equivalente do botao "Reverter" da TUI,
+        # e sem ela o usuario tem de descobrir o peso que ele mesmo tinha posto.
+        typer.echo(f"para reverter: bogle update {cleared.ticker} --weight {rate(cleared.previous_target)}")
 
 
 def income(

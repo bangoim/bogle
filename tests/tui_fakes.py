@@ -17,6 +17,7 @@ from rich.text import Text
 from textual.screen import Screen
 from textual.widgets import DataTable
 
+from bogle.closeout import ClearedTarget
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.position import PortfolioSummary, Position
@@ -55,6 +56,7 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "save_hide_amounts", lambda hidden: None)
     monkeypatch.setattr(services, "save_theme", lambda theme: None)
     monkeypatch.setattr(services, "list_tickers", lambda: list(TICKERS))
+    monkeypatch.setattr(services, "list_open_positions", lambda **_: make_positions())
     monkeypatch.setattr(services, "load_transactions", list)
     # Relatorios (issue #75): idem, para o submenu abrir qualquer tela.
     monkeypatch.setattr(services, "default_indices", lambda: INDICES)
@@ -80,7 +82,7 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "reset_setting", lambda key: SETTINGS[key].default)
     monkeypatch.setattr(services, "delete_transaction", lambda transaction_id: None)
     monkeypatch.setattr(services, "record_buy", lambda **kwargs: make_transaction(TransactionType.BUY, **kwargs))
-    monkeypatch.setattr(services, "record_sell", lambda **kwargs: make_transaction(TransactionType.SELL, **kwargs))
+    monkeypatch.setattr(services, "record_sell", lambda **kwargs: make_sale(**kwargs))
     monkeypatch.setattr(
         services,
         "record_income",
@@ -229,6 +231,16 @@ def make_snapshot(**overrides: Any) -> PortfolioSnapshot:
 
 def empty_snapshot() -> PortfolioSnapshot:
     return snapshot_of(month_profit=None, income_12m=Decimal("0"))
+
+
+def make_positions() -> list[Position]:
+    """The open positions, as the sell picker lists them."""
+    return list(make_snapshot().summary.positions)
+
+
+def sale_position(ticker: str = "AUVP11", shares: str = "8", **overrides: Any) -> Position:
+    """A position to open the sale form from, as the picker would hand it over."""
+    return make_position(ticker, AssetType.FII, quantity=Decimal(shares), **overrides)
 
 
 def make_returns(**overrides: Any) -> ReturnsReport:
@@ -491,6 +503,19 @@ def make_transaction(kind: TransactionType, **entry: Any) -> Transaction:
         total_cost=gross + fees if kind is TransactionType.BUY else fees,
         tax_withheld=entry.get("tax_withheld") or zero,
     )
+
+
+def make_sale(*, cleared: ClearedTarget | None = None, **entry: Any) -> services.SaleOutcome:
+    """What ``services.record_sell`` hands back: the sale, plus a target it closed.
+
+    ``cleared`` is what a total sale produces (see :mod:`bogle.closeout`); the
+    default is the ordinary case of a sale that leaves the position open.
+    """
+    return services.SaleOutcome(make_transaction(TransactionType.SELL, **entry), cleared)
+
+
+def make_cleared_target(ticker: str = "AUVP11", previous: str = "0.3") -> ClearedTarget:
+    return ClearedTarget(ticker=ticker, previous_target=Decimal(previous))
 
 
 def make_ledger() -> list[Transaction]:

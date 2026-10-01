@@ -20,6 +20,7 @@ from typing import override
 
 from textual.validation import ValidationResult, Validator
 
+from bogle import format as fmt
 from bogle.cli.parsing import parse_date, parse_decimal
 from bogle.domain.errors import ValidationError
 
@@ -101,6 +102,37 @@ class DateField(Validator):
             parse_date(text, self.label)
         except ValidationError as exc:
             return self.failure(str(exc))
+        return self.success()
+
+
+class HeldShares(Validator):
+    """A sale's quantity, bounded by the position it comes out of.
+
+    The ceiling is half the reason the sale starts from a list of positions: the
+    number being typed has a maximum, and the maximum is knowable *while* it is
+    typed. It is checked again on the way to the database
+    (:func:`~bogle.sales.resolve_sale_shares`, which the command shares) — this
+    one exists so the correction happens next to the field.
+    """
+
+    def __init__(self, ticker: str, available: Decimal, *, label: str = "Quantidade") -> None:
+        super().__init__()
+        self.ticker = ticker
+        self.available = available
+        self.label = label
+        self._amount = DecimalField(label, positive=True)
+        """Format and sign first: "abc" is not a quantity above the ceiling."""
+
+    @override
+    def validate(self, value: str) -> ValidationResult:
+        result = self._amount.validate(value)
+        if not result.is_valid:
+            return result
+        shares = parse_decimal(value.strip(), self.label)
+        if shares > self.available:
+            return self.failure(
+                f"{self.ticker} tem {fmt.exact(self.available)} cotas; marque 'Vender tudo' para zerar a posicao."
+            )
         return self.success()
 
 
