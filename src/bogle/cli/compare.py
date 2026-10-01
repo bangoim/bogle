@@ -15,6 +15,7 @@ from bogle.db import get_connection
 from bogle.format import signed
 from bogle.reports.compare import CompareReport, compute_compare
 from bogle.reports.periods import parse_period
+from bogle.reports.valuation import with_reasons
 
 _CONSOLE = Console()
 
@@ -80,8 +81,8 @@ def compare(
         _render_chart(report)
     if report.excluded:
         _CONSOLE.print(
-            f"[yellow]Nota:[/yellow] a serie da carteira nao considera {', '.join(report.excluded)} "
-            "(sem historico de precos no periodo)."
+            "[yellow]Nota:[/yellow] a serie da carteira nao considera "
+            f"{with_reasons(report.excluded, report.excluded_reasons)}."
         )
     for name, message in report.index_errors.items():
         _CONSOLE.print(f"[yellow]Nota:[/yellow] {name}: {message}")

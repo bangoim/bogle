@@ -24,7 +24,7 @@ from textual.worker import get_current_worker
 
 from bogle import format as fmt
 from bogle.reports.overview import PortfolioOverview
-from bogle.reports.valuation import RETRIABLE
+from bogle.reports.valuation import RETRIABLE, with_reasons
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.assets import AssetsScreen
@@ -77,9 +77,10 @@ _HELP_NOTES = (
     "de semana ou feriado, ou com a brapi fora do ar.\n\n"
     "Variacao: patrimonio menos o custo medio das posicoes abertas, so o ganho nao "
     "realizado. O ganho das vendas fica em Relatorios > Lucro.\n\n"
-    "TWR: exclui o efeito de aportes e retiradas e considera proventos. Com menos "
-    "de 12 meses de carteira, a janela de 12m comeca na primeira transacao, e as "
-    "duas rentabilidades coincidem."
+    "TWR: exclui o efeito de aportes e retiradas e considera proventos. Ativos ja "
+    "vendidos entram pelo tempo em que estiveram na carteira. Com menos de 12 "
+    "meses de carteira, a janela de 12m comeca na primeira transacao, e as duas "
+    "rentabilidades coincidem."
 )
 """Como ler o resumo, na ajuda (f1) e nao embaixo dos numeros: e a mesma
 explicacao toda vez, e no painel ela ocupava as linhas das notas que mudam."""
@@ -254,7 +255,7 @@ def _variation(overview: PortfolioOverview) -> str:
 
 
 def _listed(tickers: list[str], reasons: dict[str, str]) -> str:
-    return ", ".join(f"{escape(ticker)} ({escape(reasons.get(ticker, ''))})".replace(" ()", "") for ticker in tickers)
+    return escape(with_reasons(tickers, reasons))
 
 
 def _excluded_note(overview: PortfolioOverview) -> str:
@@ -265,6 +266,11 @@ def _excluded_note(overview: PortfolioOverview) -> str:
     the position still counts in the patrimony (its close at D-1 exists) and only
     misses the returns. Saying "out of everything" for the second would hide real
     money and make the Home disagree with the Position screen.
+
+    A third for the tickers sold before the reference date (issue #84): they are
+    in the returns for the time they were held, so one that cannot be priced is
+    missing from them — but "inside the patrimony" would be false for a position
+    worth zero, so the clause says it was sold instead.
 
     The reason matters too: "no price history" reads like a fact about the asset,
     but two of the four causes are the provider having a bad minute — and those
@@ -282,6 +288,10 @@ def _excluded_note(overview: PortfolioOverview) -> str:
         clauses.append(
             "fora das rentabilidades, mas dentro do patrimonio: "
             f"{_listed(overview.excluded_from_returns, overview.returns_reasons)}"
+        )
+    if overview.sold_excluded:
+        clauses.append(
+            f"vendidos, fora das rentabilidades: {_listed(overview.sold_excluded, overview.returns_reasons)}"
         )
     # A primeira clausula continua a frase do "Nota:"; as seguintes viram frase
     # propria, e so por isso ganham maiuscula.
@@ -375,7 +385,7 @@ def _note_for(overview: PortfolioOverview) -> str:
 def _summary_note(overview: PortfolioOverview) -> str:
     if overview.is_empty:
         return "[yellow]Nenhuma transacao registrada ainda.[/yellow]"
-    if overview.excluded or overview.excluded_from_returns:
+    if overview.returns_are_partial:
         return _excluded_note(overview)
     if overview.patrimony is None:
         # Carteira inteira comprada depois da referencia: a linha de cima ja

@@ -13,7 +13,7 @@ with the TUI's Position screen (#73); this module only renders them.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -27,6 +27,7 @@ from bogle.db import get_connection
 from bogle.format import DASH, exact, exact_or_none, money, pct, signed
 from bogle.position import PortfolioSummary, Position, price_provenance
 from bogle.reports.snapshot import compute_snapshot
+from bogle.reports.valuation import with_reasons
 
 _CONSOLE = Console()
 
@@ -80,6 +81,7 @@ def _render(
     month_profit: Decimal | None = None,
     income_12m: Decimal | None = None,
     excluded: Sequence[str] = (),
+    excluded_reasons: Mapping[str, str] | None = None,
     has_prices: bool = True,
 ) -> None:
     table = Table(title="Posicao", title_style="bold")
@@ -121,7 +123,7 @@ def _render(
         console.print(f"Cotacao mais recente: {origin.latest:%Y-%m-%d %H:%M}")
     if excluded:
         console.print(
-            f"[yellow]Nota:[/yellow] lucro do mes nao considera {', '.join(excluded)} (sem historico de precos no periodo)."
+            f"[yellow]Nota:[/yellow] lucro do mes nao considera {with_reasons(excluded, excluded_reasons or {})}."
         )
 
 
@@ -155,5 +157,6 @@ def position(
         month_profit=snapshot.month_profit,
         income_12m=snapshot.income_12m,
         excluded=snapshot.excluded,
+        excluded_reasons=snapshot.excluded_reasons,
         has_prices=snapshot.has_prices,
     )

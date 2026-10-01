@@ -19,6 +19,7 @@ from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import NetworkError, QuoteNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.reports.overview import compute_current_overview, compute_overview, invested_at, pending_after
+from bogle.reports.valuation import NOTHING_RETURNED
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from tests.test_valuation import FakeBcb, FakeYfinance, bar, make_dispatcher
@@ -163,22 +164,66 @@ class TestComputeOverview:
         assert overview.invested == Decimal("200")  # nao desconta os 100 da venda
         assert overview.patrimony == Decimal("250")  # ainda as 10 cotas
 
-    def test_a_position_closed_today_leaves_the_reference_close_unavailable(
+    def test_a_position_closed_after_the_reference_still_counts_at_it(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
     ) -> None:
-        # Limite herdado de build_portfolio_valuation, que parte das posicoes
-        # ativas *agora*: zerar o ticker hoje tira ele da avaliacao, inclusive
-        # para datas em que ainda era mantido. Mesma politica dos relatorios
-        # historicos da CLI (history/compare/return), e a Home avisa em vez de
-        # mostrar um numero errado.
+        # A avaliacao partia das posicoes abertas *agora*: zerar o ticker depois
+        # da referencia tirava ele ate das datas em que ainda era mantido, e o
+        # resumo saia vazio (#84). O ledger diz que ele estava la.
         TransactionRepository(conn).add_sale(
             "PETR4", shares=Decimal("10"), unit_price=Decimal("25"), date=datetime(2026, 7, 21, 12, tzinfo=UTC)
         )
         dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
         overview = compute_overview(conn, dispatcher, as_of=AS_OF)
-        assert overview.patrimony is None
-        assert overview.variation is None
-        assert not overview.is_empty
+        assert overview.patrimony == Decimal("250")
+        assert overview.invested == Decimal("200")
+        assert overview.twr_total == Decimal("0.25")
+        assert overview.pending_entries == 1
+
+    def test_a_ticker_sold_inside_the_window_stays_in_the_returns(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O vies de sobrevivencia da #84: VALE3 caiu 10% e foi vendida; medir so
+        # o que sobrou (PETR4, +25%) seria a rentabilidade de quem ficou.
+        AssetRepository(conn).add("VALE3", Decimal("0.3"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("18"), date=datetime(2025, 7, 18, 12, tzinfo=UTC)
+        )
+        history = {**HISTORY, "VALE3.SA": [bar("2025-01-06", "20"), bar("2025-07-18", "18")]}
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), as_of=AS_OF)
+        # 06/01 -> 18/07/2025: 400 viram 220 + 180 = 400 (0%); dai em diante so
+        # PETR4, 220 -> 250.
+        assert overview.twr_total == Decimal("250") / Decimal("220") - 1
+        assert overview.patrimony == Decimal("250")  # VALE3 vale zero na referencia
+        assert overview.invested == Decimal("200")  # e nao custa nada
+        assert overview.excluded == []
+        assert overview.sold_excluded == []
+
+    def test_a_sold_ticker_without_history_is_named_apart(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Fora das rentabilidades, mas nao "dentro do patrimonio": na referencia
+        # ele nao vale nada, e dizer o contrario seria falso.
+        AssetRepository(conn).add("VALE3", Decimal("0.3"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("18"), date=datetime(2025, 7, 18, 12, tzinfo=UTC)
+        )
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY))), as_of=AS_OF)
+        assert overview.sold_excluded == ["VALE3"]
+        assert overview.returns_reasons == {"VALE3": NOTHING_RETURNED}
+        assert overview.excluded == []
+        assert overview.excluded_from_returns == []
+        assert overview.returns_are_partial
+        assert not overview.is_partial  # o patrimonio esta inteiro
+        assert overview.twr_total == Decimal("0.25")  # so PETR4
 
     def test_twelve_month_window_anchors_on_inception_and_says_so(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
@@ -478,10 +523,12 @@ class TestCurrentOverview:
 
     TODAY = date(2026, 7, 20)  # segunda-feira; o ultimo fechamento e o de sexta, 17/07
 
-    def dispatcher(self, tmp_path: Any, brapi: FakeBrapi, *, today: date | None = None) -> PriceDispatcher:
+    def dispatcher(
+        self, tmp_path: Any, brapi: FakeBrapi, *, today: date | None = None, history: dict[str, Any] | None = None
+    ) -> PriceDispatcher:
         return PriceDispatcher(
             brapi=brapi,
-            yfinance=FakeYfinance(dict(HISTORY)),
+            yfinance=FakeYfinance(history if history is not None else dict(HISTORY)),
             tesouro=NoTesouro(),
             bcb=FakeBcb(),
             quote_cache=DiskCache("quotes", base_dir=tmp_path),
@@ -516,6 +563,26 @@ class TestCurrentOverview:
         assert overview.pending_entries == 0
         assert overview.invested == Decimal("455")  # 200 + 255
         assert overview.patrimony == Decimal("520")  # 20 x 26
+
+    def test_a_sold_ticker_is_not_quoted_today(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Vendido nao vale nada hoje: pedir a cotacao dele seria uma chamada a
+        # toa, e a falha dela derrubaria um resumo D-0 perfeitamente bom para D-1.
+        AssetRepository(conn).add("VALE3", Decimal("0"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("21"), date=datetime(2025, 7, 18, 12, tzinfo=UTC)
+        )
+        brapi = self.quote("26", datetime(2026, 7, 20, 17, 7, tzinfo=UTC))
+        history = {**HISTORY, "VALE3.SA": [bar("2025-01-06", "20"), bar("2025-07-18", "21")]}
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, brapi, history=history), today=self.TODAY)
+        assert overview.is_live
+        assert brapi.quote_calls == ["PETR4"]
+        assert overview.quote_failed == []
 
     def test_brapi_down_falls_back_to_the_last_close_and_says_why(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any

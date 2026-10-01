@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 from bogle.cli import app
 from bogle.domain.errors import ValidationError
 from bogle.reports.history import HistoryReport, compute_history
-from bogle.reports.valuation import PatrimonyPoint
+from bogle.reports.valuation import NO_SOURCE, NOTHING_RETURNED, PatrimonyPoint
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from tests.test_valuation import FakeYfinance, bar, make_dispatcher
@@ -55,6 +55,51 @@ class TestComputeHistory:
         assert report.points[0].date == date(2026, 6, 22)
         assert report.points[-1].date == TODAY
 
+    def test_the_dates_before_a_sale_keep_the_sold_position(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        # Issue #84: a posicao vendida existia antes da venda, e o grafico tem de
+        # mostrar isso, em vez de redesenhar o passado so com quem ficou.
+        AssetRepository(conn).add("VALE3", Decimal("0"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("5"), unit_price=Decimal("60"), date=datetime(2026, 6, 22, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("5"), unit_price=Decimal("62"), date=datetime(2026, 7, 10, 12, tzinfo=UTC)
+        )
+        history = {
+            "PETR4.SA": [bar("2026-06-22", "20"), bar("2026-07-17", "25")],
+            "VALE3.SA": [bar("2026-06-22", "60"), bar("2026-07-10", "62")],
+        }
+        report = compute_history(
+            conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), period="12m", today=TODAY
+        )
+        by_date = {p.date: p.value for p in report.points}
+        assert by_date[date(2026, 6, 22)] == Decimal("500")  # 200 + 300
+        assert by_date[date(2026, 7, 9)] == Decimal("500")
+        assert by_date[date(2026, 7, 10)] == Decimal("200")  # vendida no dia
+        assert by_date[TODAY] == Decimal("250")
+        assert report.excluded == []
+
+    def test_an_excluded_ticker_carries_its_reason(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        AssetRepository(conn).add("VALE3", Decimal("0"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("5"), unit_price=Decimal("60"), date=datetime(2026, 6, 22, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("5"), unit_price=Decimal("62"), date=datetime(2026, 7, 10, 12, tzinfo=UTC)
+        )
+        history = {"PETR4.SA": [bar("2026-06-22", "20"), bar("2026-07-17", "25")]}
+        report = compute_history(
+            conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), period="12m", today=TODAY
+        )
+        assert report.excluded == ["VALE3"]
+        assert report.excluded_reasons == {"VALE3": NOTHING_RETURNED}
+
     def test_no_transactions_is_friendly(self, conn: psycopg.Connection[DictRow], tmp_path: object) -> None:
         with pytest.raises(ValidationError, match="Nenhuma transacao"):
             compute_history(conn, make_dispatcher(tmp_path), period="12m", today=TODAY)
@@ -71,6 +116,7 @@ class TestCli:
             ],
             granularity="monthly",
             excluded=["TESOURO SELIC 2029"],
+            excluded_reasons={"TESOURO SELIC 2029": NO_SOURCE},
         )
         monkeypatch.setattr("bogle.cli.history.default_dispatcher", lambda: None)
         monkeypatch.setattr("bogle.cli.history.compute_history", lambda conn, dispatcher, *, period, today: report)
@@ -83,7 +129,9 @@ class TestCli:
         assert "+10.00" in result.stdout  # 200 -> 210
         assert "+5.00%" in result.stdout
         assert "+40.00" in result.stdout  # 210 -> 250
-        assert "TESOURO SELIC 2029" in result.stdout
+        note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
+        assert f"patrimonio nao considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
+        assert "sem historico de precos no periodo" not in note
 
     def test_chart_renders(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["history"])

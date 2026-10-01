@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from bogle.reports.returns import PeriodReturn
+from bogle.reports.valuation import NO_SOURCE
 from bogle.tui import services
 from bogle.tui.screens.returns import ReturnsScreen
 from bogle.tui.widgets.indices import IndicesInput
@@ -123,13 +124,14 @@ class TestPanel:
                 )
             ],
             excluded=["TESOURO-SELIC-2029"],
+            excluded_reasons={"TESOURO-SELIC-2029": NO_SOURCE},
         )
         monkeypatch.setattr(services, "load_returns", lambda **_: report)
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ReturnsScreen())
             assert table_rows(screen)[0][2] == "-"
-            assert "TWR nao considera TESOURO-SELIC-2029" in screen.note
+            assert f"TWR nao considera TESOURO-SELIC-2029 ({NO_SOURCE})." in screen.note
 
 
 class TestIndices:

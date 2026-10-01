@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from bogle.cli import app
 from bogle.domain.errors import ValidationError
 from bogle.reports.returns import PeriodReturn, ReturnsReport, compute_returns
+from bogle.reports.valuation import INCONSISTENT_LEDGER, NO_SOURCE
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from bogle.settings import DECIMAL_SEPARATOR, set_setting
@@ -53,6 +54,25 @@ class TestComputeReturns:
         assert by_period["12m"].twr == Decimal("25") / Decimal("22") - 1  # 22 -> 25
         assert by_period["1m"].twr == Decimal("25") / Decimal("24") - 1  # 24 -> 25
         assert report.excluded == []
+
+    def test_an_inconsistent_ledger_is_excluded_with_that_reason(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        # Venda datada antes da compra: "sem historico de precos" seria mentira,
+        # o provedor tem o historico; e o ledger que precisa de conserto.
+        AssetRepository(conn).add("VALE3", Decimal("0.3"))
+        transactions = TransactionRepository(conn)
+        transactions.add_sale(
+            "VALE3", shares=Decimal("5"), unit_price=Decimal("60"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("60"), date=datetime(2025, 2, 3, 12, tzinfo=UTC)
+        )
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
+        report = compute_returns(conn, dispatcher, periods=("total",), today=TODAY)
+        assert report.excluded == ["VALE3"]
+        assert report.excluded_reasons == {"VALE3": INCONSISTENT_LEDGER}
+        assert report.rows[0].twr == Decimal("0.25")  # so PETR4
 
     def test_window_older_than_inception_anchors_on_inception(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
@@ -100,6 +120,7 @@ class TestCliRendering:
             ],
             excluded=["TESOURO SELIC 2029"],
             index_errors={},
+            excluded_reasons={"TESOURO SELIC 2029": NO_SOURCE},
         )
         monkeypatch.setattr("bogle.cli.returns.default_dispatcher", lambda: None)
         monkeypatch.setattr(
@@ -116,7 +137,8 @@ class TestCliRendering:
         assert "vs CDI:" in result.stdout
         assert "+17.50 p.p." in result.stdout  # outperform
         assert "-3.10 p.p." in result.stdout  # underperform
-        assert "TESOURO SELIC 2029" in result.stdout
+        note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
+        assert f"TWR nao considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
 
     def test_the_difference_follows_the_configured_separator(
         self, runner: CliRunner, conn: psycopg.Connection[DictRow]

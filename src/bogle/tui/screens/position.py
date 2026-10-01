@@ -25,6 +25,7 @@ from textual.worker import get_current_worker
 from bogle import format as fmt
 from bogle.position import price_provenance
 from bogle.reports.snapshot import PortfolioSnapshot
+from bogle.reports.valuation import with_reasons
 from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
 
@@ -193,6 +194,6 @@ def _note_for(snapshot: PortfolioSnapshot) -> str:
     if not snapshot.summary.positions:
         return f"[yellow]{_EMPTY}[/yellow]"
     if snapshot.excluded:
-        excluded = escape(", ".join(snapshot.excluded))
-        return f"[yellow]Nota:[/yellow] lucro do mes nao considera {excluded} (sem historico de precos no periodo)."
+        excluded = escape(with_reasons(snapshot.excluded, snapshot.excluded_reasons))
+        return f"[yellow]Nota:[/yellow] lucro do mes nao considera {excluded}."
     return ""

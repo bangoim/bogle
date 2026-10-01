@@ -45,6 +45,11 @@ return could not be computed. The price is that the two pairs of numbers cover
 slightly different portfolios, which is why the note names the ticker and the
 numbers it is missing from instead of just saying "no history".
 
+A ticker sold out before ``as_of`` is still part of both TWRs for the time it
+was held (issue #84). When it cannot be priced it is out of them, and of nothing
+else — it is worth zero at ``as_of`` — so it gets a list of its own,
+``sold_excluded``, instead of being told "inside the patrimony".
+
 ``as_of`` is a trading day (``previous_business_day`` walks over weekends and
 national holidays), but the provider having published that session's bar is a
 separate matter — and one ticker having it while another does not is routine. The
@@ -112,8 +117,12 @@ class PortfolioOverview:
     excluded_from_returns: list[str] = field(default_factory=list)
     """In ``patrimony``/``variation``, out of the two TWRs: priceable at ``as_of``
     but not from the start of the window (a series that begins after the position)."""
+    sold_excluded: list[str] = field(default_factory=list)
+    """Sold out by ``as_of`` and out of the two TWRs (no history for the time it
+    was held). Worth zero at ``as_of``, so it is missing from nothing else."""
     returns_reasons: dict[str, str] = field(default_factory=dict)
-    """Why each ticker in ``excluded_from_returns`` is out of the returns."""
+    """Why each ticker in ``excluded_from_returns`` and ``sold_excluded`` is out
+    of the returns."""
     stale_prices: dict[str, date] = field(default_factory=dict)
     """Tickers priced at a close *older* than ``as_of``, and the one used instead.
 
@@ -163,8 +172,8 @@ class PortfolioOverview:
 
     @property
     def returns_are_partial(self) -> bool:
-        """``True`` when the TWRs cover less of the portfolio than the patrimony does."""
-        return bool(self.excluded) or bool(self.excluded_from_returns)
+        """``True`` when the TWRs cover less of the portfolio than they should."""
+        return bool(self.excluded) or bool(self.excluded_from_returns) or bool(self.sold_excluded)
 
     @property
     def all_reasons(self) -> dict[str, str]:
@@ -278,6 +287,7 @@ def compute_overview(
     # diferentes.
     spot = valuation.spot
     returns_reasons = {ticker: reason for ticker, reason in valuation.reasons.items() if ticker not in spot.reasons}
+    sold = set(valuation.sold)
     return PortfolioOverview(
         as_of=as_of,
         inception=inception,
@@ -288,7 +298,8 @@ def compute_overview(
         twr_12m_start=start_12m,
         excluded=spot.excluded,
         excluded_reasons=spot.reasons,
-        excluded_from_returns=sorted(returns_reasons),
+        excluded_from_returns=sorted(ticker for ticker in returns_reasons if ticker not in sold),
+        sold_excluded=sorted(ticker for ticker in returns_reasons if ticker in sold),
         returns_reasons=returns_reasons,
         stale_prices=stale_at_end(valuation),
         pending_entries=pending_entries,

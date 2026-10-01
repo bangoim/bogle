@@ -14,6 +14,7 @@ from bogle.db import get_connection
 from bogle.format import money, signed
 from bogle.reports.history import HistoryReport, compute_history
 from bogle.reports.periods import parse_period
+from bogle.reports.valuation import with_reasons
 
 _CONSOLE = Console()
 
@@ -75,5 +76,5 @@ def history(
         _render_chart(report)
     if report.excluded:
         _CONSOLE.print(
-            f"[yellow]Nota:[/yellow] patrimonio nao considera {', '.join(report.excluded)} (sem historico de precos no periodo)."
+            f"[yellow]Nota:[/yellow] patrimonio nao considera {with_reasons(report.excluded, report.excluded_reasons)}."
         )

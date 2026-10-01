@@ -9,7 +9,7 @@ see #17) is excluded and reported.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
@@ -26,6 +26,7 @@ from bogle.reports.valuation import (
     date_grid,
     first_transaction_date,
     patrimony_series,
+    with_reasons,
 )
 from bogle.repositories.transactions import TransactionRepository
 
@@ -35,6 +36,8 @@ class HistoryReport:
     points: list[PatrimonyPoint]
     granularity: str
     excluded: list[str]
+    excluded_reasons: dict[str, str] = field(default_factory=dict)
+    """Why each excluded ticker is out (see :mod:`bogle.reports.valuation`)."""
 
     def steps(self) -> Iterator[tuple[PatrimonyPoint, Decimal | None, Decimal | None]]:
         """Each point with how much it moved from the previous one: ``(point,
@@ -65,10 +68,12 @@ def compute_history(
     valuation = build_portfolio_valuation(conn, dispatcher, start=start, end=today)
     if valuation.valuator is None:
         raise ValidationError(
-            "Nenhuma posicao com historico de precos para montar o historico"
-            + (f" (sem historico: {', '.join(valuation.excluded)})." if valuation.excluded else ".")
+            "Nenhuma posicao com historico de precos para montar o historico."
+            + (f" Fora: {with_reasons(valuation.excluded, valuation.reasons)}." if valuation.excluded else "")
         )
 
     granularity = GRANULARITY_BY_PERIOD[period]
     points = patrimony_series(valuation, date_grid(start, today, granularity))
-    return HistoryReport(points=points, granularity=granularity, excluded=valuation.excluded)
+    return HistoryReport(
+        points=points, granularity=granularity, excluded=valuation.excluded, excluded_reasons=valuation.reasons
+    )

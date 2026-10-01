@@ -10,6 +10,7 @@ import pytest
 from textual.widgets import Static
 
 from bogle.format import MASK
+from bogle.reports.valuation import NO_SOURCE
 from bogle.tui import services
 from bogle.tui.screens.history import HistoryScreen
 from bogle.tui.widgets.chart import LineChart
@@ -90,11 +91,12 @@ class TestTable:
 
     @pytest.mark.asyncio
     async def test_excluded_tickers_are_noted(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(services, "load_history", lambda **_: make_history(excluded=["TESOURO-IPCA-2035"]))
+        report = make_history(excluded=["TESOURO-IPCA-2035"], excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE})
+        monkeypatch.setattr(services, "load_history", lambda **_: report)
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, HistoryScreen())
-            assert "patrimonio nao considera TESOURO-IPCA-2035" in screen.note
+            assert f"patrimonio nao considera TESOURO-IPCA-2035 ({NO_SOURCE})." in screen.note
 
 
 class TestWindow:

@@ -23,6 +23,7 @@ from bogle.data.dispatcher import PriceDispatcher
 from bogle.data.models import Quote, TesouroQuote
 from bogle.domain.errors import QuoteNotFoundError
 from bogle.reports.snapshot import compute_snapshot
+from bogle.reports.valuation import NOTHING_RETURNED
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from tests.test_valuation import FakeBcb, FakeYfinance, bar, make_dispatcher
@@ -108,6 +109,26 @@ class TestComputeSnapshot:
         assert snapshot.month_profit == Decimal("15")  # 250 - 240 + 5 recebidos
         assert snapshot.income_12m == Decimal("5")
 
+    def test_a_ticker_sold_inside_the_month_is_in_the_month_profit(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Issue #84: sem a VALE3 (fora da view `holdings` depois da venda), o
+        # lucro do mes perdia a queda dela e os 300 que a venda devolveu.
+        AssetRepository(conn).add("VALE3", Decimal("0"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("35"), date=datetime(2026, 5, 4, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("30"), date=datetime(2026, 7, 1, 12, tzinfo=UTC)
+        )
+        history = {**HISTORY, "VALE3.SA": [bar("2026-05-04", "35"), bar("2026-06-19", "32"), bar("2026-07-01", "30")]}
+        snapshot = compute_snapshot(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), today=TODAY)
+        # Comeco da janela: 240 + 320. Fim: 250. Venda devolve 300.
+        assert snapshot.month_profit == Decimal("250") - Decimal("560") + Decimal("300")  # -10 = +10 - 20
+        assert snapshot.excluded == []
+        assert [p.ticker for p in snapshot.summary.positions] == ["PETR4"]
+
     def test_without_a_dispatcher_only_the_priced_parts_are_dropped(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
     ) -> None:
@@ -123,6 +144,7 @@ class TestComputeSnapshot:
     ) -> None:
         snapshot = compute_snapshot(conn, make_dispatcher(tmp_path), today=TODAY)
         assert snapshot.excluded == ["PETR4"]
+        assert snapshot.excluded_reasons == {"PETR4": NOTHING_RETURNED}
         assert snapshot.month_profit is None
 
     def test_has_prices_reports_whether_anything_could_be_valued(
