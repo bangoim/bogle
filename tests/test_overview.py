@@ -12,12 +12,16 @@ import psycopg
 import pytest
 from psycopg.rows import DictRow
 
+from bogle.data.cache import DiskCache
+from bogle.data.dispatcher import PriceDispatcher
+from bogle.data.models import HistPoint, Quote, TesouroQuote
 from bogle.domain.assets import AssetType, Indexer
+from bogle.domain.errors import NetworkError, QuoteNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
-from bogle.reports.overview import compute_overview, invested_at, pending_after
+from bogle.reports.overview import compute_current_overview, compute_overview, invested_at, pending_after
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
-from tests.test_valuation import FakeYfinance, bar, make_dispatcher
+from tests.test_valuation import FakeBcb, FakeYfinance, bar, make_dispatcher
 
 AS_OF = date(2026, 7, 20)
 
@@ -401,3 +405,103 @@ class TestPendingAfterTheReference:
     def test_the_reference_day_itself_is_not_pending(self) -> None:
         txns = [txn(TransactionType.BUY, "2026-07-20", shares="1", price="10")]
         assert pending_after(txns, date(2026, 7, 20)) == (0, Decimal("0"))
+
+
+class FakeBrapi:
+    """brapi's D-0 quote, and nothing else (no store, so no history is asked)."""
+
+    def __init__(self, quotes: dict[str, Quote] | None = None, *, fail: bool = False) -> None:
+        self.quotes = quotes or {}
+        self.fail = fail
+        self.quote_calls: list[str] = []
+
+    def get_quote(self, symbol: str) -> Quote:
+        self.quote_calls.append(symbol)
+        if self.fail:
+            raise NetworkError("fake", "fora do ar")
+        if symbol not in self.quotes:
+            raise QuoteNotFoundError(symbol, provider="fake")
+        return self.quotes[symbol]
+
+    def get_index_quote(self, index: str) -> Quote:
+        raise QuoteNotFoundError(index, provider="fake")
+
+    def get_history(self, symbol: str, **_kwargs: Any) -> list[HistPoint]:
+        raise QuoteNotFoundError(symbol, provider="fake")
+
+
+class NoTesouro:
+    def get_quote(self, title: str) -> TesouroQuote:
+        raise QuoteNotFoundError(title, provider="fake")
+
+
+class TestCurrentOverview:
+    """The Home summary: D-0 with brapi's quote of today, or the last close."""
+
+    TODAY = date(2026, 7, 20)  # segunda-feira; o ultimo fechamento e o de sexta, 17/07
+
+    def dispatcher(self, tmp_path: Any, brapi: FakeBrapi, *, today: date | None = None) -> PriceDispatcher:
+        return PriceDispatcher(
+            brapi=brapi,
+            yfinance=FakeYfinance(dict(HISTORY)),
+            tesouro=NoTesouro(),
+            bcb=FakeBcb(),
+            quote_cache=DiskCache("quotes", base_dir=tmp_path),
+            clock=lambda: today or self.TODAY,
+        )
+
+    @staticmethod
+    def quote(price: str, when: datetime) -> FakeBrapi:
+        return FakeBrapi({"PETR4": Quote("PETR4", Decimal(price), "BRL", when, "PETR4")})
+
+    def test_a_quote_from_today_makes_the_summary_d0(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        brapi = self.quote("26", datetime(2026, 7, 20, 17, 7, tzinfo=UTC))
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, brapi), today=self.TODAY)
+        assert overview.is_live
+        assert overview.as_of == self.TODAY
+        assert overview.patrimony == Decimal("260")  # 10 x 26, a cotacao de agora
+        assert overview.twr_total == Decimal("0.3")  # 20 -> 26
+        # Horario local: 17:07 UTC sao 14:07 em Sao Paulo.
+        assert overview.quote_time is not None and f"{overview.quote_time:%H:%M}" == "14:07"
+        assert overview.stale_prices == {}
+
+    def test_a_purchase_made_today_is_inside_a_d0_summary(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("25.50"), date=datetime(2026, 7, 20, 15, tzinfo=UTC)
+        )
+        brapi = self.quote("26", datetime(2026, 7, 20, 17, 7, tzinfo=UTC))
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, brapi), today=self.TODAY)
+        assert overview.pending_entries == 0
+        assert overview.invested == Decimal("455")  # 200 + 255
+        assert overview.patrimony == Decimal("520")  # 20 x 26
+
+    def test_brapi_down_falls_back_to_the_last_close_and_says_why(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, FakeBrapi(fail=True)), today=self.TODAY)
+        assert not overview.is_live
+        assert overview.as_of == date(2026, 7, 17)
+        assert overview.patrimony == Decimal("250")
+        assert overview.quote_failed == ["PETR4"]
+
+    def test_before_the_session_opens_it_is_the_last_close_with_nothing_to_explain(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        brapi = self.quote("25", datetime(2026, 7, 17, 21, 0, tzinfo=UTC))  # o fechamento de sexta
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, brapi), today=self.TODAY)
+        assert not overview.is_live
+        assert overview.as_of == date(2026, 7, 17)
+        assert overview.quote_failed == []
+
+    def test_on_a_weekend_brapi_is_not_even_asked(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        saturday = date(2026, 7, 18)
+        brapi = self.quote("26", datetime(2026, 7, 17, 21, 0, tzinfo=UTC))
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, brapi, today=saturday), today=saturday)
+        assert overview.as_of == date(2026, 7, 17)
+        assert brapi.quote_calls == []

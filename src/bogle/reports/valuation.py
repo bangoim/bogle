@@ -130,6 +130,12 @@ class PortfolioValuation:
     Only quoted series appear: private fixed income is computed for any date and
     a ticker nothing can price is already in ``excluded``. See
     :func:`stale_at_end` for the question this exists to answer."""
+    quote_time: datetime | None = None
+    """Latest D-0 quote behind the series, when built ``live`` and brapi had one
+    from today for at least one ticker."""
+    quote_failed: list[str] = field(default_factory=list)
+    """Tickers whose D-0 quote brapi could not give (``live`` only); they are
+    valued at their last stored close instead."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,9 +196,14 @@ def _can_value(valuator: Valuator, ticker: str, *, since: date) -> bool:
 
 
 def build_portfolio_valuation(
-    conn: psycopg.Connection[DictRow], dispatcher: PriceDispatcher, *, start: date, end: date
+    conn: psycopg.Connection[DictRow], dispatcher: PriceDispatcher, *, start: date, end: date, live: bool = False
 ) -> PortfolioValuation:
-    """Assemble the portfolio valuator for ``[start, end]`` from the active holdings."""
+    """Assemble the portfolio valuator for ``[start, end]`` from the active holdings.
+
+    ``live`` prices today with brapi's D-0 quote (see
+    ``PriceDispatcher.build_historical_pricing``); every other report stays on
+    the stored closes.
+    """
     holdings = HoldingRepository(conn).list()
     assets = AssetRepository(conn)
     transactions = TransactionRepository(conn).list()
@@ -204,6 +215,8 @@ def build_portfolio_valuation(
     spot_included: set[str] = set()
     spot_reasons: dict[str, str] = {}
     series_end: dict[str, date] = {}
+    quote_times: list[datetime] = []
+    quote_failed: list[str] = []
     for holding in holdings:
         asset = assets.get(holding.ticker)
         if asset is None:  # a holding always has an asset row (FK); defensive
@@ -212,8 +225,12 @@ def build_portfolio_valuation(
         unit_principal = holding.total_invested / quantity if quantity != _ZERO else _ZERO
         since = _first_valued_date(transactions, holding.ticker, start)
         pricing = dispatcher.build_historical_pricing(
-            asset, unit_principal=unit_principal, start=start - _HISTORY_PAD, end=end, covering=since
+            asset, unit_principal=unit_principal, start=start - _HISTORY_PAD, end=end, covering=since, live=live
         )
+        if pricing.quote_time is not None:
+            quote_times.append(pricing.quote_time)
+        if pricing.quote_failed:
+            quote_failed.append(holding.ticker)
         valuator = pricing.valuator
         if valuator is None:
             reason = NO_SOURCE if asset.asset_type is AssetType.TESOURO else NOTHING_RETURNED
@@ -254,6 +271,8 @@ def build_portfolio_valuation(
             reasons=spot_reasons,
         ),
         series_end=series_end,
+        quote_time=max(quote_times, default=None),
+        quote_failed=sorted(quote_failed),
     )
 
 

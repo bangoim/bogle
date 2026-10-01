@@ -1,10 +1,12 @@
 """Home screen: logo, headline summary and the menu (issue #73).
 
-The summary is deliberately minimal — four numbers, all measured at the previous
-close (D-1), so opening ``bogle`` never waits on an intraday quote. Live prices
-belong to the Position screen. It loads in a worker thread with a placeholder in
-place while it computes, and an expected failure (database down, provider
-unreachable) becomes an inline message plus a toast instead of a crash.
+The summary is deliberately minimal — four numbers, all measured at the same
+point: today, with brapi's D-0 quote on top of the stored closes, or the previous
+close (D-1) when there is no quote from today (see
+:func:`~bogle.reports.overview.compute_current_overview`). The panel title says
+which. It loads in a worker thread with a placeholder in place while it computes,
+and an expected failure (database down, provider unreachable) becomes an inline
+message plus a toast instead of a crash.
 """
 
 from __future__ import annotations
@@ -197,7 +199,7 @@ class HomeScreen(MenuScreen):
 
     def _show_overview(self, overview: PortfolioOverview) -> None:
         self.overview = overview
-        self.query_one("#summary").border_title = f"Carteira - fechamento de {overview.as_of.isoformat()}"
+        self.query_one("#summary").border_title = _summary_title(overview)
         # Com ticker excluido o numero e um subconjunto da carteira: o rotulo diz
         # isso, em vez de deixar so a nota explicando um "total" que nao e total.
         # So estes dois ganham "parcial": em "Rentabilidade total" o total e o
@@ -274,6 +276,27 @@ def _excluded_note(overview: PortfolioOverview) -> str:
     return note
 
 
+def _summary_title(overview: PortfolioOverview) -> str:
+    """What the numbers are measured at: today's quote (D-0), or a past close.
+
+    The time of the quote, and not only the day, because brapi's free plan
+    refreshes every 30 minutes: "14:07" says how far behind the market the
+    summary may be, which "hoje" would not.
+    """
+    if overview.quote_time is not None:
+        return f"Carteira - cotacao de {overview.quote_time:%Y-%m-%d %H:%M}"
+    return f"Carteira - fechamento de {overview.as_of.isoformat()}"
+
+
+def _quote_failed_note(overview: PortfolioOverview) -> str:
+    """Why a weekday summary is a close behind: brapi gave no quote from today."""
+    listed = ", ".join(escape(ticker) for ticker in overview.quote_failed)
+    return (
+        f"[yellow]Nota:[/yellow] sem cotacao de hoje na brapi para {listed}; "
+        f"resumo do fechamento de {overview.as_of.isoformat()}. [dim]'r' pede de novo.[/dim]"
+    )
+
+
 def _stale_note(overview: PortfolioOverview) -> str:
     """Which tickers are priced before the reference close, and at which one.
 
@@ -287,14 +310,15 @@ def _stale_note(overview: PortfolioOverview) -> str:
     single "os dados estao atrasados": with both, the difference against the
     Position screen is checkable line by line, which is what turns a number that
     looks wrong into a number that is merely older.
+
+    On a D-0 summary the missing piece is a quote, not a close: the ticker brapi
+    did not quote today sits on its last stored close, and the note says so.
     """
     listed = ", ".join(
         f"{escape(ticker)} ({when.isoformat()})" for ticker, when in sorted(overview.stale_prices.items())
     )
-    return (
-        f"[yellow]Nota:[/yellow] sem fechamento de {overview.as_of.isoformat()} para {listed}; "
-        "avaliados no ultimo fechamento disponivel."
-    )
+    missing = "cotacao de hoje" if overview.is_live else f"fechamento de {overview.as_of.isoformat()}"
+    return f"[yellow]Nota:[/yellow] sem {missing} para {listed}; avaliados no ultimo fechamento disponivel."
 
 
 def _pending_note(overview: PortfolioOverview) -> str:
@@ -324,6 +348,8 @@ def _note_for(overview: PortfolioOverview) -> str:
     then how to read what is on screen.
     """
     lines = [_pending_note(overview)] if overview.has_pending else []
+    if overview.quote_failed and not overview.is_live:
+        lines.append(_quote_failed_note(overview))
     if overview.has_stale_prices:
         lines.append(_stale_note(overview))
     lines.append(_summary_note(overview))

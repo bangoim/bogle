@@ -23,6 +23,10 @@ sessions, up to the 3 months its free plan serves), once a day, and every other
 read of the day comes from the table. Without a store the history is fetched on
 every call, as before.
 
+Today's session is never stored. A caller that wants it (the Home summary) asks
+:meth:`PriceDispatcher.build_historical_pricing` for ``live=True``, which adds
+brapi's D-0 quote as the series' last point for that one answer.
+
 Clients are accepted as structural protocols so tests inject fakes without a
 network.
 """
@@ -34,11 +38,13 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol
+from zoneinfo import ZoneInfo
 
-from bogle.analytics.business_days import previous_business_day
+from bogle.analytics.business_days import is_business_day, previous_business_day
 from bogle.data.cache import DiskCache
 from bogle.data.fixed_income import accumulated_ipca_factor, accumulated_rate_factor, present_value
 from bogle.data.models import HistPoint, Quote, SeriesPoint, StoredClose, StoredSpan, TesouroQuote
+from bogle.db import DEFAULT_TIMEZONE
 
 if TYPE_CHECKING:
     # Imported lazily at call time to avoid an import cycle (analytics.twr imports
@@ -223,6 +229,12 @@ class HistoricalPricing:
     screen can say. ``None`` for a computed source (private fixed income), which
     has a value for every date and can never lag.
     """
+    quote_time: datetime | None = None
+    """When ``live`` was asked and the series got today's point: the time of the
+    brapi quote behind it (aware, as the provider stamps it)."""
+    quote_failed: bool = False
+    """``live`` was asked on a trading day and brapi did not answer: the series
+    stops at the last stored close, and the caller says why."""
 
 
 def _price_info_to_cache(info: PriceInfo) -> dict[str, Any]:
@@ -492,6 +504,7 @@ class PriceDispatcher:
         start: date,
         end: date,
         covering: date | None = None,
+        live: bool = False,
     ) -> HistoricalPricing:
         """A valuator ``(holdings, on_date) -> Decimal`` for the TWR engine, or None.
 
@@ -506,17 +519,55 @@ class PriceDispatcher:
         answer that falls short is asked again a different way — see
         :meth:`_variable_income_history` — and the result says whether the
         remaining shortfall is the provider's whole series or just a bad answer.
+
+        ``live`` adds today's point to a variable-income series, from brapi's D-0
+        quote (see :meth:`_with_live_quote`). It is never stored.
         """
         from bogle.analytics.twr import price_history_valuator
 
         if asset.asset_type in VARIABLE_INCOME_TYPES:
             history, series_start = self._variable_income_history(asset.ticker, start, end, covering=covering)
+            quote_time, quote_failed = None, False
+            if live:
+                history, quote_time, quote_failed = self._with_live_quote(asset.ticker, history, end)
             valuator = price_history_valuator({asset.ticker: history}) if history else None
             series_end = _as_date(history[-1].date) if history else None
-            return HistoricalPricing(valuator, series_start, series_end)
+            return HistoricalPricing(valuator, series_start, series_end, quote_time, quote_failed)
         if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
             return HistoricalPricing(self._fixed_income_valuator(asset, unit_principal, end))
         return HistoricalPricing(None)
+
+    def _with_live_quote(
+        self, ticker: str, history: list[HistPoint], end: date
+    ) -> tuple[list[HistPoint], datetime | None, bool]:
+        """``history`` with today's point from brapi's D-0 quote, when there is one.
+
+        Only on a trading day, only when the window reaches today, and only for a
+        quote brapi stamps with today's date. Before the session opens brapi still
+        answers with the previous close, which the table already has: that is not
+        a failure, just nothing to add. A quote that came from the Yahoo fallback
+        is not used either, since it carries the time it was fetched and not the
+        time it was traded, and so cannot say which session it belongs to.
+
+        The quote goes through the same 5-minute cache as the Position screen, so
+        the two screens show the same price. A bar for today already in
+        ``history`` (Yahoo answers with a partial one when there is no store) is
+        replaced by the quote.
+        """
+        today = self._today()
+        if end < today or not is_business_day(today):
+            return history, None, False
+        try:
+            info = self._variable_income_info(ticker)
+        except MarketDataError:
+            return history, None, True
+        if info.source != "brapi" or info.as_of is None:
+            return history, None, True
+        if info.as_of.astimezone(ZoneInfo(DEFAULT_TIMEZONE)).date() != today:
+            return history, None, False
+        moment = datetime(today.year, today.month, today.day, tzinfo=UTC)
+        point = HistPoint(date=moment, open=info.price, high=info.price, low=info.price, close=info.price, volume=0)
+        return [*(bar for bar in history if _as_date(bar.date) < today), point], info.as_of, False
 
     def _variable_income_history(
         self, ticker: str, start: date, end: date, *, covering: date | None = None, reach: date | None = None

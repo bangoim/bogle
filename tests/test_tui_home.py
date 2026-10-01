@@ -1,11 +1,11 @@
-"""Tests for the TUI's Home screen (issue #73): the D-1 summary, the navigation
-and how an expected failure is reported.
+"""Tests for the TUI's Home screen (issue #73): the summary (D-0 with today's
+quote, or the last close), the navigation and how an expected failure is reported.
 """
 
 from __future__ import annotations
 
 import threading
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -71,6 +71,46 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             assert app.screen.query_one("#summary").border_title == "Carteira - fechamento de 2026-08-11"
+
+    @pytest.mark.asyncio
+    async def test_a_d0_summary_says_the_time_of_the_quote(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # O plano gratuito da brapi atualiza a cada 30 min: o horario diz o quanto
+        # o resumo pode estar atras do mercado.
+        live = make_overview(as_of=date(2026, 8, 12), quote_time=datetime(2026, 8, 12, 14, 7))
+        use_overview(monkeypatch, live)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert app.screen.query_one("#summary").border_title == "Carteira - cotacao de 2026-08-12 14:07"
+
+    @pytest.mark.asyncio
+    async def test_brapi_down_says_why_the_summary_is_a_close_behind(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview(quote_failed=["AUVP11", "B5P211"]))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "sem cotacao de hoje na brapi para AUVP11, B5P211" in note
+            assert "resumo do fechamento de 2026-08-11" in note
+
+    @pytest.mark.asyncio
+    async def test_a_ticker_missing_from_a_d0_summary_is_named_at_its_last_close(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        live = make_overview(
+            as_of=date(2026, 8, 12),
+            quote_time=datetime(2026, 8, 12, 14, 7),
+            quote_failed=["B5P211"],
+            stale_prices={"B5P211": date(2026, 8, 11)},
+        )
+        use_overview(monkeypatch, live)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "sem cotacao de hoje para B5P211 (2026-08-11)" in note
+            # A nota de "resumo do fechamento" e para quando o resumo inteiro voltou a D-1.
+            assert "na brapi" not in note
 
     @pytest.mark.asyncio
     async def test_starts_with_a_placeholder_before_the_worker_answers(self, monkeypatch: pytest.MonkeyPatch) -> None:

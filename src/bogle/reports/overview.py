@@ -1,8 +1,10 @@
 """Headline portfolio overview at a reference date (issue #73).
 
-The four numbers the TUI opens with, all measured at the same reference date —
-the previous day's close (D-1), so opening the app never waits on an intraday
-quote and the result is cacheable:
+The four numbers the TUI opens with, all measured at the same reference date.
+:func:`compute_current_overview` picks it: today, priced with brapi's D-0 quote
+on top of the stored closes (which never include today, see issue #82), or the
+previous close (D-1) when there is no quote from today to use, before the
+session opens, on a weekend, or with brapi down:
 
 1. **patrimony** — market value of the positions on that date;
 2. **variation** — patrimony minus the capital invested in them (R$ and %);
@@ -44,7 +46,7 @@ the close each one actually used: without it the summary claims a reference date
 part of the portfolio was never priced at, which is precisely how it comes to
 disagree with the live-quote Position screen for no visible reason.
 
-Because the reference is a past close, a transaction registered *today* is in
+When the reference is a past close (D-1), a transaction registered *today* is in
 none of the four numbers — correct, and completely invisible: the summary simply
 does not move, which reads as a screen that failed to refresh. ``pending_entries``
 counts them so the caller can say what is waiting for the next close instead of
@@ -54,16 +56,18 @@ leaving the user pressing "Atualizar".
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
 
 import psycopg
 from psycopg.rows import DictRow
 
+from bogle.analytics.business_days import is_business_day, previous_business_day
 from bogle.analytics.twr import compute_twr
 from bogle.data.dispatcher import PriceDispatcher
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.position import local_time
 from bogle.reports.periods import period_start
 from bogle.reports.valuation import (
     build_portfolio_valuation,
@@ -114,6 +118,18 @@ class PortfolioOverview:
     pending_invested: Decimal = _ZERO
     """Capital those transactions move (see :func:`pending_after`); zero when they
     are all income, which moves neither patrimony nor invested."""
+    quote_time: datetime | None = None
+    """Set when the summary is D-0: the latest brapi quote behind it, in local
+    time. ``as_of`` is then today, and a ticker brapi did not quote today shows up
+    in ``stale_prices`` at its last close."""
+    quote_failed: list[str] = field(default_factory=list)
+    """Tickers brapi could not quote today. When the summary fell back to D-1
+    because of them, this is the explanation the caller owes the user."""
+
+    @property
+    def is_live(self) -> bool:
+        """``True`` when the numbers use today's quotes (D-0), not a past close."""
+        return self.quote_time is not None
 
     @property
     def is_empty(self) -> bool:
@@ -221,8 +237,13 @@ def compute_overview(
     dispatcher: PriceDispatcher,
     *,
     as_of: date,
+    live: bool = False,
 ) -> PortfolioOverview:
-    """Value the portfolio at ``as_of`` and measure its return up to that date."""
+    """Value the portfolio at ``as_of`` and measure its return up to that date.
+
+    ``live`` prices ``as_of`` (today) with brapi's D-0 quotes; see
+    :func:`compute_current_overview`, which is what decides whether to.
+    """
     transactions = TransactionRepository(conn).list()
     inception = first_transaction_date(transactions)
     pending_entries, pending_invested = pending_after(transactions, as_of)
@@ -245,7 +266,7 @@ def compute_overview(
             pending_invested=pending_invested,
         )
 
-    valuation = build_portfolio_valuation(conn, dispatcher, start=inception, end=as_of)
+    valuation = build_portfolio_valuation(conn, dispatcher, start=inception, end=as_of, live=live)
 
     twr_total: Decimal | None = None
     twr_12m: Decimal | None = None
@@ -276,4 +297,36 @@ def compute_overview(
         stale_prices=stale_at_end(valuation),
         pending_entries=pending_entries,
         pending_invested=pending_invested,
+        quote_time=local_time(valuation.quote_time) if valuation.quote_time is not None else None,
+        quote_failed=valuation.quote_failed,
     )
+
+
+def compute_current_overview(
+    conn: psycopg.Connection[DictRow], dispatcher: PriceDispatcher, *, today: date
+) -> PortfolioOverview:
+    """The Home summary: D-0 when brapi has a quote from today, D-1 otherwise.
+
+    On a trading day the summary is measured at today, with the D-0 quote as the
+    last point of every variable-income series. It is never stored: the closes
+    in the table stop at D-1 (issue #82). The summary falls back to the previous
+    close when no ticker got a quote from today:
+
+    - before the session opens, brapi still answers with the previous close,
+      which the table already has. Nothing failed, and nothing is said;
+    - with brapi down, the fallback carries the tickers it could not quote, so
+      the caller can say why the summary is a day behind.
+
+    On a weekend or a holiday there is no session to quote, and the summary goes
+    straight to the last close. A ticker that missed its D-0 quote while others
+    got theirs stays in the D-0 summary at its last close, named in
+    ``stale_prices`` like any series that stops short of ``as_of``.
+    """
+    previous_close = previous_business_day(today)
+    if not is_business_day(today):
+        return compute_overview(conn, dispatcher, as_of=previous_close)
+    live = compute_overview(conn, dispatcher, as_of=today, live=True)
+    if live.is_live:
+        return live
+    fallback = compute_overview(conn, dispatcher, as_of=previous_close)
+    return replace(fallback, quote_failed=live.quote_failed)

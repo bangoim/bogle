@@ -128,11 +128,14 @@ On a wide terminal (108 columns or more) the menu splits into two columns of
 three, so the summary and the logo fit without scrolling on a normal-height
 window; the side arrows move between the columns.
 
-The home screen opens on the **previous close (D-1)**, not on live quotes: the
-four numbers come from the database plus cached price history, so startup does
-not wait on an API. Returns are TWR (time-weighted), which removes the effect of
-contributions and withdrawals and credits income. Live prices belong to the
-Position screen. If the rebalance evaluation cycle is overdue, the reminder
+The home screen opens on **today's quote (D-0)**: the price history comes from
+the database (see [Market data & sources](#market-data--sources)), and brapi's
+current quote is the last point of it, used for the four numbers and never
+stored. The panel title says the time of the quote, since brapi's free plan
+refreshes every 30 minutes. Before the session opens, on weekends and holidays,
+or with brapi down, the summary is the **previous close (D-1)**; in the last case
+a note says which tickers had no quote. Returns are TWR (time-weighted), which
+removes the effect of contributions and withdrawals and credits income. If the rebalance evaluation cycle is overdue, the reminder
 arrives as a notification here instead of a line on stderr.
 
 | Screen | What it covers | Equivalent commands |
@@ -569,7 +572,7 @@ IBOV:
   provider.
 
 Today's session is never stored, since a close is not a close until the market
-closes. If both
+closes; the home screen shows it from brapi's live quote instead. If both
 providers are down, nothing is lost: the table still has everything loaded
 before, so a portfolio opened yesterday still has at least D-2. Each row records
 which provider wrote it (`source`) and the day it was last loaded or confirmed

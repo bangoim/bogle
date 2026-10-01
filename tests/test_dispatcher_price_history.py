@@ -38,6 +38,17 @@ def bar(day: date, close: str) -> HistPoint:
     return HistPoint(date=moment, open=value, high=value, low=value, close=value, volume=1)
 
 
+def quote(symbol: str, price: str, when: datetime) -> Quote:
+    """A quote as brapi stamps it: aware, in UTC."""
+    return Quote(symbol=symbol, requested_symbol=symbol, price=Decimal(price), currency="BRL", time=when)
+
+
+# 14:07 em Sao Paulo, o pregao de hoje em andamento.
+DURING_TODAY = datetime(2026, 10, 1, 17, 7, tzinfo=UTC)
+# 18:00 de ontem em Sao Paulo: o que a brapi responde antes da abertura.
+LAST_EVENING = datetime(2026, 9, 30, 21, 0, tzinfo=UTC)
+
+
 def sessions(start: date, end: date, close: str = "100") -> list[HistPoint]:
     """A bar per business day in ``[start, end]``, all at ``close``."""
     out = []
@@ -185,9 +196,11 @@ def etf(ticker: str) -> Asset:
     return Asset(ticker=ticker, target_weight=Decimal("0.3"), asset_type=AssetType.ETF)
 
 
-def pricing(dispatcher: PriceDispatcher, ticker: str, *, start: date, covering: date | None = None) -> Any:
+def pricing(
+    dispatcher: PriceDispatcher, ticker: str, *, start: date, covering: date | None = None, live: bool = False
+) -> Any:
     return dispatcher.build_historical_pricing(
-        etf(ticker), unit_principal=Decimal("0"), start=start, end=TODAY, covering=covering
+        etf(ticker), unit_principal=Decimal("0"), start=start, end=TODAY, covering=covering, live=live
     )
 
 
@@ -450,3 +463,80 @@ class TestWithoutAStore:
         # Sem banco nao ha "fechamento de hoje" a recusar: a barra parcial entra.
         assert first.series_end == TODAY
         assert len(yahoo.calls) == 2 and brapi.calls == []
+
+
+class TestLiveQuote:
+    """``live=True``: today's point from brapi's D-0 quote, never stored."""
+
+    def seeded(self) -> FakeStore:
+        store = FakeStore()
+        for point in sessions(date(2026, 8, 3), YESTERDAY, "99.07"):
+            store.put("MUND11", point.date.date(), "99.07", loaded_on=TODAY)
+        return store
+
+    def test_todays_quote_becomes_the_last_point_and_is_not_stored(self, tmp_path: Path) -> None:
+        store = self.seeded()
+        brapi = FakeHistory(quotes={"MUND11": quote("MUND11", "100.32", DURING_TODAY)})
+        result = pricing(
+            make_dispatcher(tmp_path, brapi=brapi, store=store), "MUND11", start=date(2026, 8, 3), live=True
+        )
+        assert result.series_end == TODAY
+        assert result.quote_time == DURING_TODAY
+        assert result.quote_failed is False
+        assert result.valuator({"MUND11": Decimal("102")}, TODAY) == Decimal("10232.64")
+        assert store.row("MUND11", TODAY) is None
+
+    def test_without_live_the_series_stops_at_the_last_close(self, tmp_path: Path) -> None:
+        store = self.seeded()
+        brapi = FakeHistory(quotes={"MUND11": quote("MUND11", "100.32", DURING_TODAY)})
+        result = pricing(make_dispatcher(tmp_path, brapi=brapi, store=store), "MUND11", start=date(2026, 8, 3))
+        assert result.series_end == YESTERDAY
+        assert brapi.quote_calls == []
+
+    def test_before_the_session_opens_there_is_nothing_to_add_and_nothing_failed(self, tmp_path: Path) -> None:
+        brapi = FakeHistory(quotes={"MUND11": quote("MUND11", "99.07", LAST_EVENING)})
+        dispatcher = make_dispatcher(tmp_path, brapi=brapi, store=self.seeded())
+        result = pricing(dispatcher, "MUND11", start=date(2026, 8, 3), live=True)
+        assert result.series_end == YESTERDAY
+        assert result.quote_time is None
+        assert result.quote_failed is False
+
+    def test_brapi_down_is_reported_and_the_series_stays_at_the_last_close(self, tmp_path: Path) -> None:
+        dispatcher = make_dispatcher(tmp_path, brapi=FakeHistory(fail=True), store=self.seeded())
+        result = pricing(dispatcher, "MUND11", start=date(2026, 8, 3), live=True)
+        assert result.series_end == YESTERDAY
+        assert result.quote_failed is True
+
+    def test_a_quote_from_the_yahoo_fallback_is_not_a_d0_point(self, tmp_path: Path) -> None:
+        # O Yahoo carimba a hora da busca, nao a do pregao: nao da para saber de
+        # que dia o preco e.
+        yahoo = FakeHistory(quotes={"MUND11.SA": quote("MUND11.SA", "100.32", DURING_TODAY)})
+        dispatcher = make_dispatcher(tmp_path, yahoo=yahoo, brapi=FakeHistory(fail=True), store=self.seeded())
+        result = pricing(dispatcher, "MUND11", start=date(2026, 8, 3), live=True)
+        assert result.series_end == YESTERDAY
+        assert result.quote_failed is True
+
+    def test_no_session_no_quote_request(self, tmp_path: Path) -> None:
+        saturday = date(2026, 10, 3)
+        brapi = FakeHistory(quotes={"MUND11": quote("MUND11", "100.32", DURING_TODAY)})
+        dispatcher = make_dispatcher(tmp_path, brapi=brapi, store=self.seeded(), today=saturday)
+        dispatcher.build_historical_pricing(
+            etf("MUND11"), unit_principal=Decimal("0"), start=date(2026, 8, 3), end=saturday, live=True
+        )
+        assert brapi.quote_calls == []
+
+    def test_a_window_that_ends_before_today_needs_no_quote(self, tmp_path: Path) -> None:
+        brapi = FakeHistory(quotes={"MUND11": quote("MUND11", "100.32", DURING_TODAY)})
+        dispatcher = make_dispatcher(tmp_path, brapi=brapi, store=self.seeded())
+        dispatcher.build_historical_pricing(
+            etf("MUND11"), unit_principal=Decimal("0"), start=date(2026, 8, 3), end=YESTERDAY, live=True
+        )
+        assert brapi.quote_calls == []
+
+    def test_without_a_store_the_quote_replaces_yahoos_partial_bar(self, tmp_path: Path) -> None:
+        yahoo = FakeHistory({"MUND11.SA": [bar(YESTERDAY, "99.07"), bar(TODAY, "100.00")]})
+        brapi = FakeHistory(quotes={"MUND11": quote("MUND11", "100.32", DURING_TODAY)})
+        result = pricing(
+            make_dispatcher(tmp_path, yahoo=yahoo, brapi=brapi), "MUND11", start=date(2026, 9, 1), live=True
+        )
+        assert result.valuator({"MUND11": Decimal("1")}, TODAY) == Decimal("100.32")
