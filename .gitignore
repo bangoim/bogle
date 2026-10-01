@@ -5,6 +5,7 @@ __pycache__/
 
 *.md
 !README.md
+*.html
 # Documentacao de referencia versionada (docs/tax_rules.md etc.)
 !docs/
 !docs/**

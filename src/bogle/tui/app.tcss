@@ -1,0 +1,495 @@
+/* Estilos da interface interativa (issue #73).
+
+   Tema dark do textual + os acentos que a saida da CLI ja usa: cyan para
+   ticker, verde/vermelho para sinal (aplicados na propria celula, em
+   bogle/tui/cells.py, para reusar a formatacao compartilhada). */
+
+/* ---------------------------------------------------------------- Home */
+
+/* Com escopo na tela: um id nao e unico em CSS, e um `#home` solto tambem pegava
+   o botao "Voltar a Home" dos dialogos. */
+HomeScreen #home {
+    padding: 1 2;
+    align-horizontal: center;
+}
+
+#logo {
+    width: auto;
+    color: $primary;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* Terminal baixo: o logo sai antes de o menu ficar sem espaco. */
+HomeScreen.-short #logo {
+    display: none;
+}
+
+#summary {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#metrics {
+    height: auto;
+    grid-size: 2 2;
+    grid-rows: 2 2;
+    grid-gutter: 0 2;
+}
+
+/* Terminal estreito: uma metrica por linha em vez de duas. */
+HomeScreen.-narrow #metrics {
+    grid-size: 1 4;
+    grid-rows: 2 2 2 2;
+}
+
+.metric {
+    height: 2;
+}
+
+.metric-caption {
+    color: $text-muted;
+}
+
+.metric-value {
+    text-style: bold;
+}
+
+#summary-note {
+    height: auto;
+    margin-top: 1;
+}
+
+/* Uma coluna por padrao; em terminal largo (-wide) o menu vira duas, o que
+   corta o bloco de seis para tres linhas e ocupa o espaco que sobrava a direita
+   das descricoes. Abaixo disso as descricoes quebrariam em duas linhas cada e a
+   troca sairia pior que a lista simples. */
+#menu {
+    layout: vertical;
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+/* Sem borda propria: quem emoldura o menu e o container, e duas caixas dentro
+   da caixa sao ruido. */
+#menu-left, #menu-right {
+    width: 1fr;
+    height: auto;
+    border: none;
+    padding: 0;
+}
+
+/* A tarja do item selecionado ocupa a largura inteira da lista: sem esta
+   margem ela encosta na coluna vizinha, e as duas viram um bloco so. A margem
+   fica *fora* do widget, entao o fundo branco para antes dela. */
+#menu-left {
+    margin-right: 3;
+}
+
+HomeScreen.-wide #menu {
+    layout: horizontal;
+}
+
+/* ------------------------------------------------------------ Posicao */
+
+#position {
+    padding: 0 1;
+}
+
+#positions {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#totals {
+    height: auto;
+}
+
+#position-note {
+    height: auto;
+}
+
+/* --------------------------------------------------------- Formularios */
+
+#register {
+    padding: 1 2;
+}
+
+#register-menu {
+    width: 100%;
+    height: auto;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+/* A escolha da posicao a vender e uma tabela, como a tela de Posicao — as
+   mesmas medidas, para a lista nao mudar de forma entre uma tela e a outra. */
+#sell-picker {
+    padding: 0 1;
+}
+
+#sell-positions {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#sell-note {
+    height: auto;
+}
+
+/* A posicao que esta sendo vendida, acima dos campos. A folga embaixo a separa
+   do formulario: e contexto, nao mais uma linha para preencher. */
+#sell-position {
+    height: 1;
+    margin-bottom: 1;
+}
+
+/* Um ControlRow nao tem a linha de erro que separa um Field do seguinte, e sem
+   ela a caixa encostava no "Preco unitario" — parecendo pertencer a ele, e nao
+   a quantidade logo acima, que e o campo que ela preenche. */
+#sell-all-row {
+    margin-bottom: 1;
+}
+
+#form {
+    padding: 0 2;
+    margin: 1 2;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+.field {
+    height: auto;
+}
+
+.field-row {
+    height: 1;
+}
+
+.field-label {
+    width: 22;
+    color: $text-muted;
+}
+
+.field-input {
+    width: 1fr;
+}
+
+/* Um Checkbox sem rotulo mede 3 celulas em `auto` e corta o proprio marcador
+   ("▐X▌" vira "▐X…"). O rotulo dele e a coluna da esquerda, entao a largura vai
+   fixa. */
+.field-row Checkbox {
+    width: 5;
+}
+
+/* O Select dos formularios e `compact` para a linha caber em 1 (.field-row), e o
+   compacto do textual apaga a borda com `!important` — o que apaga tambem a borda
+   de foco dele. Sem borda e sem cursor proprio, nada dizia que o Tab tinha
+   chegado no campo: o tipo focado era identico ao tipo em repouso. */
+.field-row Select:focus > SelectCurrent {
+    background: $primary 30%;
+    text-style: bold;
+}
+
+/* Tema ANSI nao mistura cor (o `30%` viraria um bloco solido); ali o foco e o
+   video invertido, que e como o proprio terminal marca selecao. */
+.field-row Select:focus > SelectCurrent:ansi {
+    background: transparent;
+    text-style: bold reverse;
+}
+
+/* A lista herda `width: 1fr` do textual e ficava com a largura do formulario
+   inteiro para opcoes de tres letras (ETF, FII, BDR). Em `auto` ela mede o texto;
+   o minimo cobre a barra de rolagem quando o tipo tem muitas opcoes. */
+.field-row Select > SelectOverlay {
+    width: auto;
+    min-width: 12;
+}
+
+.field-input.-invalid {
+    background: $error 20%;
+}
+
+/* Tema ANSI nao mistura cor: o `20%` acima viraria vermelho solido e o campo
+   inteiro seria um bloco. Ali o erro fica no proprio texto digitado. */
+Input:ansi.field-input.-invalid {
+    background: transparent;
+    color: ansi_red;
+}
+
+.field-error {
+    height: 1;
+    padding-left: 22;
+    color: $error;
+}
+
+#form-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#form-buttons Button {
+    margin-right: 2;
+}
+
+/* -------------------------------------------------------------- Modais */
+
+ConfirmModal, NextStepModal, EditModal, HelpModal {
+    align: center middle;
+}
+
+/* Largura fixa (e nao `auto`): com `auto` o dialogo acompanha a linha mais
+   larga, e a nota do rodape ficava cortada em 80 colunas. */
+#help {
+    width: 58;
+    max-width: 100%;
+    height: auto;
+    max-height: 80%;
+    padding: 1 2;
+    background: $surface;
+    border: round $accent;
+}
+
+#help-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* Metade da altura, nao um numero fixo: a lista mais longa (a da Home, com oito
+   itens de menu) cabe em 24 linhas sem empurrar o rodape para fora, e num
+   terminal alto ela cresce em vez de rolar sem motivo. */
+#help-keys {
+    height: auto;
+    max-height: 50%;
+}
+
+#help-footer {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+#dialog {
+    width: auto;
+    max-width: 72;
+    height: auto;
+    padding: 1 2;
+    background: $surface;
+    border: round $accent;
+}
+
+#dialog-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dialog-body {
+    height: auto;
+}
+
+#dialog-question {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+#dialog-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#dialog-buttons Button {
+    margin-right: 2;
+}
+
+/* -------------------------------------------------------- Relatorios */
+
+#reports {
+    padding: 1 2;
+}
+
+#reports-menu {
+    width: 100%;
+    height: auto;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#returns, #compare, #history, #profit, #income {
+    padding: 0 1;
+}
+
+/* O campo de indices e uma linha de formulario solta no topo da tela. */
+#indices {
+    height: 1;
+    margin-bottom: 1;
+}
+
+/* Tabela curta (uma linha por serie ou por janela): cresce com o conteudo em
+   vez de ocupar a tela e empurrar o grafico para fora. */
+#series, #periods {
+    height: auto;
+    max-height: 50%;
+    margin-bottom: 1;
+}
+
+#points, #income-rows {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#chart {
+    height: 1fr;
+    min-height: 10;
+}
+
+#chart-hidden, #returns-note, #compare-note, #history-note, #income-note, #profit-note {
+    height: auto;
+}
+
+#profit-panel {
+    height: auto;
+    margin-bottom: 1;
+}
+
+/* --------------------------------------------------------- Transacoes */
+
+#transactions {
+    padding: 0 1;
+}
+
+#filter {
+    margin-bottom: 1;
+}
+
+#ledger {
+    height: 1fr;
+}
+
+#ledger-note {
+    height: auto;
+}
+
+/* ------------------------------------------------------------- Aporte */
+
+#suggest {
+    padding: 0 1;
+}
+
+#amount {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#allocation {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#suggest-totals, #suggest-note {
+    height: auto;
+}
+
+/* -------------------------------------------------------------- Ativos */
+
+#assets-screen {
+    padding: 0 1;
+}
+
+#assets {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#assets-note {
+    height: auto;
+}
+
+#asset-form {
+    padding: 0 2;
+    margin: 1 2;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#update-note {
+    height: auto;
+    margin-top: 1;
+}
+
+/* -------------------------------------------------------------- Status */
+
+#status {
+    padding: 1 2;
+}
+
+#cycle, #status-note {
+    height: auto;
+}
+
+#status-note {
+    margin-top: 1;
+}
+
+/* -------------------------------------------------------------- Config */
+
+#config {
+    padding: 0 1;
+}
+
+#settings {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#config-note {
+    height: auto;
+}
+
+#dialog-input {
+    margin-top: 1;
+}
+
+/* -------------------------------------------------------------- Footer */
+
+/* O footer nao gasta doze colunas anunciando a paleta de comandos: ela continua
+   no ctrl+p e aparece na ajuda (`?`). Em 80 colunas, essas colunas sao a
+   diferenca entre mostrar "h Valores" e cortar no meio da palavra. */
+Footer FooterKey.-command-palette {
+    display: none;
+}
+
+/* ------------------------------------------------------------------ Toasts */
+
+/* O default do textual reserva uma linha em branco acima e outra abaixo do
+   texto, e fixa a largura em 60: um aviso de uma linha ocupa tres linhas e
+   metade da tela. */
+Toast {
+    padding: 0 1;
+    width: auto;
+}
+
+/* ---------------------------------------------------------------- Tabelas */
+
+/* Nos temas ANSI o textual pinta o header do DataTable com `ansi_bright_blue`
+   de fundo e `ansi_default` de texto, assumindo que o azul do terminal e escuro.
+   Num terminal onde ele e ciano claro, isso da 2.4:1 de contraste — abaixo do
+   minimo legivel. Sem fundo sobram as cores default do proprio terminal (que
+   sao legiveis por definicao), e o sublinhado marca o cabecalho no lugar da
+   tarja. */
+DataTable:ansi > .datatable--header {
+    background: transparent;
+    color: ansi_default;
+    text-style: bold underline;
+}

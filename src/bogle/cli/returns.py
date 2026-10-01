@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 import typer
 from rich.console import Console
@@ -11,16 +10,13 @@ from rich.console import Console
 from bogle import settings as settings_mod
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
+from bogle.format import points, sign_color, signed_pct
 from bogle.reports.periods import parse_period
 from bogle.reports.returns import DEFAULT_PERIODS, PeriodReturn, ReturnsReport, compute_returns
 
 _CONSOLE = Console()
 
 _LABELS = {"total": "Total", "12m": "12 meses", "1m": "Ultimo mes"}
-
-
-def _pct(value: Decimal | None) -> str:
-    return f"{value * 100:+.2f}%" if value is not None else "-"
 
 
 def _window(row: PeriodReturn) -> str:
@@ -33,7 +29,7 @@ def _render(report: ReturnsReport, indices: tuple[str, ...], console: Console) -
     console.print("[bold]Rentabilidade da carteira[/bold]")
     for row in report.rows:
         label = f"{_LABELS[row.period]:<11} {_window(row)}"
-        console.print(f"  {label}: {_pct(row.twr)}  (TWR)")
+        console.print(f"  {label}: {signed_pct(row.twr)}  (TWR)")
 
     for index in indices:
         console.print(f"\n[bold]vs {index}:[/bold]")
@@ -42,16 +38,16 @@ def _render(report: ReturnsReport, indices: tuple[str, ...], console: Console) -
             if row.twr is None or index_return is None:
                 console.print(f"  {_LABELS[row.period]}: -")
                 continue
-            diff = (row.twr - index_return) * 100
-            color = "green" if diff >= 0 else "red"
+            diff = row.twr - index_return
+            color = sign_color(diff)
             console.print(
-                f"  {_LABELS[row.period]}: {_pct(row.twr)} carteira / {_pct(index_return)} {index}"
-                f"  -> [{color}]{diff:+.2f} p.p.[/{color}]"
+                f"  {_LABELS[row.period]}: {signed_pct(row.twr)} carteira / {signed_pct(index_return)} {index}"
+                f"  -> [{color}]{points(diff)}[/{color}]"
             )
 
     if report.excluded:
         console.print(
-            f"\n[yellow]Nota:[/yellow] TWR nao considera {', '.join(report.excluded)} (sem historico de precos)."
+            f"\n[yellow]Nota:[/yellow] TWR nao considera {', '.join(report.excluded)} (sem historico de precos no periodo)."
         )
     for index, message in report.index_errors.items():
         console.print(f"[yellow]Nota:[/yellow] {index}: {message}")

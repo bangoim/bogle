@@ -7,6 +7,7 @@ import psycopg
 import typer
 from dotenv import load_dotenv
 
+from bogle import format as fmt
 from bogle.cli import assets as assets_cli
 from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
@@ -18,14 +19,16 @@ from bogle.cli import returns as returns_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
 from bogle.cli import transactions as transactions_cli
-from bogle.db import get_connection
+from bogle.db import get_connection, migrate_if_pending, migrated_notice
 from bogle.domain.errors import BogleError
-from bogle.rebalancing import next_evaluation_date
-from bogle.settings import LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
+from bogle.rebalancing import overdue_notice
+from bogle.settings import DECIMAL_SEPARATOR, LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
 
 app = typer.Typer(
     help="bogle - CLI tool for passive portfolio rebalancing.",
-    no_args_is_help=True,
+    # Sem subcomando o bogle abre a TUI (issue #73), entao o help deixa de ser
+    # o comportamento default de `bogle` sem argumentos.
+    invoke_without_command=True,
 )
 
 app.command("add", help="Adicionar um novo ativo a carteira.")(assets_cli.add)
@@ -61,41 +64,82 @@ config_app.command("list", help="Listar todas as configuracoes.")(config_cli.lis
 app.add_typer(config_app, name="config")
 
 
-def _warn_if_rebalance_due() -> None:
-    """Best-effort reminder that the evaluation cycle completed (issue #24).
+def _read_preferences() -> tuple[str, str | None]:
+    """The display separator and the overdue-cycle reminder, in one round trip.
 
-    Never breaks the command it precedes: any failure (database down, migrations
-    pending) is swallowed silently.
+    Best-effort by design: any failure (database down, migrations pending) leaves
+    the canonical number format and no reminder, instead of breaking the command
+    that follows.
     """
     try:
         conn = get_connection()
         try:
+            separator = get_setting(conn, DECIMAL_SEPARATOR)
             period = get_setting(conn, REBALANCE_PERIOD_MONTHS)
             last = get_setting(conn, LAST_REBALANCE_DATE)
         finally:
             conn.close()
     except Exception:
-        return
-    if last is None:
-        return
-    next_eval = next_evaluation_date(last, period)
-    if date.today() >= next_eval:
-        typer.echo(
-            f"aviso: ciclo de rebalanceamento de {period} meses vencido desde {next_eval.isoformat()}. "
-            "Rode 'bogle suggest' para avaliar a carteira.",
-            err=True,
-        )
+        return fmt.CANONICAL_DECIMAL, None
+    return separator, overdue_notice(last, period, today=date.today())
+
+
+def _update_schema() -> None:
+    """Apply pending migrations before the command touches the database.
+
+    A version that ships a migration cannot depend on the user remembering to
+    apply it: before this, the sale that empties a position hit the ``CHECK`` that
+    006 relaxes, and the error surfaced on the sale — the wrong moment, in the
+    wrong words. The check is one query; the line on stderr only appears when
+    something was applied.
+    """
+    applied = migrate_if_pending()
+    if applied:
+        typer.echo(f"aviso: {migrated_notice(applied)}", err=True)
+
+
+def _is_interactive() -> bool:
+    """True when both ends are a real terminal, which a full-screen TUI needs.
+
+    Keeps ``bogle | cat`` (and any non-tty invocation) printing the help instead
+    of blowing up inside Textual.
+    """
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 @app.callback()
 def _main(ctx: typer.Context) -> None:
     """Catch-all entry point. Subcommand runs after this returns."""
+    if ctx.invoked_subcommand is None:
+        # `bogle` sem argumentos abre a interface interativa (issue #73);
+        # `bogle --help` e `bogle <comando>` seguem intocados.
+        if not _is_interactive():
+            # Sem terminal, o comportamento e o mesmo de antes da TUI (quando
+            # `no_args_is_help` cuidava disso): help na saida padrao e status 2,
+            # que scripts existentes podem estar checando.
+            typer.echo(ctx.get_help(), nl=False)
+            raise typer.Exit(code=2)
+        from bogle.tui import run_tui  # import tardio: comandos diretos nao pagam pelo textual
+
+        run_tui()
+        return
+    _update_schema()
+    separator, notice = _read_preferences()
+    fmt.configure(separator)
     # `status` ja reporta o ciclo por inteiro; avisar de novo seria ruido.
-    if ctx.invoked_subcommand != "status":
-        _warn_if_rebalance_due()
+    if notice is not None and ctx.invoked_subcommand != "status":
+        typer.echo(f"aviso: {notice}", err=True)
 
 
-def _run() -> None:  # pragma: no cover - tiny shim for the console_script
+def _run() -> None:
+    """Console-script shim: one line on stderr for the failures the app expects.
+
+    A ``BogleError`` is the user's mistake, a connection failure is the database's
+    absence, and any other ``psycopg.Error`` — a constraint the schema still
+    enforces, a migration that did not apply — is a database state to explain, not
+    a bug to dump as a traceback. Anything else *is* a bug and keeps its traceback.
+    Same mapping as the TUI's :func:`bogle.tui.errors.message_for`.
+    """
     load_dotenv()  # picks up BRAPI_TOKEN (and future secrets) from a local .env
     try:
         app()
@@ -108,4 +152,7 @@ def _run() -> None:  # pragma: no cover - tiny shim for the console_script
             "Verifique BOGLE_DATABASE_URL e se o PostgreSQL esta rodando.",
             err=True,
         )
+        sys.exit(1)
+    except psycopg.Error as exc:
+        typer.echo(f"erro no banco de dados: {exc}", err=True)
         sys.exit(1)

@@ -25,6 +25,11 @@ REBALANCE_PERIOD_MONTHS = "rebalance_period_months"
 DEFAULT_COMPARE_INDICES = "default_compare_indices"
 WEIGHT_DRIFT_THRESHOLD = "weight_drift_threshold"
 LAST_REBALANCE_DATE = "last_rebalance_date"
+DECIMAL_SEPARATOR = "decimal_separator"
+HIDE_VALUES = "hide_values"
+THEME = "theme"
+
+DEFAULT_THEME = "textual-dark"
 
 _VALID_PERIODS = (6, 12)
 
@@ -54,6 +59,37 @@ def _parse_threshold(raw: str) -> Decimal:
     if not (Decimal("0") < threshold < Decimal("1")):
         raise ValidationError(f"Threshold deve estar em (0, 1), recebido {threshold}.")
     return threshold
+
+
+def _parse_separator(raw: str) -> str:
+    separator = raw.strip()
+    if separator not in (".", ","):
+        raise ValidationError(f"Separador decimal deve ser '.' ou ',', recebido {raw!r}.")
+    return separator
+
+
+def _parse_theme(raw: str) -> str:
+    # Import tardio: um comando direto nao paga pelo textual so porque a chave
+    # existe — so quem realmente troca de tema carrega a lista.
+    from textual.theme import BUILTIN_THEMES
+
+    theme = raw.strip()
+    if theme not in BUILTIN_THEMES:
+        raise ValidationError(f"Tema '{theme}' nao existe. Opcoes: {', '.join(sorted(BUILTIN_THEMES))}.")
+    return theme
+
+
+_TRUE = ("true", "1", "sim", "yes", "on")
+_FALSE = ("false", "0", "nao", "no", "off")
+
+
+def _parse_bool(raw: str) -> bool:
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    raise ValidationError(f"'{raw}' nao e um booleano. Use {_TRUE[0]} ou {_FALSE[0]}.")
 
 
 def _parse_date(raw: str) -> date:
@@ -104,6 +140,33 @@ SETTINGS: dict[str, SettingSpec] = {
             parse=_parse_threshold,
             to_json=str,
             from_json=Decimal,
+        ),
+        SettingSpec(
+            key=DECIMAL_SEPARATOR,
+            type_name="str",
+            description="Separador decimal na exibicao ('.' ou ','); o outro caractere separa o milhar.",
+            default=".",
+            parse=_parse_separator,
+            to_json=str,
+            from_json=str,
+        ),
+        SettingSpec(
+            key=HIDE_VALUES,
+            type_name="bool",
+            description="Abrir a interface interativa com os valores ocultos (a tecla 'h' alterna).",
+            default=False,
+            parse=_parse_bool,
+            to_json=bool,
+            from_json=bool,
+        ),
+        SettingSpec(
+            key=THEME,
+            type_name="str",
+            description="Tema da interface interativa (a paleta de comandos tambem grava aqui).",
+            default=DEFAULT_THEME,
+            parse=_parse_theme,
+            to_json=str,
+            from_json=str,
         ),
         SettingSpec(
             key=LAST_REBALANCE_DATE,
@@ -201,6 +264,9 @@ def format_value(value: Any) -> str:
     """Human/scriptable rendering: lists comma-joined, dates ISO, None explicit."""
     if value is None:
         return "(nao definido)"
+    if isinstance(value, bool):
+        # Antes do ramo de int: em Python, bool *e* int.
+        return "true" if value else "false"
     if isinstance(value, list):
         return ",".join(str(item) for item in value)
     if isinstance(value, date):

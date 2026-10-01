@@ -8,8 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bogle.cli.assets import _parse_rate, _parse_weight
-from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.cli.parsing import parse_date, parse_decimal, parse_price_overrides, parse_rate, parse_weight
 from bogle.domain.errors import ValidationError
 
 
@@ -43,24 +42,68 @@ class TestParseDate:
 
 class TestParseRate:
     def test_valid_decimal(self) -> None:
-        assert _parse_rate("1.10") == Decimal("1.10")
+        assert parse_rate("1.10", "--rate") == Decimal("1.10")
 
     def test_not_a_number(self) -> None:
         with pytest.raises(ValidationError, match="--rate deve ser um numero decimal"):
-            _parse_rate("abc")
+            parse_rate("abc", "--rate")
 
     @pytest.mark.parametrize("value", ["0", "-5", "10000", "100000"])
     def test_out_of_range(self, value: str) -> None:
         # Limite superior espelha NUMERIC(10, 6): sem ele o psycopg
         # estouraria com NumericValueOutOfRange cru.
         with pytest.raises(ValidationError, match=r"--rate deve estar em \(0, 10000\)"):
-            _parse_rate(value)
+            parse_rate(value, "--rate")
 
 
 class TestParseWeight:
     def test_valid(self) -> None:
-        assert _parse_weight("0.6") == Decimal("0.6")
+        assert parse_weight("0.6", "--weight") == Decimal("0.6")
 
     def test_out_of_range(self) -> None:
         with pytest.raises(ValidationError, match=r"deve estar em \(0, 1\]"):
-            _parse_weight("1.5")
+            parse_weight("1.5", "--weight")
+
+    def test_zero_is_refused_for_a_new_asset(self) -> None:
+        with pytest.raises(ValidationError, match=r"deve estar em \(0, 1\]"):
+            parse_weight("0", "--weight")
+
+    def test_zero_is_accepted_when_changing_an_asset(self) -> None:
+        # O caminho de volta de um target restaurado por engano: sem isso, so a
+        # venda que zera a posicao chegava ao zero (migracao 006).
+        assert parse_weight("0", "--weight", allow_zero=True) == Decimal("0")
+
+    @pytest.mark.parametrize("value", ["-0.1", "1.5"])
+    def test_the_open_range_still_has_both_ends(self, value: str) -> None:
+        with pytest.raises(ValidationError, match=r"deve estar em \[0, 1\]"):
+            parse_weight(value, "--weight", allow_zero=True)
+
+
+class TestParsePriceOverrides:
+    def test_pairs_become_a_mapping_with_upper_case_tickers(self) -> None:
+        assert parse_price_overrides(["vwra11=114,86", "B5P211=110.67"], "--price") == {
+            "VWRA11": Decimal("114.86"),
+            "B5P211": Decimal("110.67"),
+        }
+
+    def test_empty_gives_an_empty_mapping(self) -> None:
+        assert parse_price_overrides([], "--price") == {}
+
+    def test_spaces_around_the_pair_are_tolerated(self) -> None:
+        assert parse_price_overrides([" vwra11 = 114.86 "], "--price") == {"VWRA11": Decimal("114.86")}
+
+    @pytest.mark.parametrize("raw", ["VWRA11", "=114.86", "114.86"])
+    def test_a_pair_without_both_halves_is_refused(self, raw: str) -> None:
+        with pytest.raises(ValidationError, match="TICKER=PRECO"):
+            parse_price_overrides([raw], "--price")
+
+    def test_the_price_goes_through_the_shared_number_parser(self) -> None:
+        # Milhar com separador e o que torna um numero ambiguo, aqui como em
+        # qualquer outro campo.
+        with pytest.raises(ValidationError, match="--price VWRA11"):
+            parse_price_overrides(["VWRA11=1.114,86"], "--price")
+
+    def test_the_same_ticker_twice_is_refused(self) -> None:
+        # Silenciosamente valeria o ultimo, e o usuario leria o primeiro.
+        with pytest.raises(ValidationError, match="repetido para VWRA11"):
+            parse_price_overrides(["VWRA11=114", "vwra11=115"], "--price")

@@ -5,6 +5,9 @@ live totals, it also folds in the portfolio-level snapshot that used to
 live in ``bogle summary``: month profit and income received over the last
 12 months. Month profit needs historical prices, so it is only computed
 when prices are on (omitted under ``--no-prices``).
+
+The numbers come from :func:`~bogle.reports.snapshot.compute_snapshot`, shared
+with the TUI's Position screen (#73); this module only renders them.
 """
 
 from __future__ import annotations
@@ -21,56 +24,28 @@ from rich.table import Table
 
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
-from bogle.position import PortfolioSummary, Position, get_portfolio_summary
-from bogle.reports.dividends import twelve_month_start
-from bogle.reports.periods import add_months
-from bogle.reports.summary import income_received, window_profit
-from bogle.reports.valuation import build_portfolio_valuation, patrimony_at
-from bogle.repositories.transactions import TransactionRepository
+from bogle.format import DASH, exact, exact_or_none, money, pct, signed
+from bogle.position import PortfolioSummary, Position, price_provenance
+from bogle.reports.snapshot import compute_snapshot
 
 _CONSOLE = Console()
-
-
-def _money(value: Decimal | None) -> str:
-    return f"{value:.2f}" if value is not None else "-"
-
-
-def _qty(value: Decimal | None) -> str:
-    return format(value.normalize(), "f") if value is not None else "-"
-
-
-def _pct(value: Decimal | None) -> str:
-    return f"{value * 100:.2f}%" if value is not None else "-"
-
-
-def _signed(value: Decimal | None, *, percent: bool) -> str:
-    """Signed, colored cell (green >= 0, red < 0); percentage or money."""
-    if value is None:
-        return "-"
-    color = "green" if value >= 0 else "red"
-    body = f"{value * 100:+.2f}%" if percent else f"{value:+.2f}"
-    return f"[{color}]{body}[/{color}]"
-
-
-def _dec(value: Decimal | None) -> str | None:
-    # Normalized and non-scientific (10.00000000 -> "10", 0E+4 -> "0").
-    return format(value.normalize(), "f") if value is not None else None
 
 
 def _position_json(p: Position) -> dict[str, Any]:
     return {
         "ticker": p.ticker,
         "type": p.asset_type.value,
-        "quantity": _dec(p.quantity),
-        "price": _dec(p.price),
-        "market_value": _dec(p.market_value),
-        "current_weight": _dec(p.current_weight),
-        "target_weight": _dec(p.target_weight),
-        "drift": _dec(p.drift),
-        "pnl": _dec(p.pnl),
-        "pnl_percent": _dec(p.pnl_percent),
-        "twr": _dec(p.twr),
-        "dividends": _dec(p.dividends),
+        "quantity": exact_or_none(p.quantity),
+        "average_price": exact_or_none(p.average_price),
+        "price": exact_or_none(p.price),
+        "market_value": exact_or_none(p.market_value),
+        "current_weight": exact_or_none(p.current_weight),
+        "target_weight": exact_or_none(p.target_weight),
+        "drift": exact_or_none(p.drift),
+        "pnl": exact_or_none(p.pnl),
+        "pnl_percent": exact_or_none(p.pnl_percent),
+        "twr": exact_or_none(p.twr),
+        "dividends": exact_or_none(p.dividends),
         "price_source": p.price_source,
         "as_of": p.as_of.isoformat() if p.as_of else None,
     }
@@ -86,13 +61,13 @@ def _summary_json(
     return {
         "positions": [_position_json(p) for p in summary.positions],
         "totals": {
-            "invested": _dec(summary.total_invested),
-            "value": _dec(summary.total_value),
-            "pnl": _dec(summary.total_pnl),
-            "pnl_percent": _dec(summary.total_pnl_percent),
-            "dividends": _dec(summary.total_dividends),
-            "month_profit": _dec(month_profit),
-            "income_12m": _dec(income_12m),
+            "invested": exact_or_none(summary.total_invested),
+            "value": exact_or_none(summary.total_value),
+            "pnl": exact_or_none(summary.total_pnl),
+            "pnl_percent": exact_or_none(summary.total_pnl_percent),
+            "dividends": exact_or_none(summary.total_dividends),
+            "month_profit": exact_or_none(month_profit),
+            "income_12m": exact_or_none(income_12m),
             "month_profit_excluded": list(excluded),
         },
     }
@@ -105,44 +80,48 @@ def _render(
     month_profit: Decimal | None = None,
     income_12m: Decimal | None = None,
     excluded: Sequence[str] = (),
+    has_prices: bool = True,
 ) -> None:
     table = Table(title="Posicao", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Tipo", no_wrap=True)
-    for header in ("Qtd", "Preco", "Valor", "Peso atual", "Target", "Drift", "PnL R$", "PnL %", "TWR"):
+    for header in ("Qtd", "Preco medio", "Cotacao", "Montante", "Peso", "Target", "Drift", "PnL R$", "PnL %", "TWR"):
         table.add_column(header, justify="right")
     for p in summary.positions:
         table.add_row(
             p.ticker,
             p.asset_type.value,
-            _qty(p.quantity),
-            _money(p.price),
-            _money(p.market_value),
-            _pct(p.current_weight),
-            _pct(p.target_weight),
-            _signed(p.drift, percent=True),
-            _signed(p.pnl, percent=False),
-            _signed(p.pnl_percent, percent=True),
-            _signed(p.twr, percent=True),
+            exact(p.quantity),
+            money(p.average_price),
+            money(p.price),
+            money(p.market_value),
+            pct(p.current_weight),
+            pct(p.target_weight),
+            signed(p.drift, percent=True),
+            signed(p.pnl, percent=False),
+            signed(p.pnl_percent, percent=True),
+            signed(p.twr, percent=True),
         )
     console.print(table)
 
-    console.print(f"Total investido: {_money(summary.total_invested)}")
-    console.print(f"Patrimonio total: {_money(summary.total_value)}")
-    console.print(
-        f"Variacao: {_signed(summary.total_pnl, percent=False)} ({_signed(summary.total_pnl_percent, percent=True)})"
-    )
-    console.print(f"Lucro do mes: {_signed(month_profit, percent=False)}")
-    console.print(f"Proventos (12m): {_signed(income_12m, percent=False)}")
-    sources = sorted({p.price_source for p in summary.positions if p.price_source})
-    if sources:
-        console.print(f"Fonte(s) de preco: {', '.join(sources)}")
-    timestamps = [p.as_of for p in summary.positions if p.as_of is not None]
-    if timestamps:
-        console.print(f"Cotacao mais recente: {max(timestamps):%Y-%m-%d %H:%M}")
+    console.print(f"Total investido: {money(summary.total_invested)}")
+    # Sem nenhuma posicao precificada os totais de mercado somam zero, o que nao
+    # e o mesmo que a carteira valer zero (issue #74, revisao).
+    value = money(summary.total_value) if has_prices else DASH
+    pnl = signed(summary.total_pnl, percent=False) if has_prices else DASH
+    pnl_percent = signed(summary.total_pnl_percent, percent=True) if has_prices else DASH
+    console.print(f"Patrimonio total: {value}")
+    console.print(f"Variacao: {pnl} ({pnl_percent})")
+    console.print(f"Lucro do mes: {signed(month_profit, percent=False)}")
+    console.print(f"Proventos (12m): {signed(income_12m, percent=False)}")
+    origin = price_provenance((p.price_source, p.as_of) for p in summary.positions)
+    if origin.sources:
+        console.print(f"Fonte(s) de preco: {', '.join(origin.sources)}")
+    if origin.latest is not None:
+        console.print(f"Cotacao mais recente: {origin.latest:%Y-%m-%d %H:%M}")
     if excluded:
         console.print(
-            f"[yellow]Nota:[/yellow] lucro do mes nao considera {', '.join(excluded)} (sem historico de precos)."
+            f"[yellow]Nota:[/yellow] lucro do mes nao considera {', '.join(excluded)} (sem historico de precos no periodo)."
         )
 
 
@@ -150,37 +129,31 @@ def position(
     no_prices: bool = typer.Option(False, "--no-prices", help="Usa so dados da base, sem bater nas APIs."),
     as_json: bool = typer.Option(False, "--json", help="Saida em JSON para scripts."),
 ) -> None:
-    today = date.today()
-    month_start = add_months(today, -1)
     conn = get_connection()
     try:
+        # Month profit needs historical prices; it is skipped under --no-prices.
         dispatcher = None if no_prices else default_dispatcher()
-        summary = get_portfolio_summary(conn, dispatcher)
-        transactions = TransactionRepository(conn).list()
-        # Month profit needs historical prices; skip it under --no-prices.
-        valuation = (
-            build_portfolio_valuation(conn, dispatcher, start=month_start, end=today)
-            if dispatcher is not None
-            else None
-        )
+        snapshot = compute_snapshot(conn, dispatcher, today=date.today())
     finally:
         conn.close()
 
-    income_12m = income_received(transactions, start=twelve_month_start(today), end=today)
-    month_profit: Decimal | None = None
-    excluded: list[str] = []
-    if valuation is not None:
-        excluded = valuation.excluded
-        value_start = patrimony_at(valuation, month_start)
-        value_end = patrimony_at(valuation, today)
-        if value_start is not None and value_end is not None:
-            month_profit = window_profit(valuation.transactions, value_start, value_end, start=month_start, end=today)
-
     if as_json:
-        payload = _summary_json(summary, month_profit=month_profit, income_12m=income_12m, excluded=excluded)
+        payload = _summary_json(
+            snapshot.summary,
+            month_profit=snapshot.month_profit,
+            income_12m=snapshot.income_12m,
+            excluded=snapshot.excluded,
+        )
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
         return
-    if not summary.positions:
+    if not snapshot.summary.positions:
         typer.echo("Nenhuma posicao ativa.")
         return
-    _render(summary, _CONSOLE, month_profit=month_profit, income_12m=income_12m, excluded=excluded)
+    _render(
+        snapshot.summary,
+        _CONSOLE,
+        month_profit=snapshot.month_profit,
+        income_12m=snapshot.income_12m,
+        excluded=snapshot.excluded,
+        has_prices=snapshot.has_prices,
+    )

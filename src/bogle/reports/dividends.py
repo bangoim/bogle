@@ -117,3 +117,14 @@ def income_by_ticker(transactions: list[Transaction], *, start: date | None, end
 def twelve_month_start(today: date) -> date:
     """First day of the calendar window "last 12 months" (current month + 11 back)."""
     return add_months(date(today.year, today.month, 1), -11)
+
+
+def income_window_start(period: str, today: date) -> date | None:
+    """Lower bound of an income window: ``"12m"`` in calendar months, else since
+    inception (``None``).
+
+    The two commands that window income (``profit``, ``dividends``) and the
+    interface's report screens all resolve ``--period`` the same way; the rule
+    lives here so a fourth caller cannot invent a fifth reading of "12m".
+    """
+    return twelve_month_start(today) if period == "12m" else None

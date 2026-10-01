@@ -10,7 +10,7 @@ import pytest
 from bogle.domain.assets import AssetType
 from bogle.domain.errors import MissingPriceError
 from bogle.position import Position
-from bogle.rebalancing import Recommendation, classify_positions, next_evaluation_date
+from bogle.rebalancing import Recommendation, classify_positions, next_evaluation_date, overdue_notice
 
 
 def make_position(ticker: str, current: str | None, target: str) -> Position:
@@ -103,3 +103,21 @@ class TestNextEvaluationDate:
 
     def test_leap_day(self) -> None:
         assert next_evaluation_date(date(2024, 2, 29), 12) == date(2025, 2, 28)
+
+
+class TestOverdueNotice:
+    def test_never_evaluated_has_nothing_to_remind(self) -> None:
+        assert overdue_notice(None, 12, today=date(2026, 8, 12)) is None
+
+    def test_inside_the_cycle_is_silent(self) -> None:
+        assert overdue_notice(date(2026, 7, 1), 12, today=date(2026, 8, 12)) is None
+
+    def test_completed_cycle_names_the_date_and_the_next_step(self) -> None:
+        notice = overdue_notice(date(2025, 7, 1), 12, today=date(2026, 8, 12))
+        assert notice == (
+            "ciclo de rebalanceamento de 12 meses vencido desde 2026-07-01. "
+            "Rode 'bogle suggest' para avaliar a carteira."
+        )
+
+    def test_due_exactly_today_already_counts(self) -> None:
+        assert overdue_notice(date(2026, 2, 12), 6, today=date(2026, 8, 12)) is not None

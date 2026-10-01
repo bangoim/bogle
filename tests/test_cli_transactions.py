@@ -51,7 +51,7 @@ class TestBuy:
         assert result.returncode == 0
         assert "registrada: BUY PETR4 em 2026-01-15" in result.stdout
         # Linha completa: pina tambem a normalizacao dos Decimais (_fmt).
-        assert "custo total: 3055.2 (100 x 30.5 + 5.2 de fees)." in result.stdout
+        assert "custo total: 3,055.2 (100 x 30.5 + 5.2 de fees)." in result.stdout
 
         tx = trepo.list("PETR4")[0]
         assert tx.transaction_type is TransactionType.BUY
@@ -109,13 +109,105 @@ class TestSell:
         )
         assert result.returncode == 0
         assert "registrada: SELL PETR4" in result.stdout
-        assert "produto bruto da venda: 1400" in result.stdout
+        assert "produto bruto da venda: 1,400" in result.stdout
 
         tx = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL)
         assert tx.shares == Decimal("40")
         assert tx.total_investment == Decimal("1400")
         assert tx.total_cost == Decimal("2.50")
         assert tx.tax_withheld == Decimal("0.07")
+
+    def test_a_partial_sale_says_nothing_about_targets(self, repo: AssetRepository, petr4: None) -> None:
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        result = run_cli("sell", "PETR4", "-s", "40", "-p", "35")
+        assert result.returncode == 0
+        assert "target" not in result.stdout
+        asset = repo.get("PETR4")
+        assert asset is not None and asset.target_weight == Decimal("0.2")
+
+    def test_a_total_sale_clears_the_target_and_prints_the_way_back(self, repo: AssetRepository, petr4: None) -> None:
+        # A politica de bogle.closeout na CLI: mesma acao da TUI, e a linha exata
+        # que a desfaz no lugar do botao "Reverter".
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        result = run_cli("sell", "PETR4", "-s", "100", "-p", "35")
+        assert result.returncode == 0
+        assert "a venda zerou a posicao" in result.stdout
+        assert "target de 20.00%" in result.stdout
+        assert "para reverter: bogle update PETR4 --weight 0.2" in result.stdout
+        asset = repo.get("PETR4")
+        assert asset is not None and asset.target_weight == Decimal("0")
+
+    def test_the_printed_command_really_reverts_it(self, repo: AssetRepository, petr4: None) -> None:
+        # Sem isso a linha e uma promessa nao verificada: (0, 1] no parse_weight,
+        # por exemplo, aceita 0.2 mas o comando teria de existir com esse nome.
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        assert run_cli("sell", "PETR4", "-s", "100", "-p", "35").returncode == 0
+        assert run_cli("update", "PETR4", "--weight", "0.2").returncode == 0
+        asset = repo.get("PETR4")
+        assert asset is not None and asset.target_weight == Decimal("0.2")
+
+
+class TestSellCeiling:
+    """O ledger aceita vender o que nao se tem; o comando, nao (bogle.sales)."""
+
+    def test_selling_more_than_the_position_is_refused(self, trepo: TransactionRepository, petr4: None) -> None:
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        result = run_cli("sell", "PETR4", "-s", "150", "-p", "35")
+        assert result.returncode == 1
+        assert "tem 100 cotas" in result.stderr
+        assert "pede 150" in result.stderr
+        assert "Traceback" not in result.stderr
+        # Nada gravado: a recusa nao pode deixar meia venda no ledger.
+        assert [t.transaction_type for t in trepo.list("PETR4")] == [TransactionType.BUY]
+
+    def test_selling_a_ticker_never_bought_is_refused(self, petr4: None) -> None:
+        result = run_cli("sell", "PETR4", "-s", "1", "-p", "35")
+        assert result.returncode == 1
+        assert "Nao ha posicao aberta em 'PETR4'" in result.stderr
+
+
+class TestSellAll:
+    def test_it_sells_the_whole_position_without_being_told_the_quantity(
+        self, trepo: TransactionRepository, repo: AssetRepository, petr4: None
+    ) -> None:
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        assert run_cli("buy", "PETR4", "-s", "37.5", "-p", "31").returncode == 0
+        result = run_cli("sell", "PETR4", "--all", "-p", "35")
+        assert result.returncode == 0
+        assert "--all: vendendo a posicao inteira, 137.5 cotas." in result.stdout
+
+        tx = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL)
+        assert tx.shares == Decimal("137.5")
+        # Zerou a posicao, entao o target vai junto — a politica de bogle.closeout.
+        assert "a venda zerou a posicao" in result.stdout
+        asset = repo.get("PETR4")
+        assert asset is not None and asset.target_weight == Decimal("0")
+
+    def test_it_reads_what_is_left_after_a_partial_sale(self, trepo: TransactionRepository, petr4: None) -> None:
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        assert run_cli("sell", "PETR4", "-s", "40", "-p", "35").returncode == 0
+        assert run_cli("sell", "PETR4", "--all", "-p", "36").returncode == 0
+        sales = [t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL]
+        assert sorted(t.shares for t in sales) == [Decimal("40"), Decimal("60")]
+
+    def test_it_refuses_a_position_that_is_already_closed(self, petr4: None) -> None:
+        assert run_cli("buy", "PETR4", "-s", "10", "-p", "30").returncode == 0
+        assert run_cli("sell", "PETR4", "--all", "-p", "35").returncode == 0
+        result = run_cli("sell", "PETR4", "--all", "-p", "35")
+        assert result.returncode == 1
+        assert "Nao ha posicao aberta em 'PETR4'" in result.stderr
+
+    def test_shares_and_all_together_are_refused(self, trepo: TransactionRepository, petr4: None) -> None:
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        result = run_cli("sell", "PETR4", "--all", "-s", "40", "-p", "35")
+        assert result.returncode == 1
+        assert "--all ja e a quantidade" in result.stderr
+        assert [t.transaction_type for t in trepo.list("PETR4")] == [TransactionType.BUY]
+
+    def test_neither_of_them_is_refused_with_what_to_type(self, petr4: None) -> None:
+        result = run_cli("sell", "PETR4", "-p", "35")
+        assert result.returncode == 1
+        assert "informe --shares, ou --all" in result.stderr
 
 
 class TestIncome:

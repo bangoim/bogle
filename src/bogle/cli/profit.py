@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 import typer
 from rich.console import Console
@@ -11,8 +10,9 @@ from rich.console import Console
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.domain.transactions import TransactionType
+from bogle.format import signed
 from bogle.position import get_portfolio_summary
-from bogle.reports.dividends import twelve_month_start
+from bogle.reports.dividends import income_window_start
 from bogle.reports.periods import parse_period
 from bogle.reports.profit import ProfitReport, compute_profit
 from bogle.repositories.transactions import TransactionRepository
@@ -27,26 +27,21 @@ _INCOME_LABELS = (
 )
 
 
-def _signed(value: Decimal) -> str:
-    color = "green" if value >= 0 else "red"
-    return f"[{color}]{value:+.2f}[/{color}]"
-
-
 def _render(report: ProfitReport, period: str, console: Console) -> None:
     console.print(f"[bold]Lucro da carteira (desde {report.since.isoformat()})[/bold]")
-    console.print(f"  Ganho de capital:      {_signed(report.capital_total)}")
-    console.print(f"    Realizado (vendas):  {_signed(report.realized)}")
-    console.print(f"    Nao realizado:       {_signed(report.unrealized)}")
+    console.print(f"  Ganho de capital:      {signed(report.capital_total, percent=False)}")
+    console.print(f"    Realizado (vendas):  {signed(report.realized, percent=False)}")
+    console.print(f"    Nao realizado:       {signed(report.unrealized, percent=False)}")
     console.print()
     income_window = " (ultimos 12 meses)" if period == "12m" else ""
-    console.print(f"  Proventos recebidos:{income_window}   {_signed(report.income_total)}")
+    console.print(f"  Proventos recebidos:{income_window}   {signed(report.income_total, percent=False)}")
     for kind, label in _INCOME_LABELS:
-        console.print(f"    {label:<19}{_signed(report.income_by_type[kind])}")
+        console.print(f"    {label:<19}{signed(report.income_by_type[kind], percent=False)}")
     console.print()
     if period == "12m":
         console.print("  (Lucro total omitido: ganho de capital e desde o inicio; proventos, 12 meses.)")
     else:
-        console.print(f"  Lucro total:           {_signed(report.total)}")
+        console.print(f"  Lucro total:           {signed(report.total, percent=False)}")
     if report.unpriced:
         console.print(
             f"[yellow]Nota:[/yellow] ganho nao realizado nao considera {', '.join(report.unpriced)} (sem preco atual)."
@@ -60,7 +55,7 @@ def profit(
 ) -> None:
     parsed = parse_period(period, allowed=("all", "12m"))
     today = date.today()
-    income_start = twelve_month_start(today) if parsed == "12m" else None
+    income_start = income_window_start(parsed, today)
 
     conn = get_connection()
     try:

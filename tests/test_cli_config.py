@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from collections.abc import Iterator
@@ -71,3 +72,95 @@ class TestUnsetList:
             assert key in result.stdout
         assert "2026-07-01" in result.stdout
         assert "(default)" in result.stdout
+
+
+class TestDecimalSeparator:
+    """The setting reaches the rendering of every command (issues #73/#74)."""
+
+    def test_default_is_the_canonical_dot(self) -> None:
+        result = run_cli("config", "get", "decimal_separator")
+        assert result.returncode == 0
+        assert result.stdout.strip() == "."
+
+    def test_only_dot_and_comma_are_accepted(self) -> None:
+        result = run_cli("config", "set", "decimal_separator", ";")
+        assert result.returncode == 1
+        assert "deve ser '.' ou ','" in result.stderr
+
+    def test_setting_it_switches_the_output_of_a_command(self) -> None:
+        assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30.50", "--date", "2026-01-15").returncode == 0
+
+        dot = run_cli("transactions")
+        assert "3,050" in dot.stdout  # milhar com virgula, decimal com ponto
+
+        assert run_cli("config", "set", "decimal_separator", ",").returncode == 0
+        comma = run_cli("transactions")
+        assert "3.050" in comma.stdout  # milhar com ponto
+
+    def test_input_takes_either_separator_for_the_cents(self) -> None:
+        # A entrada nao depende da configuracao: os dois separadores marcam
+        # centavos, e milhar vai sem separador nenhum.
+        assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
+        assert run_cli("config", "set", "decimal_separator", ",").returncode == 0
+        result = run_cli("buy", "PETR4", "-s", "1", "-p", "1234,50", "--date", "2026-01-15")
+        assert result.returncode == 0
+        assert "custo total: 1.234,5" in result.stdout  # exibicao agrupada
+
+    def test_input_rejects_a_thousands_separator(self) -> None:
+        assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
+        result = run_cli("buy", "PETR4", "-s", "1", "-p", "1.234,50", "--date", "2026-01-15")
+        assert result.returncode == 1
+        assert "milhar vai sem separador" in result.stderr
+
+    def test_json_output_stays_canonical(self) -> None:
+        assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30.50", "--date", "2026-01-15").returncode == 0
+        assert run_cli("config", "set", "decimal_separator", ",").returncode == 0
+        result = run_cli("position", "--no-prices", "--json")
+        assert result.returncode == 0
+        totals = json.loads(result.stdout)["totals"]
+        assert totals["invested"] == "3050"  # normalizado, sem milhar e sem virgula
+
+
+class TestHideValues:
+    """The privacy mode is the TUI's; the CLI stays scriptable."""
+
+    def test_default_is_visible(self) -> None:
+        result = run_cli("config", "get", "hide_values")
+        assert result.returncode == 0
+        assert result.stdout.strip() == "false"
+
+    def test_only_booleans_are_accepted(self) -> None:
+        result = run_cli("config", "set", "hide_values", "talvez")
+        assert result.returncode == 1
+        assert "nao e um booleano" in result.stderr
+
+    def test_a_command_output_is_not_masked(self) -> None:
+        # A configuracao vale para a interface interativa: mascarar a saida de
+        # texto quebraria quem le `bogle position` num script.
+        assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30.50", "--date", "2026-01-15").returncode == 0
+        assert run_cli("config", "set", "hide_values", "true").returncode == 0
+        result = run_cli("position", "--no-prices")
+        assert result.returncode == 0
+        assert "3,050.00" in result.stdout
+        assert "\u2022" not in result.stdout
+
+
+class TestTheme:
+    def test_default_is_the_dark_theme(self) -> None:
+        result = run_cli("config", "get", "theme")
+        assert result.returncode == 0
+        assert result.stdout.strip() == "textual-dark"
+
+    def test_accepts_a_theme_the_installed_textual_knows(self) -> None:
+        result = run_cli("config", "set", "theme", "ansi-dark")
+        assert result.returncode == 0
+        assert run_cli("config", "get", "theme").stdout.strip() == "ansi-dark"
+
+    def test_rejects_an_unknown_theme_and_lists_the_options(self) -> None:
+        result = run_cli("config", "set", "theme", "banana")
+        assert result.returncode == 1
+        assert "nao existe" in result.stderr
+        assert "gruvbox" in result.stderr  # a lista das opcoes

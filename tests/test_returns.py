@@ -15,6 +15,7 @@ from bogle.domain.errors import ValidationError
 from bogle.reports.returns import PeriodReturn, ReturnsReport, compute_returns
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
+from bogle.settings import DECIMAL_SEPARATOR, set_setting
 from tests.test_valuation import FakeYfinance, bar, make_dispatcher
 
 TODAY = date(2026, 7, 20)
@@ -116,6 +117,18 @@ class TestCliRendering:
         assert "+17.50 p.p." in result.stdout  # outperform
         assert "-3.10 p.p." in result.stdout  # underperform
         assert "TESOURO SELIC 2029" in result.stdout
+
+    def test_the_difference_follows_the_configured_separator(
+        self, runner: CliRunner, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        # A diferenca em p.p. era formatada na mao, entao ignorava
+        # `decimal_separator`: quem configurou virgula via "+17.50 p.p.".
+        set_setting(conn, DECIMAL_SEPARATOR, ",")
+        conn.commit()
+        result = runner.invoke(app, ["return", "--vs", "cdi"])
+        assert result.exit_code == 0, result.output
+        assert "+17,50 p.p." in result.stdout
+        assert "+47,30%" in result.stdout
 
     def test_invalid_period_is_friendly(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["return", "--period", "3m"])

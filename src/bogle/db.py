@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import override
 
 import psycopg
+from psycopg import errors as pg_errors
 from psycopg.rows import DictRow, dict_row
 from yoyo import read_migrations
 from yoyo.backends.core.postgresql import PostgresqlPsycopgBackend
@@ -28,14 +30,29 @@ def get_connection(database_url: str | None = None) -> psycopg.Connection[DictRo
 
     The session timezone is set to ``America/Sao_Paulo`` and rows are returned
     as ``dict``-like mappings.
+
+    **Autocommit**, and that is load-bearing. Every caller here opens a
+    connection, does one operation and closes it, declaring atomicity with
+    ``conn.transaction()`` where it needs it. Without autocommit, a *read* before
+    the write (``repo.get(ticker)`` before ``repo.update_weight(...)``, the
+    portfolio summary before stamping ``last_rebalance_date``) already opened an
+    implicit transaction — and psycopg then downgrades ``conn.transaction()`` to a
+    SAVEPOINT, which commits nothing on its own. Closing the connection rolled the
+    whole thing back, so the write was silently lost while the caller happily
+    reported success with the row it had just read back.
+
+    With autocommit, a ``conn.transaction()`` block is always a real transaction
+    (committed on exit, rolled back on exception) and a bare statement commits by
+    itself. The cost is that two writes are only atomic together when a caller
+    wraps them in one ``conn.transaction()`` — which is now a visible decision
+    instead of an accident.
     """
     if database_url is None:
         database_url = get_database_url()
 
-    conn = psycopg.Connection[DictRow].connect(database_url, row_factory=dict_row)
+    conn = psycopg.Connection[DictRow].connect(database_url, row_factory=dict_row, autocommit=True)
     with conn.cursor() as cur:
         cur.execute(f"SET TIME ZONE '{DEFAULT_TIMEZONE}'")
-    conn.commit()
     return conn
 
 
@@ -110,3 +127,49 @@ def run_migrations(database_url: str | None = None) -> None:
     migrations = read_migrations(str(_migrations_path()))
     with backend.lock():
         backend.apply_migrations(backend.to_apply(migrations))
+
+
+def pending_migrations(database_url: str | None = None) -> list[str]:
+    """Ids of the migrations on disk that the database has not applied, in order.
+
+    The check every start-up pays, so it is one query against yoyo's bookkeeping
+    (about 2 ms on a local server; the full yoyo run is five times that, and it
+    creates schemas and takes locks even when there is nothing to do). Ids are
+    what yoyo itself records — its "hash" is a digest of the id — so the two never
+    disagree about what is pending. A database that never got the schema has no
+    bookkeeping table either: everything is pending.
+    """
+    if database_url is None:
+        database_url = get_database_url()
+    available = [migration.id for migration in read_migrations(str(_migrations_path()))]
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        try:
+            rows = conn.execute("SELECT migration_id FROM migrations.yoyo_migration").fetchall()
+        except pg_errors.UndefinedTable:
+            return available  # sem schema ainda: a tabela do yoyo tampouco existe
+    applied = {row[0] for row in rows}
+    return [migration_id for migration_id in available if migration_id not in applied]
+
+
+def migrate_if_pending(database_url: str | None = None) -> list[str]:
+    """Apply the pending migrations, if any, and return their ids.
+
+    What both frontends call before touching the database, so the schema follows
+    the code the moment a new version runs — instead of a stale ``CHECK`` turning
+    up as a database error on the one command that needed the change (the sale
+    that empties a position, before 006). An empty result means the check found
+    nothing to do, and the check was the only cost paid.
+    """
+    pending = pending_migrations(database_url)
+    if pending:
+        run_migrations(database_url)
+    return pending
+
+
+def migrated_notice(applied: Sequence[str]) -> str:
+    """What both frontends tell the user when the schema changed under them.
+
+    Announced because it is a change to the user's database made on the app's own
+    initiative — small and automatic, and still not something to do in silence.
+    """
+    return f"banco de dados atualizado: {', '.join(applied)}."

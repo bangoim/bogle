@@ -16,12 +16,19 @@ from bogle.data.dispatcher import PriceDispatcher
 from bogle.data.models import HistPoint, SeriesPoint
 from bogle.domain.errors import MarketDataError, QuoteNotFoundError
 from bogle.reports.valuation import (
+    NO_SOURCE,
+    NOTHING_RETURNED,
+    RETRIABLE,
+    SHORT_SERIES,
     build_portfolio_valuation,
     date_grid,
     first_transaction_date,
     patrimony_at,
     patrimony_series,
     portfolio_twr,
+    series_starts_at,
+    spot_patrimony,
+    stale_at_end,
 )
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
@@ -76,9 +83,7 @@ class _Unused:
         raise QuoteNotFoundError("unused", provider="fake")
 
 
-def make_dispatcher(
-    tmp_path: Any, *, yfinance: FakeYfinance | None = None, bcb: FakeBcb | None = None
-) -> PriceDispatcher:
+def make_dispatcher(tmp_path: Any, *, yfinance: Any = None, bcb: FakeBcb | None = None) -> PriceDispatcher:
     return PriceDispatcher(
         brapi=_Unused(),
         yfinance=yfinance if yfinance is not None else FakeYfinance(),
@@ -233,6 +238,44 @@ class TestPortfolioValuation:
         series = patrimony_series(valuation, [date(2026, 1, 2), date(2026, 1, 5), date(2026, 7, 20)])
         assert [p.value for p in series] == [_ZERO, Decimal("200"), Decimal("250")]
 
+    def test_a_series_that_starts_after_the_position_is_excluded(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O provider pode devolver uma serie curta demais para a janela (listagem
+        # nova, simbolo fino). Sem tratar isso, o valuator so descobre no meio da
+        # caminhada do TWR e estoura com ValueError, que nenhum frontend espera:
+        # o comando termina em traceback e a interface morre junto.
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-07-01", "25"), bar("2026-07-15", "26")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.excluded == ["PETR4", "TESOURO SELIC 2029"]
+        assert valuation.valuator is None
+        assert portfolio_twr(valuation) is None
+
+    def test_a_position_opened_inside_the_window_only_needs_history_from_there(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Comprado depois do inicio da janela: exigir preco no inicio dela
+        # excluiria uma posicao perfeitamente avaliavel.
+        AssetRepository(conn).add("VALE3", Decimal("0.2"))
+        # Meio-dia UTC: a sessao le TIMESTAMPTZ em America/Sao_Paulo, e meia-noite
+        # UTC regrediria a data local para o dia anterior ao da primeira barra.
+        TransactionRepository(conn).add_buy(
+            "VALE3", shares=Decimal("5"), unit_price=Decimal("60"), date=datetime(2026, 6, 10, 12, tzinfo=UTC)
+        )
+        yf = FakeYfinance(
+            {
+                "PETR4.SA": [bar("2026-01-05", "20"), bar("2026-07-01", "25")],
+                "VALE3.SA": [bar("2026-06-10", "60"), bar("2026-07-01", "66")],
+            }
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.excluded == ["TESOURO SELIC 2029"]
+        assert patrimony_at(valuation, date(2026, 7, 20)) == Decimal("250") + Decimal("330")
+
     def test_all_excluded_gives_none(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
         from bogle.domain.assets import AssetType
 
@@ -248,6 +291,96 @@ class TestPortfolioValuation:
         assert patrimony_series(valuation, [date(2026, 7, 20)]) == []
 
 
+class TestSeriesFreshness:
+    """Ate onde a serie de cada ticker chega, e quem ficou atras de ``end``."""
+
+    @pytest.fixture
+    def seeded(self, conn: psycopg.Connection[DictRow]) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+
+    def test_a_series_short_of_the_end_is_reported_stale(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O caso que trouxe isto: o provedor ainda nao publicou a barra do dia de
+        # referencia. O valuator responde com o fechamento anterior (a regra dele)
+        # e nao diz nada, entao o patrimonio sai rotulado com uma data em que
+        # aquele ticker nunca foi precificado — e a tela de Posicao, que tem a
+        # cotacao do dia, mostra outro numero sem explicacao nenhuma.
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-01-05", "20"), bar("2026-07-17", "25")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.series_end == {"PETR4": date(2026, 7, 17)}
+        assert stale_at_end(valuation) == {"PETR4": date(2026, 7, 17)}
+        assert spot_patrimony(valuation) == Decimal("250")  # o preco de 17/jul, carregado adiante
+
+    def test_a_series_that_reaches_the_end_is_not_stale(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-01-05", "20"), bar("2026-07-20", "25")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.series_end == {"PETR4": date(2026, 7, 20)}
+        assert stale_at_end(valuation) == {}
+
+    def test_a_late_series_still_reports_how_fresh_it_is(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        # Fora da janela do TWR, dentro do patrimonio (ver SpotUniverse): e o
+        # patrimonio que carrega o preco velho, entao a defasagem tem de ser dita
+        # aqui tambem.
+        AssetRepository(conn).add("VWRA11", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "VWRA11", shares=Decimal("10"), unit_price=Decimal("100"), date=datetime(2026, 1, 9, 12, tzinfo=UTC)
+        )
+        yf = FakeYfinance({"VWRA11.SA": [bar("2026-07-20", "110"), bar("2026-08-19", "115")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 9), end=date(2026, 8, 20)
+        )
+        assert valuation.excluded == ["VWRA11"]  # fora da janela
+        assert stale_at_end(valuation) == {"VWRA11": date(2026, 8, 19)}
+
+    def test_a_ticker_nothing_can_price_has_no_entry(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Sem serie nenhuma o ticker ja esta em `excluded`: chamar isso de
+        # "atrasado" seria dizer duas coisas diferentes com a mesma palavra.
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.series_end == {}
+        assert stale_at_end(valuation) == {}
+
+    def test_private_fixed_income_never_lags(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
+        # Renda fixa privada e valor calculado, nao serie: tem valor para
+        # qualquer data, e nao ha barra que possa faltar.
+        from bogle.domain.assets import AssetType
+
+        AssetRepository(conn).add(
+            "CDB-XP-2027",
+            Decimal("0.5"),
+            asset_type=AssetType.CDB,
+            issuer="XP",
+            rate=Decimal("0.12"),
+            is_prefixed=True,
+            purchase_date=datetime(2026, 1, 5, 12, tzinfo=UTC),
+            maturity_date=datetime(2027, 1, 5, 12, tzinfo=UTC),
+        )
+        TransactionRepository(conn).add_buy(
+            "CDB-XP-2027", shares=Decimal("1"), unit_price=Decimal("1000"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.series_end == {}
+        assert stale_at_end(valuation) == {}
+        assert spot_patrimony(valuation) is not None  # precificado, so nao por barra
+
+
 class TestFirstTransactionDate:
     def test_min_date(self) -> None:
         from tests.test_dividends import make_buy
@@ -257,3 +390,157 @@ class TestFirstTransactionDate:
 
     def test_empty(self) -> None:
         assert first_transaction_date([]) is None
+
+
+class TestProviderShortSeries:
+    """Yahoo answers a dated range with just its last weeks now and then."""
+
+    class ShortThenFull:
+        """Short on the dated request, complete when asked for the whole series."""
+
+        def __init__(self, short: list[HistPoint], full: list[HistPoint]) -> None:
+            self.short, self.full = short, full
+            self.calls: list[str] = []
+
+        def get_quote(self, symbol: str) -> Any:
+            raise QuoteNotFoundError(symbol, provider="fake")
+
+        def get_history(self, symbol: str, **kwargs: Any) -> list[HistPoint]:
+            dated = kwargs.get("start") is not None
+            self.calls.append("dated" if dated else kwargs.get("range_", "max"))
+            return list(self.short if dated else self.full)
+
+    def test_a_short_answer_is_asked_again_the_other_way(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        yf = self.ShortThenFull(
+            short=[bar("2026-07-01", "25")],  # so as ultimas semanas
+            full=[bar("2026-01-05", "20"), bar("2026-07-01", "25")],
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert yf.calls == ["dated", "max"]  # pediu de novo, de outro jeito
+        assert valuation.excluded == []
+        assert patrimony_at(valuation, date(2026, 7, 20)) == Decimal("250")
+
+    def test_a_series_that_covers_is_not_asked_twice(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        yf = self.ShortThenFull(short=[bar("2026-01-05", "20")], full=[])
+        build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert yf.calls == ["dated"]
+
+    def test_a_second_request_that_fails_keeps_the_retriable_reason(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        # Serie curta na resposta datada e nada na serie inteira: o provedor nao
+        # disse ate onde vai, entao insistir ainda pode resolver.
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        yf = self.ShortThenFull(short=[bar("2026-07-01", "25")], full=[])
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert yf.calls == ["dated", "max"]
+        assert valuation.reasons == {"PETR4": SHORT_SERIES}
+        assert SHORT_SERIES in RETRIABLE
+
+    def test_a_series_the_provider_insists_on_says_since_when_it_exists(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        # A serie inteira tambem comeca depois da posicao: o provedor ja disse
+        # tudo o que tem, e apertar 'r' de novo devolveria exatamente isto. A
+        # razao entao carrega as duas datas e sai de RETRIABLE, senao a nota
+        # manda o usuario bater numa porta que ela mesma sabe estar fechada.
+        AssetRepository(conn).add("VWRA11", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "VWRA11", shares=Decimal("10"), unit_price=Decimal("100"), date=datetime(2026, 1, 9, 12, tzinfo=UTC)
+        )
+        yf = FakeYfinance({"VWRA11.SA": [bar("2026-07-20", "110"), bar("2026-08-20", "115")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 9), end=date(2026, 8, 20)
+        )
+        reason = valuation.reasons["VWRA11"]
+        assert reason == series_starts_at(date(2026, 7, 20), date(2026, 1, 9))
+        assert "2026-07-20" in reason and "2026-01-09" in reason
+        assert reason not in RETRIABLE
+
+    def test_a_late_series_still_prices_the_end_of_the_window(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        # Fora do TWR (a caminhada precisa de preco em janeiro), dentro do
+        # patrimonio: o fechamento de `end` existe, e esconder a posicao seria
+        # esconder dinheiro que o provedor precifica.
+        AssetRepository(conn).add("VWRA11", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "VWRA11", shares=Decimal("10"), unit_price=Decimal("100"), date=datetime(2026, 1, 9, 12, tzinfo=UTC)
+        )
+        yf = FakeYfinance({"VWRA11.SA": [bar("2026-07-20", "110"), bar("2026-08-20", "115")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 9), end=date(2026, 8, 20)
+        )
+        assert valuation.excluded == ["VWRA11"]  # fora da janela
+        assert valuation.valuator is None
+        assert valuation.spot.excluded == []  # dentro do fim dela
+        assert spot_patrimony(valuation) == Decimal("1150")
+        assert {t.ticker for t in valuation.spot.transactions} == {"VWRA11"}
+
+    def test_nothing_returned_is_out_of_the_spot_universe_too(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        # Sem serie nenhuma nao ha o que precificar em data alguma.
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.spot.reasons == {"PETR4": NOTHING_RETURNED}
+        assert spot_patrimony(valuation) is None
+
+    def test_the_reason_says_which_of_the_four_it_is(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
+        # Quatro causas moram sob "sem historico": so duas valem uma segunda tentativa.
+        from bogle.domain.assets import AssetType
+
+        assets = AssetRepository(conn)
+        assets.add("PETR4", Decimal("0.5"))
+        assets.add("TESOURO SELIC 2029", Decimal("0.3"), asset_type=AssetType.TESOURO)
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        transactions.add_buy(
+            "TESOURO SELIC 2029",
+            shares=Decimal("1"),
+            unit_price=Decimal("1000"),
+            date=datetime(2026, 1, 5, 12, tzinfo=UTC),
+        )
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-07-01", "25")]})
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.reasons["PETR4"] == series_starts_at(date(2026, 7, 1), date(2026, 1, 5))
+        assert valuation.reasons["TESOURO SELIC 2029"] == NO_SOURCE
+        assert sorted(valuation.reasons) == valuation.excluded
+
+    def test_an_empty_answer_is_its_own_reason(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.reasons == {"PETR4": NOTHING_RETURNED}

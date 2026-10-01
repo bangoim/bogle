@@ -11,12 +11,13 @@ from rich.console import Console
 from rich.table import Table
 
 from bogle.db import get_connection
+from bogle.format import money
 from bogle.reports.dividends import (
     MonthlyIncome,
     TickerIncome,
     income_by_month,
     income_by_ticker,
-    twelve_month_start,
+    income_window_start,
 )
 from bogle.reports.periods import parse_period
 from bogle.repositories.transactions import TransactionRepository
@@ -27,10 +28,6 @@ _CONSOLE = Console()
 class GroupBy(StrEnum):
     MONTH = "month"
     TICKER = "ticker"
-
-
-def _money(value: Decimal) -> str:
-    return f"{value:.2f}"
 
 
 def _title(period: str) -> str:
@@ -45,20 +42,20 @@ def _render_by_month(rows: list[MonthlyIncome], period: str, console: Console) -
     for row in rows:
         table.add_row(
             f"{row.month:%Y-%m}",
-            _money(row.dividend),
-            _money(row.jcp),
-            _money(row.rendimento),
-            _money(row.interest),
-            _money(row.total),
+            money(row.dividend),
+            money(row.jcp),
+            money(row.rendimento),
+            money(row.interest),
+            money(row.total),
         )
     table.add_section()
     table.add_row(
         "TOTAL",
-        _money(sum((r.dividend for r in rows), Decimal("0"))),
-        _money(sum((r.jcp for r in rows), Decimal("0"))),
-        _money(sum((r.rendimento for r in rows), Decimal("0"))),
-        _money(sum((r.interest for r in rows), Decimal("0"))),
-        _money(sum((r.total for r in rows), Decimal("0"))),
+        money(sum((r.dividend for r in rows), Decimal("0"))),
+        money(sum((r.jcp for r in rows), Decimal("0"))),
+        money(sum((r.rendimento for r in rows), Decimal("0"))),
+        money(sum((r.interest for r in rows), Decimal("0"))),
+        money(sum((r.total for r in rows), Decimal("0"))),
         style="bold",
     )
     console.print(table)
@@ -70,9 +67,9 @@ def _render_by_ticker(rows: list[TickerIncome], period: str, console: Console) -
     table.add_column("Tipo", no_wrap=True)
     table.add_column("Total", justify="right")
     for row in rows:
-        table.add_row(row.ticker, row.income_type.value, _money(row.total))
+        table.add_row(row.ticker, row.income_type.value, money(row.total))
     table.add_section()
-    table.add_row("TOTAL", "", _money(sum((r.total for r in rows), Decimal("0"))), style="bold")
+    table.add_row("TOTAL", "", money(sum((r.total for r in rows), Decimal("0"))), style="bold")
     console.print(table)
 
 
@@ -87,7 +84,7 @@ def dividends(
 ) -> None:
     parsed = parse_period(period, allowed=("12m", "all"))
     today = date.today()
-    start = twelve_month_start(today) if parsed == "12m" else None
+    start = income_window_start(parsed, today)
 
     conn = get_connection()
     try:

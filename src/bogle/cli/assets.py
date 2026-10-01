@@ -8,28 +8,15 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from bogle.cli.parsing import parse_date, parse_decimal
+from bogle.cli.parsing import parse_date, parse_rate, parse_weight
+from bogle.closeout import split_closed
 from bogle.db import get_connection
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError, ValidationError
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
+from bogle.rebalancing import weight_sum_notice
 from bogle.repositories.assets import AssetRepository
-
-
-def _parse_weight(value: str) -> Decimal:
-    """Parse a CLI weight argument, validating the (0, 1] range."""
-    weight = parse_decimal(value, "--weight")
-    if not (Decimal("0") < weight <= Decimal("1")):
-        raise ValidationError(f"--weight deve estar em (0, 1], recebido {weight}.")
-    return weight
-
-
-def _parse_rate(value: str) -> Decimal:
-    rate = parse_decimal(value, "--rate")
-    # Limite espelha a coluna rate NUMERIC(10, 6): |valor| < 10^4.
-    if not (Decimal("0") < rate < Decimal("10000")):
-        raise ValidationError(f"--rate deve estar em (0, 10000), recebido {rate}.")
-    return rate
+from bogle.repositories.holdings import HoldingRepository
 
 
 def _parse_provided[T](
@@ -106,14 +93,14 @@ def add(
         help="Data de vencimento (YYYY-MM-DD).",
     ),
 ) -> None:
-    weight_dec = _parse_weight(weight)
+    weight_dec = parse_weight(weight, "--weight")
     parse_errors: list[str] = []
     placeholder_date = datetime(1970, 1, 1, tzinfo=UTC)
     metadata = validate_asset_metadata(
         asset_type,
         issuer=issuer,
         indexer=indexer,
-        rate=_parse_provided(rate, _parse_rate, parse_errors, Decimal("1")),
+        rate=_parse_provided(rate, lambda v: parse_rate(v, "--rate"), parse_errors, Decimal("1")),
         is_prefixed=prefixed,
         daily_liquidity=daily_liquidity,
         purchase_date=_parse_provided(
@@ -149,7 +136,7 @@ def update(
         None,
         "--weight",
         "-w",
-        help="Novo peso-alvo em decimal entre 0 e 1.",
+        help="Novo peso-alvo em decimal entre 0 e 1; 0 tira o ativo do plano e mantem o historico.",
     ),
     asset_type: AssetType | None = typer.Option(  # noqa: B008 — padrao do typer, OptionInfo e sentinela imutavel
         None,
@@ -164,18 +151,21 @@ def update(
     # fixa exige adicionar ou limpar metadados, o que este comando nao faz.
     if weight is None and asset_type is None:
         raise ValidationError("Nada para atualizar. Informe --weight e/ou --type.")
-    weight_dec = _parse_weight(weight) if weight is not None else None
+    weight_dec = parse_weight(weight, "--weight", allow_zero=True) if weight is not None else None
     conn = get_connection()
     try:
         repo = AssetRepository(conn)
         asset = repo.get(ticker)
         if asset is None:
             raise AssetNotFoundError(ticker.upper())
-        if asset_type is not None and asset_type != asset.asset_type:
-            validate_type_change(asset.ticker, asset.asset_type, asset_type)
-            asset = repo.update_type(ticker, asset_type)
-        if weight_dec is not None:
-            asset = repo.update_weight(ticker, weight_dec)
+        # Uma transacao para as duas escritas: metade da alteracao aplicada seria
+        # pior que nenhuma (mesma razao que em `services.update_asset`).
+        with conn.transaction():
+            if asset_type is not None and asset_type != asset.asset_type:
+                validate_type_change(asset.ticker, asset.asset_type, asset_type)
+                asset = repo.update_type(ticker, asset_type)
+            if weight_dec is not None:
+                asset = repo.update_weight(ticker, weight_dec)
     finally:
         conn.close()
     typer.echo(f"asset {asset.ticker} atualizado: tipo {asset.asset_type}, peso {asset.target_weight:.2%}.")
@@ -196,6 +186,7 @@ def list_assets() -> None:
     conn = get_connection()
     try:
         assets = AssetRepository(conn).list()
+        held = {holding.ticker for holding in HoldingRepository(conn).list()}
     finally:
         conn.close()
 
@@ -203,13 +194,22 @@ def list_assets() -> None:
         typer.echo("Nenhum ativo cadastrado. Use 'bogle add' para comecar.")
         return
 
+    # Mesma divisao da tela de Ativos: sem posicao e sem target, o ativo fica
+    # por causa do historico, numa secao propria no fim (bogle.closeout).
+    roster = split_closed(assets, held)
     table = Table(title="Carteira", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Target Weight", justify="right")
-    for asset in assets:
+    for asset in roster.in_plan:
         table.add_row(asset.ticker, f"{asset.target_weight:.2%}")
+    if roster.closed:
+        table.add_section()
+        table.add_row("[bold]Encerrados[/bold]", "", style="dim")
+        for asset in roster.closed:
+            table.add_row(asset.ticker, f"{asset.target_weight:.2%}", style="dim")
 
-    total = sum((a.target_weight for a in assets), start=Decimal("0"))
-    table.caption = f"Soma dos pesos: {total:.2%}"
+    total = sum((a.target_weight for a in roster.in_plan), start=Decimal("0"))
+    gap = weight_sum_notice(total)
+    table.caption = f"Soma dos pesos: {total:.2%}" + (f" — {gap}" if gap else "")
 
     Console().print(table)
