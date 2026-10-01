@@ -18,7 +18,7 @@ from bogle.data.fixed_income import present_value
 from bogle.data.models import HistPoint, Quote, SeriesPoint
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import NetworkError, QuoteNotFoundError
-from bogle.position import get_portfolio_summary
+from bogle.position import get_portfolio_summary, price_provenance
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 
@@ -261,3 +261,32 @@ class TestGracefulDegradation:
         assert petr4.twr is None  # no history -> no valuator
         # The priced position still carries the whole weight.
         assert cdb.current_weight == Decimal("1")
+
+
+class TestPriceProvenance:
+    """O rodape que diz de onde e de quando o preco veio (Posicao e Aporte)."""
+
+    def test_sources_are_deduplicated_and_sorted(self) -> None:
+        rows = [("brapi", None), ("calculado", None), ("brapi", None)]
+        assert price_provenance(rows).sources == ["brapi", "calculado"]
+
+    def test_the_latest_timestamp_wins(self) -> None:
+        older = datetime(2026, 8, 21, 17, 7, tzinfo=UTC)
+        newer = datetime(2026, 8, 21, 17, 13, tzinfo=UTC)
+        assert price_provenance([("brapi", older), ("brapi", newer)]).latest == newer
+
+    def test_a_computed_value_has_no_timestamp(self) -> None:
+        # Renda fixa privada e calculada, nao cotada: nao ha "cotacao mais
+        # recente" para mostrar, e um None nao pode virar max().
+        provenance = price_provenance([("calculado", None)])
+        assert provenance.sources == ["calculado"]
+        assert provenance.latest is None
+
+    def test_nothing_priced_gives_nothing_to_show(self) -> None:
+        assert price_provenance([(None, None)]) == price_provenance([])
+
+    def test_a_generator_is_consumed_once(self) -> None:
+        # Os chamadores passam uma expressao geradora; ler duas vezes devolveria
+        # a segunda leitura vazia.
+        rows = ((source, None) for source in ("brapi", "yfinance"))
+        assert price_provenance(rows).sources == ["brapi", "yfinance"]

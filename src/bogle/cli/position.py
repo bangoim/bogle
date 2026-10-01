@@ -25,7 +25,7 @@ from rich.table import Table
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.format import DASH, exact, exact_or_none, money, pct, signed
-from bogle.position import PortfolioSummary, Position
+from bogle.position import PortfolioSummary, Position, price_provenance
 from bogle.reports.snapshot import compute_snapshot
 
 _CONSOLE = Console()
@@ -114,12 +114,11 @@ def _render(
     console.print(f"Variacao: {pnl} ({pnl_percent})")
     console.print(f"Lucro do mes: {signed(month_profit, percent=False)}")
     console.print(f"Proventos (12m): {signed(income_12m, percent=False)}")
-    sources = sorted({p.price_source for p in summary.positions if p.price_source})
-    if sources:
-        console.print(f"Fonte(s) de preco: {', '.join(sources)}")
-    timestamps = [p.as_of for p in summary.positions if p.as_of is not None]
-    if timestamps:
-        console.print(f"Cotacao mais recente: {max(timestamps):%Y-%m-%d %H:%M}")
+    origin = price_provenance((p.price_source, p.as_of) for p in summary.positions)
+    if origin.sources:
+        console.print(f"Fonte(s) de preco: {', '.join(origin.sources)}")
+    if origin.latest is not None:
+        console.print(f"Cotacao mais recente: {origin.latest:%Y-%m-%d %H:%M}")
     if excluded:
         console.print(
             f"[yellow]Nota:[/yellow] lucro do mes nao considera {', '.join(excluded)} (sem historico de precos no periodo)."

@@ -14,15 +14,18 @@ rather than failing the whole portfolio.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.rows import DictRow
 
 from bogle.analytics.twr import compute_twr
 from bogle.data.dispatcher import PriceDispatcher
+from bogle.db import DEFAULT_TIMEZONE
 from bogle.domain.assets import Asset, AssetType
 from bogle.domain.cost_basis import replay_cost_basis
 from bogle.domain.errors import BogleError, ValidationError
@@ -69,6 +72,41 @@ class Position:
     twr: Decimal | None = None
     price_source: str | None = None
     as_of: datetime | None = None
+
+
+def local_time(value: datetime) -> datetime:
+    """A quote's timestamp in the timezone the user reads it in.
+
+    Providers stamp in UTC (brapi's ``regularMarketTime``, yfinance's fetch time),
+    and printing that raw puts an afternoon quote three hours in the future —
+    which defeats the one question a timestamp beside a price answers.
+    """
+    return value.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
+
+
+@dataclass(frozen=True, slots=True)
+class Provenance:
+    """Where the prices on a screen came from, and how old the freshest one is."""
+
+    sources: list[str]
+    latest: datetime | None
+    """Freshest quote, already in local time; ``None`` when nothing carries a
+    timestamp (a computed fixed-income value)."""
+
+
+def price_provenance(rows: Iterable[tuple[str | None, datetime | None]]) -> Provenance:
+    """Fold ``(source, as_of)`` pairs into what a footer shows.
+
+    Shared by the position and contribution views, in both frontends: a price on
+    screen without a source and a timestamp reads as "now", and none of them is
+    (brapi's free plan is delayed, and quotes are cached for five minutes).
+    """
+    pairs = list(rows)
+    latest = max((as_of for _, as_of in pairs if as_of is not None), default=None)
+    return Provenance(
+        sources=sorted({source for source, _ in pairs if source}),
+        latest=local_time(latest) if latest is not None else None,
+    )
 
 
 @dataclass(frozen=True, slots=True)

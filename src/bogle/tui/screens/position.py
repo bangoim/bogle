@@ -23,6 +23,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 from textual.worker import get_current_worker
 
 from bogle import format as fmt
+from bogle.position import price_provenance
 from bogle.reports.snapshot import PortfolioSnapshot
 from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
@@ -177,13 +178,12 @@ def _totals_markup(snapshot: PortfolioSnapshot) -> str:
         f"[dim]Lucro do mes[/dim] {fmt.signed(snapshot.month_profit, percent=False)}"
         f"   [dim]Proventos (12m)[/dim] {fmt.signed(snapshot.income_12m, percent=False)}",
     ]
-    sources = sorted({p.price_source for p in summary.positions if p.price_source})
-    timestamps = [p.as_of for p in summary.positions if p.as_of is not None]
+    origin = price_provenance((p.price_source, p.as_of) for p in summary.positions)
     provenance = []
-    if sources:
-        provenance.append(f"[dim]Fonte(s) de preco[/dim] {', '.join(sources)}")
-    if timestamps:
-        provenance.append(f"[dim]Cotacao mais recente[/dim] {max(timestamps):%Y-%m-%d %H:%M}")
+    if origin.sources:
+        provenance.append(f"[dim]Fonte(s) de preco[/dim] {', '.join(origin.sources)}")
+    if origin.latest is not None:
+        provenance.append(f"[dim]Cotacao mais recente[/dim] {origin.latest:%Y-%m-%d %H:%M}")
     if provenance:
         lines.append("   ".join(provenance))
     return "\n".join(lines)
