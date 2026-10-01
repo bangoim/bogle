@@ -9,6 +9,11 @@ would bury the four keys the screen is actually about.
 Hidden bindings are included on purpose: the menu digits do not belong in the
 footer (the menu already spells them out) but they are exactly what someone
 asking for help wants to see.
+
+A screen whose numbers need reading instructions declares them in ``HELP_NOTES``
+(see :func:`help_notes_of`), and they show under the shortcuts. The help is the
+place for an explanation that is the same every time; the screen itself keeps
+its lines for what changes.
 """
 
 from __future__ import annotations
@@ -63,6 +68,12 @@ def shortcuts_of(screen: Screen[Any]) -> list[tuple[str, str]]:
     return pairs
 
 
+def help_notes_of(screen: Screen[Any]) -> str:
+    """How to read ``screen``: its ``HELP_NOTES``, or nothing when it has none."""
+    notes = getattr(type(screen), "HELP_NOTES", "")
+    return notes if isinstance(notes, str) else ""
+
+
 def _describe(binding: BindingType) -> tuple[str | None, str]:
     """``(key, description)`` of a binding written either way Textual allows."""
     if isinstance(binding, Binding):
@@ -83,10 +94,11 @@ class HelpModal(ModalScreen[None]):
         Binding("question_mark", "dismiss_help", "Fechar", show=False),
     ]
 
-    def __init__(self, shortcuts: list[tuple[str, str]], *, subject: str = "") -> None:
+    def __init__(self, shortcuts: list[tuple[str, str]], *, subject: str = "", notes: str = "") -> None:
         super().__init__()
         self.shortcuts = shortcuts
         self.subject = subject
+        self.notes = notes
 
     @override
     def compose(self) -> ComposeResult:
@@ -99,6 +111,11 @@ class HelpModal(ModalScreen[None]):
             )
             with VerticalScroll(id="help-keys"):
                 yield Static(_table(self.shortcuts), id="help-table")
+                if self.notes:
+                    # Dentro do scroll: o texto da tela se soma a lista de
+                    # atalhos, e os dois juntos podem nao caber num terminal baixo.
+                    yield Label("Como ler esta tela", id="help-notes-title")
+                    yield Static(self.notes, id="help-notes", markup=False)
             yield Static(_FOOTER, id="help-footer")
 
     def action_dismiss_help(self) -> None:

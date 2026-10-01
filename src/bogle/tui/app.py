@@ -25,7 +25,7 @@ from bogle.settings import DECIMAL_SEPARATOR, DEFAULT_THEME, HIDE_VALUES, THEME
 from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.config import ConfigScreen
-from bogle.tui.screens.help import HelpModal, shortcuts_of
+from bogle.tui.screens.help import HelpModal, help_notes_of, shortcuts_of
 from bogle.tui.screens.home import HomeScreen
 
 
@@ -101,7 +101,7 @@ class BogleApp(App[None]):
         # da App, que nomeia o programa, nao a tela.
         own = bool(screen.sub_title) and screen.sub_title != self.sub_title
         subject = str(screen.sub_title) if own else ""
-        self.push_screen(HelpModal(shortcuts_of(screen), subject=subject))
+        self.push_screen(HelpModal(shortcuts_of(screen), subject=subject, notes=help_notes_of(screen)))
 
     # --- preferencias que a interface muda por dentro --------------------
 

@@ -21,11 +21,15 @@ def default_dispatcher(*, ignore_cached_quotes: bool = False) -> PriceDispatcher
 
     ``ignore_cached_quotes=True`` is what a screen's "Atualizar" builds: the quote
     is fetched again instead of read from the 5-minute cache.
+
+    Daily closes go through the database (``price_history``, issue #82), one
+    connection per operation.
     """
     from bogle.data.bcb import BcbClient
     from bogle.data.brapi import BrapiClient
     from bogle.data.tesouro import TesouroClient
     from bogle.data.yfinance_client import YFinanceClient
+    from bogle.repositories.price_history import PriceHistoryStore
 
     return PriceDispatcher(
         brapi=BrapiClient(),
@@ -33,4 +37,5 @@ def default_dispatcher(*, ignore_cached_quotes: bool = False) -> PriceDispatcher
         tesouro=TesouroClient(),
         bcb=BcbClient(),
         ignore_cached_quotes=ignore_cached_quotes,
+        price_store=PriceHistoryStore(),
     )

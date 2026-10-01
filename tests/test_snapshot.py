@@ -58,6 +58,9 @@ class FakeQuotes:
     def get_index_quote(self, index: str) -> Quote:
         raise QuoteNotFoundError(index, provider="fake")
 
+    def get_history(self, symbol: str, **_kwargs: Any) -> list[Any]:
+        raise QuoteNotFoundError(symbol, provider="fake")
+
 
 class NoTesouro:
     """A Tesouro source that never answers (no Tesouro title in these fixtures)."""

@@ -1,11 +1,11 @@
-"""Tests for the TUI's Home screen (issue #73): the D-1 summary, the navigation
-and how an expected failure is reported.
+"""Tests for the TUI's Home screen (issue #73): the summary (D-0 with today's
+quote, or the last close), the navigation and how an expected failure is reported.
 """
 
 from __future__ import annotations
 
 import threading
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -20,6 +20,7 @@ from bogle.reports.valuation import NO_SOURCE, SHORT_SERIES, series_starts_at
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 from bogle.tui.screens.config import ConfigScreen
+from bogle.tui.screens.help import HelpModal
 from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
@@ -70,7 +71,48 @@ class TestSummary:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert app.screen.query_one("#summary").border_title == "Carteira - fechamento de 2026-08-11"
+            # Data no padrao brasileiro, DD-MM-AAAA.
+            assert app.screen.query_one("#summary").border_title == "Carteira - fechamento de 11-08-2026"
+
+    @pytest.mark.asyncio
+    async def test_a_d0_summary_says_the_time_of_the_quote(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # O plano gratuito da brapi atualiza a cada 30 min: o horario diz o quanto
+        # o resumo pode estar atras do mercado.
+        live = make_overview(as_of=date(2026, 8, 12), quote_time=datetime(2026, 8, 12, 14, 7))
+        use_overview(monkeypatch, live)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert app.screen.query_one("#summary").border_title == "Carteira - cotacao de 12-08-2026 14:07"
+
+    @pytest.mark.asyncio
+    async def test_brapi_down_says_why_the_summary_is_a_close_behind(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview(quote_failed=["AUVP11", "B5P211"]))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "sem cotacao de hoje na brapi para AUVP11, B5P211" in note
+            assert "resumo do fechamento de 2026-08-11" in note
+
+    @pytest.mark.asyncio
+    async def test_a_ticker_missing_from_a_d0_summary_is_named_at_its_last_close(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        live = make_overview(
+            as_of=date(2026, 8, 12),
+            quote_time=datetime(2026, 8, 12, 14, 7),
+            quote_failed=["B5P211"],
+            stale_prices={"B5P211": date(2026, 8, 11)},
+        )
+        use_overview(monkeypatch, live)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "sem cotacao de hoje para B5P211 (2026-08-11)" in note
+            # A nota de "resumo do fechamento" e para quando o resumo inteiro voltou a D-1.
+            assert "na brapi" not in note
 
     @pytest.mark.asyncio
     async def test_starts_with_a_placeholder_before_the_worker_answers(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,12 +132,29 @@ class TestSummary:
             assert metric(app.screen, "patrimony") == "7,866.20"  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
-    async def test_twr_legend_is_shown_when_everything_is_priced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_nothing_to_say_leaves_no_note_under_the_numbers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A legenda do TWR mora na ajuda (f1): sem nada a avisar, o painel
+        # termina nos numeros, sem uma linha vazia no lugar da nota.
         use_overview(monkeypatch, make_overview())
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert "TWR" in app.screen.note  # type: ignore[attr-defined]
+            assert app.screen.note == ""  # type: ignore[attr-defined]
+            assert not app.screen.query_one("#summary-note").display
+
+    @pytest.mark.asyncio
+    async def test_the_reading_notes_are_in_the_help(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("f1")
+            await settle(pilot)
+            help_modal = app.screen
+            assert isinstance(help_modal, HelpModal)
+            assert "TWR: exclui o efeito de aportes e retiradas" in help_modal.notes
+            assert "janela de 12m comeca na primeira transacao" in help_modal.notes
+            assert '"Cotacao de"' in help_modal.notes
 
     @pytest.mark.asyncio
     async def test_empty_ledger_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -234,18 +293,6 @@ class TestSummary:
             assert home.query_one("#variation", Metric).caption == "Variacao"
 
     @pytest.mark.asyncio
-    async def test_a_twelve_month_window_shorter_than_its_name_is_disclosed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Carteira com menos de 12 meses: a janela ancora na primeira transacao,
-        # entao "12m" cobre menos que isso e a nota diz desde quando.
-        use_overview(monkeypatch, make_overview(inception=date(2026, 5, 1), twr_12m_start=date(2026, 5, 1)))
-        app = make_app()
-        async with app.run_test() as pilot:
-            await settle(pilot)
-            assert "ancora na primeira transacao (2026-05-01)" in app.screen.note  # type: ignore[attr-defined]
-
-    @pytest.mark.asyncio
     async def test_ticker_with_brackets_is_not_read_as_markup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Ticker e dado do usuario e a nota e montada com markup: sem escape,
         # "[/]" e lido como tag de fechamento e a atualizacao da nota estoura.
@@ -296,7 +343,6 @@ class TestStalePrices:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
             assert "sem fechamento" not in note
-            assert "TWR" in note  # a legenda de sempre segue no lugar
 
     @pytest.mark.asyncio
     async def test_it_is_not_an_exclusion(self, monkeypatch: pytest.MonkeyPatch) -> None:

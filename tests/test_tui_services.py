@@ -251,13 +251,17 @@ class TestLedger:
             services.delete_transaction(999999)
 
 
-class TestOverviewDate:
-    def test_reference_is_the_previous_business_day(self) -> None:
-        assert services.overview_date(date(2026, 8, 12)) == date(2026, 8, 11)  # quarta -> terca
-        assert services.overview_date(date(2026, 8, 10)) == date(2026, 8, 7)  # segunda -> sexta
-
-    def test_defaults_to_today(self) -> None:
-        assert services.overview_date() < date.today()
+class TestLoadOverview:
+    def test_the_summary_is_asked_for_today(self, seeded: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        # O servico so diz o dia; D-0 ou fechamento anterior, quem decide e o
+        # compute_current_overview (com a cotacao da brapi na mao).
+        asked: list[date] = []
+        monkeypatch.setattr(services, "default_dispatcher", lambda **_: None)
+        monkeypatch.setattr(
+            services, "compute_current_overview", lambda conn, dispatcher, *, today: asked.append(today)
+        )
+        services.load_overview(today=date(2026, 8, 12))
+        assert asked == [date(2026, 8, 12)]
 
 
 class TestPreferences:

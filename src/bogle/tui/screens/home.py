@@ -1,10 +1,12 @@
 """Home screen: logo, headline summary and the menu (issue #73).
 
-The summary is deliberately minimal — four numbers, all measured at the previous
-close (D-1), so opening ``bogle`` never waits on an intraday quote. Live prices
-belong to the Position screen. It loads in a worker thread with a placeholder in
-place while it computes, and an expected failure (database down, provider
-unreachable) becomes an inline message plus a toast instead of a crash.
+The summary is deliberately minimal — four numbers, all measured at the same
+point: today, with brapi's D-0 quote on top of the stored closes, or the previous
+close (D-1) when there is no quote from today (see
+:func:`~bogle.reports.overview.compute_current_overview`). The panel title says
+which. It loads in a worker thread with a placeholder in place while it computes,
+and an expected failure (database down, provider unreachable) becomes an inline
+message plus a toast instead of a crash.
 """
 
 from __future__ import annotations
@@ -69,7 +71,16 @@ o que devolve a lista de uma coluna sem mudar nada aqui."""
 _LEFT = MENU_ITEMS[: (len(MENU_ITEMS) + 1) // _COLUMNS]
 _RIGHT = MENU_ITEMS[(len(MENU_ITEMS) + 1) // _COLUMNS :]
 
-_TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
+_HELP_NOTES = (
+    '"Cotacao de": preco de hoje (D-0) da brapi, que no plano gratuito atualiza a '
+    'cada 30 minutos. "Fechamento de": ultimo fechamento, antes do pregao, em fim '
+    "de semana ou feriado, ou com a brapi fora do ar.\n\n"
+    "TWR: exclui o efeito de aportes e retiradas e considera proventos. Com menos "
+    "de 12 meses de carteira, a janela de 12m comeca na primeira transacao, e as "
+    "duas rentabilidades coincidem."
+)
+"""Como ler o resumo, na ajuda (f1) e nao embaixo dos numeros: e a mesma
+explicacao toda vez, e no painel ela ocupava as linhas das notas que mudam."""
 
 _PATRIMONY = "Patrimonio total"
 _PATRIMONY_PARTIAL = "Patrimonio parcial"
@@ -80,6 +91,7 @@ _VARIATION_PARTIAL = "Variacao parcial"
 class HomeScreen(MenuScreen):
     AUTO_FOCUS = "#menu-left"
     ENTRIES = _ENTRIES
+    HELP_NOTES: ClassVar[str] = _HELP_NOTES
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "app.quit", "Sair"),
         Binding("r", "reload", "Atualizar"),
@@ -197,7 +209,7 @@ class HomeScreen(MenuScreen):
 
     def _show_overview(self, overview: PortfolioOverview) -> None:
         self.overview = overview
-        self.query_one("#summary").border_title = f"Carteira - fechamento de {overview.as_of.isoformat()}"
+        self.query_one("#summary").border_title = _summary_title(overview)
         # Com ticker excluido o numero e um subconjunto da carteira: o rotulo diz
         # isso, em vez de deixar so a nota explicando um "total" que nao e total.
         # So estes dois ganham "parcial": em "Rentabilidade total" o total e o
@@ -225,7 +237,11 @@ class HomeScreen(MenuScreen):
     def _show_note(self, markup: str) -> None:
         rendered = Text.from_markup(markup)
         self.note = rendered.plain
-        self.query_one("#summary-note", Static).update(rendered)
+        note = self.query_one("#summary-note", Static)
+        note.update(rendered)
+        # Sem nota, sem a linha: o painel termina nos numeros em vez de numa
+        # margem vazia.
+        note.display = bool(rendered.plain)
 
 
 def _variation(overview: PortfolioOverview) -> str:
@@ -274,6 +290,27 @@ def _excluded_note(overview: PortfolioOverview) -> str:
     return note
 
 
+def _summary_title(overview: PortfolioOverview) -> str:
+    """What the numbers are measured at: today's quote (D-0), or a past close.
+
+    The time of the quote, and not only the day, because brapi's free plan
+    refreshes every 30 minutes: "14:07" says how far behind the market the
+    summary may be, which "hoje" would not.
+    """
+    if overview.quote_time is not None:
+        return f"Carteira - cotacao de {overview.quote_time:%d-%m-%Y %H:%M}"
+    return f"Carteira - fechamento de {overview.as_of:%d-%m-%Y}"
+
+
+def _quote_failed_note(overview: PortfolioOverview) -> str:
+    """Why a weekday summary is a close behind: brapi gave no quote from today."""
+    listed = ", ".join(escape(ticker) for ticker in overview.quote_failed)
+    return (
+        f"[yellow]Nota:[/yellow] sem cotacao de hoje na brapi para {listed}; "
+        f"resumo do fechamento de {overview.as_of.isoformat()}. [dim]'r' pede de novo.[/dim]"
+    )
+
+
 def _stale_note(overview: PortfolioOverview) -> str:
     """Which tickers are priced before the reference close, and at which one.
 
@@ -287,14 +324,15 @@ def _stale_note(overview: PortfolioOverview) -> str:
     single "os dados estao atrasados": with both, the difference against the
     Position screen is checkable line by line, which is what turns a number that
     looks wrong into a number that is merely older.
+
+    On a D-0 summary the missing piece is a quote, not a close: the ticker brapi
+    did not quote today sits on its last stored close, and the note says so.
     """
     listed = ", ".join(
         f"{escape(ticker)} ({when.isoformat()})" for ticker, when in sorted(overview.stale_prices.items())
     )
-    return (
-        f"[yellow]Nota:[/yellow] sem fechamento de {overview.as_of.isoformat()} para {listed}; "
-        "avaliados no ultimo fechamento disponivel."
-    )
+    missing = "cotacao de hoje" if overview.is_live else f"fechamento de {overview.as_of.isoformat()}"
+    return f"[yellow]Nota:[/yellow] sem {missing} para {listed}; avaliados no ultimo fechamento disponivel."
 
 
 def _pending_note(overview: PortfolioOverview) -> str:
@@ -324,6 +362,8 @@ def _note_for(overview: PortfolioOverview) -> str:
     then how to read what is on screen.
     """
     lines = [_pending_note(overview)] if overview.has_pending else []
+    if overview.quote_failed and not overview.is_live:
+        lines.append(_quote_failed_note(overview))
     if overview.has_stale_prices:
         lines.append(_stale_note(overview))
     lines.append(_summary_note(overview))
@@ -342,12 +382,5 @@ def _summary_note(overview: PortfolioOverview) -> str:
         if overview.has_pending:
             return ""
         return f"[yellow]Nota:[/yellow] nenhuma posicao avaliavel no fechamento de {overview.as_of.isoformat()}."
-    if overview.twr_12m_is_shorter and overview.twr_12m_start is not None:
-        # Carteira com menos de 12 meses: a janela ancora na primeira transacao,
-        # entao a rentabilidade "12m" cobre menos que isso. A CLI diz o mesmo
-        # imprimindo a janela ao lado de cada periodo.
-        return (
-            f"[dim]{_TWR_LEGEND} A janela de 12m ancora na primeira transacao "
-            f"({overview.twr_12m_start.isoformat()}).[/dim]"
-        )
-    return f"[dim]{_TWR_LEGEND}[/dim]"
+    # O resto e a legenda de sempre (TWR, janela de 12m), que mora na ajuda (f1).
+    return ""

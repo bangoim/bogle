@@ -24,7 +24,6 @@ import psycopg
 
 from bogle import charts
 from bogle import format as fmt
-from bogle.analytics.business_days import previous_business_day
 from bogle.closeout import ClearedTarget, clear_closed_target
 from bogle.data import default_dispatcher
 from bogle.db import get_connection, migrate_if_pending
@@ -43,7 +42,7 @@ from bogle.reports.dividends import (
     income_window_start,
 )
 from bogle.reports.history import HistoryReport, compute_history
-from bogle.reports.overview import PortfolioOverview, compute_overview
+from bogle.reports.overview import PortfolioOverview, compute_current_overview
 from bogle.reports.profit import ProfitReport, compute_profit
 from bogle.reports.returns import ReturnsReport, compute_returns
 from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
@@ -141,16 +140,15 @@ def save_theme(theme: str) -> None:
         conn.close()
 
 
-def overview_date(today: date | None = None) -> date:
-    """Reference date of the Home summary: the close before ``today`` (D-1)."""
-    return previous_business_day(_today(today))
-
-
 def load_overview(*, today: date | None = None) -> PortfolioOverview:
-    """The four headline numbers, measured at the previous close."""
+    """The four headline numbers: D-0 with brapi's quote of today, or the last close.
+
+    See :func:`~bogle.reports.overview.compute_current_overview` for when it is
+    which.
+    """
     conn = get_connection()
     try:
-        return compute_overview(conn, default_dispatcher(), as_of=overview_date(today))
+        return compute_current_overview(conn, default_dispatcher(), today=_today(today))
     finally:
         conn.close()
 
