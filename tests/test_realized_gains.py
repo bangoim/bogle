@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from bogle.domain.cost_basis import average_cost_per_share, replay_cost_basis
+from bogle.domain.cost_basis import average_cost_per_share, replay_by_ticker, replay_cost_basis
 from bogle.domain.errors import ValidationError
 from bogle.domain.transactions import Transaction, TransactionType
 
@@ -81,6 +81,30 @@ class TestReplay:
             replay_cost_basis([buy("5", "10", "2026-01-05"), sell("10", "10", "2026-02-01")])
         with pytest.raises(ValidationError, match="sem quantidade suficiente"):
             replay_cost_basis([sell("10", "10")])
+
+    def test_invested_is_the_cost_of_what_is_left(self) -> None:
+        # Issue #85: o "valor investido" e o custo medio vezes o que sobrou.
+        states, _ = replay_cost_basis(
+            [buy("10", "10", "2026-01-05"), sell("4", "15", "2026-02-01"), buy("4", "20", "2026-03-01")]
+        )
+        assert states["X"].invested == Decimal("140")  # 6 x 10 + 80, em 10 cotas a 14
+        closed, _ = replay_cost_basis([buy("10", "10", "2026-01-05"), sell("10", "15", "2026-02-01")])
+        assert closed["X"].invested == Decimal("0")
+
+    def test_by_ticker_sets_aside_only_the_broken_history(self) -> None:
+        # O replay inteiro recusa o ledger por uma venda impossivel; ticker a
+        # ticker, so o dono dela sai, e sai nomeado.
+        history = [
+            sell("5", "10", "2026-01-02", ticker="BBBB11"),
+            buy("10", "10", "2026-01-05", ticker="AAAA11"),
+            buy("10", "50", "2026-01-05", ticker="BBBB11"),
+        ]
+        with pytest.raises(ValidationError):
+            replay_cost_basis(history)
+        states, refused = replay_by_ticker(history)
+        assert refused == ["BBBB11"]
+        assert set(states) == {"AAAA11"}
+        assert states["AAAA11"].average_cost == Decimal("10")
 
     def test_multiple_tickers_are_independent(self) -> None:
         history = [

@@ -57,6 +57,16 @@ class TickerCostBasis:
     average_cost: Decimal
     """Average cost of the units still held (unchanged by sales)."""
 
+    @property
+    def invested(self) -> Decimal:
+        """What the units still held cost: the "valor investido" (issue #85).
+
+        Average cost times quantity, so a sale takes out exactly the cost of the
+        units it sold and the gain it realized never touches what is left. Zero
+        once the position is closed.
+        """
+        return self.average_cost * self.remaining_shares
+
 
 def _sort_key(txn: Transaction) -> tuple:
     return (txn.date, txn.id)
@@ -105,6 +115,30 @@ def replay_cost_basis(
         for ticker, average in averages.items()
     }
     return states, sales
+
+
+def replay_by_ticker(transactions: list[Transaction]) -> tuple[dict[str, TickerCostBasis], list[str]]:
+    """The same replay, one ticker at a time: a broken history only costs its own.
+
+    :func:`replay_cost_basis` refuses the whole ledger over one sale larger than
+    the position at the time, which is right for ``bogle profit`` (a realized
+    gain built on it would be wrong) and wrong for a screen that values the rest
+    of the portfolio. Here that ticker is set aside and named in the second
+    element, sorted, for the caller to report; every other ticker keeps its state.
+    """
+    by_ticker: dict[str, list[Transaction]] = {}
+    for txn in transactions:
+        by_ticker.setdefault(txn.ticker, []).append(txn)
+    states: dict[str, TickerCostBasis] = {}
+    refused: list[str] = []
+    for ticker, history in by_ticker.items():
+        try:
+            ticker_states, _ = replay_cost_basis(history)
+        except ValidationError:
+            refused.append(ticker)
+            continue
+        states.update(ticker_states)
+    return states, sorted(refused)
 
 
 def average_cost_per_share(transactions: list[Transaction]) -> Decimal:

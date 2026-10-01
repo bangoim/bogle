@@ -75,6 +75,8 @@ _HELP_NOTES = (
     '"Cotacao de": preco de hoje (D-0) da brapi, que no plano gratuito atualiza a '
     'cada 30 minutos. "Fechamento de": ultimo fechamento, antes do pregao, em fim '
     "de semana ou feriado, ou com a brapi fora do ar.\n\n"
+    "Variacao: patrimonio menos o custo medio das posicoes abertas, so o ganho nao "
+    "realizado. O ganho das vendas fica em Relatorios > Lucro.\n\n"
     "TWR: exclui o efeito de aportes e retiradas e considera proventos. Com menos "
     "de 12 meses de carteira, a janela de 12m comeca na primeira transacao, e as "
     "duas rentabilidades coincidem."

@@ -6,6 +6,12 @@ weight vs target (drift), invested capital, nominal PnL (R$ and %), dividends
 received, time-weighted return, and the price's source/timestamp. Nothing is
 persisted — it is recomputed on demand.
 
+Invested capital is the average cost of the units held (issue #85): the RFB's
+"preco medio" times the quantity, so the PnL is the unrealized gain alone. The
+``holdings`` view's ``total_invested`` nets gross sale proceeds out instead,
+which slipped the gain of a partial sale into the PnL; the realized gain is
+``bogle profit``'s, not this table's.
+
 Pass ``dispatcher=None`` for a base-data-only view (no API calls): the
 market-dependent fields come back ``None``. Otherwise it degrades gracefully — a
 ticker whose price cannot be fetched reports ``None`` and drops out of the totals,
@@ -59,14 +65,14 @@ class Position:
     ticker: str
     asset_type: AssetType
     quantity: Decimal
-    total_invested: Decimal
+    total_invested: Decimal | None
+    """What the units held cost: ``average_price * quantity`` (issue #85).
+    ``None`` with ``average_price``, and then out of the portfolio totals."""
     target_weight: Decimal
     dividends: Decimal
     average_price: Decimal | None = None
     """Weighted-average cost of the units still held, fees included (the RFB's
-    "preco medio"). It is *not* ``total_invested / quantity``: the holdings view
-    nets sale proceeds out of the invested capital, so after a partial sale that
-    division stops being the cost of what is left. ``None`` when the history is
+    "preco medio"), from the sequential replay. ``None`` when the history is
     inconsistent enough that the replay refuses it."""
     price: Decimal | None = None
     market_value: Decimal | None = None
@@ -163,6 +169,21 @@ def _average_price(ticker: str, transactions: list[Transaction]) -> Decimal | No
     return state.average_cost if state is not None else None
 
 
+def _unit_principal(holding: Holding, average: Decimal | None) -> Decimal:
+    """The principal behind one unit of private fixed income, for its present value.
+
+    The average cost, the same base the historical valuation uses (issue #84):
+    after a partial redemption it is still the cost of what is left, where the
+    view's net capital would shrink it by the gain the redemption took out. A
+    history the replay refuses falls back to that net capital, so the position
+    still gets a value; its cost is shown as unknown anyway.
+    """
+    if average is not None:
+        return average
+    quantity = holding.total_shares
+    return holding.total_invested / quantity if quantity != _ZERO else _ZERO
+
+
 def _price(
     dispatcher: PriceDispatcher, asset: Asset, quantity: Decimal, unit_principal: Decimal, on_date: date
 ) -> tuple[Decimal | None, Decimal | None, str | None, datetime | None]:
@@ -212,7 +233,7 @@ def get_portfolio_summary(
             priced.append(_Priced(holding, dividends, average))
             continue
         quantity = holding.total_shares
-        unit_principal = holding.total_invested / quantity if quantity != _ZERO else _ZERO
+        unit_principal = _unit_principal(holding, average)
         price, value, source, as_of = _price(dispatcher, asset, quantity, unit_principal, today)
         twr = _twr(dispatcher, asset, txns, unit_principal, today)
         priced.append(_Priced(holding, dividends, average, price, value, source, as_of, twr))
@@ -225,12 +246,14 @@ def get_portfolio_summary(
     total_dividends = _ZERO
     for p in priced:
         holding = p.holding
-        total_invested += holding.total_invested
+        invested = p.average_price * holding.total_shares if p.average_price is not None else None
+        if invested is not None:
+            total_invested += invested
         total_dividends += p.dividends
         current_weight = p.value / total_value if p.value is not None and total_value > _ZERO else None
         drift = current_weight - holding.target_weight if current_weight is not None else None
-        pnl = p.value - holding.total_invested if p.value is not None else None
-        pnl_percent = pnl / holding.total_invested if pnl is not None and holding.total_invested > _ZERO else None
+        pnl = p.value - invested if p.value is not None and invested is not None else None
+        pnl_percent = pnl / invested if pnl is not None and invested is not None and invested > _ZERO else None
         if pnl is not None:
             total_pnl += pnl
         positions.append(
@@ -238,7 +261,7 @@ def get_portfolio_summary(
                 ticker=holding.ticker,
                 asset_type=holding.asset_type,
                 quantity=holding.total_shares,
-                total_invested=holding.total_invested,
+                total_invested=invested,
                 target_weight=holding.target_weight,
                 dividends=p.dividends,
                 average_price=p.average_price,

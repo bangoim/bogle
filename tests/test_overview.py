@@ -265,20 +265,24 @@ class TestStalePrices:
         assert overview.stale_prices == {}
 
 
-class TestVariationPercent:
-    def test_negative_invested_capital_has_no_percentage(
+class TestVariationIsUnrealized:
+    """Valor investido pelo custo medio (#85): a variacao e so o ganho nao realizado."""
+
+    def test_a_partial_sale_takes_its_gain_out_of_the_variation(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
     ) -> None:
-        # Venda lucrativa deixa o investido negativo (ver Holding); porcentagem
-        # sobre essa base nao significaria nada.
+        # Pelo capital liquido (200 - 225 de venda) o investido ficava negativo e
+        # a variacao carregava o ganho da venda. Pelo custo medio sobra 1 cota a
+        # 20: o ganho realizado (9 x 5) e do `bogle profit`, nao daqui.
         TransactionRepository(conn).add_sale(
             "PETR4", shares=Decimal("9"), unit_price=Decimal("25"), date=datetime(2026, 7, 17, 12, tzinfo=UTC)
         )
         dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
         overview = compute_overview(conn, dispatcher, as_of=AS_OF)
-        assert overview.invested < 0
-        assert overview.variation is not None
-        assert overview.variation_percent is None
+        assert overview.invested == Decimal("20")
+        assert overview.patrimony == Decimal("25")
+        assert overview.variation == Decimal("5")
+        assert overview.variation_percent == Decimal("0.25")  # igual a de antes da venda
 
 
 def txn(
@@ -308,7 +312,7 @@ def txn(
 
 
 class TestInvestedAt:
-    """The as-of mirror of the ``holdings`` view."""
+    """Average cost of the positions held at a date (#85)."""
 
     def test_counts_buys_with_their_fees(self) -> None:
         buy = txn(TransactionType.BUY, "2026-01-05", shares="10", price="20", fees="5")
@@ -318,16 +322,43 @@ class TestInvestedAt:
         buy = txn(TransactionType.BUY, "2026-05-05", shares="10", price="20")
         assert invested_at([buy], date(2026, 3, 1)) == Decimal("0")
 
-    def test_sale_returns_its_gross_proceeds_to_the_base(self) -> None:
+    def test_a_sale_takes_out_the_cost_of_what_it_sold(self) -> None:
+        # E nao o produto da venda: os 20 de ganho sao realizados e ficam fora.
         txns = [
             txn(TransactionType.BUY, "2026-01-05", shares="10", price="20"),
             txn(TransactionType.SELL, "2026-02-05", shares="4", price="25"),
         ]
-        assert invested_at(txns, date(2026, 3, 1)) == Decimal("100")  # 200 - 100
+        assert invested_at(txns, date(2026, 3, 1)) == Decimal("120")  # 6 x 20
+
+    def test_a_buy_after_a_partial_sale_averages_over_what_was_left(self) -> None:
+        # Replay da RFB: 6 cotas a 20 + 4 a 30 = 240 em 10 cotas. A formula
+        # agregada (compras / cotas compradas) daria 14 cotas a 22,86.
+        txns = [
+            txn(TransactionType.BUY, "2026-01-05", shares="10", price="20"),
+            txn(TransactionType.SELL, "2026-02-05", shares="4", price="25"),
+            txn(TransactionType.BUY, "2026-03-05", shares="4", price="30"),
+        ]
+        assert invested_at(txns, date(2026, 4, 1)) == Decimal("240")
+
+    def test_the_fees_of_a_sale_do_not_touch_the_cost(self) -> None:
+        txns = [
+            txn(TransactionType.BUY, "2026-01-05", shares="10", price="20", fees="10"),
+            txn(TransactionType.SELL, "2026-02-05", shares="5", price="25", fees="3"),
+        ]
+        assert invested_at(txns, date(2026, 3, 1)) == Decimal("105")  # 5 x 21
+
+    def test_a_ticker_the_replay_refuses_is_left_out(self) -> None:
+        # Venda maior que a posicao na data: a avaliacao ja exclui o ticker, com
+        # o motivo; somar um custo que o replay recusa seria inventar um numero.
+        txns = [
+            txn(TransactionType.SELL, "2026-01-02", ticker="MXRF11", shares="10", price="10"),
+            txn(TransactionType.BUY, "2026-01-05", ticker="MXRF11", shares="20", price="9"),
+            txn(TransactionType.BUY, "2026-01-05", ticker="PETR4", shares="10", price="20"),
+        ]
+        assert invested_at(txns, date(2026, 3, 1)) == Decimal("200")  # so PETR4
 
     def test_a_closed_position_leaves_the_base_entirely(self) -> None:
-        # Igual a view holdings: posicao zerada nao aparece, entao o lucro
-        # realizado nao vira "capital investido negativo".
+        # Posicao zerada nao custa nada: o lucro realizado nao vira capital.
         txns = [
             txn(TransactionType.BUY, "2026-01-05", shares="10", price="20"),
             txn(TransactionType.SELL, "2026-02-05", shares="10", price="30"),
@@ -393,14 +424,21 @@ class TestPendingAfterTheReference:
         txns = [txn(TransactionType.DIVIDEND, "2026-08-01", amount="50")]
         assert pending_after(txns, date(2026, 7, 20)) == (1, Decimal("0"))
 
-    def test_a_sale_returns_its_gross_proceeds(self) -> None:
+    def test_a_sale_takes_out_the_cost_of_what_it_sold(self) -> None:
         # Mesma convencao de invested_at, para o valor ser comparavel com a base
-        # em que ele vai entrar.
+        # em que ele vai entrar: 205 de compra, menos 4 cotas a 20,50.
         txns = [
             txn(TransactionType.BUY, "2026-08-01", shares="10", price="20", fees="5"),
             txn(TransactionType.SELL, "2026-08-02", shares="4", price="25"),
         ]
-        assert pending_after(txns, date(2026, 7, 20)) == (2, Decimal("105"))  # 205 - 100
+        assert pending_after(txns, date(2026, 7, 20)) == (2, Decimal("123"))
+
+    def test_a_pending_sale_of_a_position_held_at_the_reference(self) -> None:
+        txns = [
+            txn(TransactionType.BUY, "2026-07-01", shares="10", price="20"),
+            txn(TransactionType.SELL, "2026-08-02", shares="10", price="25"),
+        ]
+        assert pending_after(txns, date(2026, 7, 20)) == (1, Decimal("-200"))
 
     def test_the_reference_day_itself_is_not_pending(self) -> None:
         txns = [txn(TransactionType.BUY, "2026-07-20", shares="1", price="10")]

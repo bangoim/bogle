@@ -185,13 +185,13 @@ class TestPortfolioSummary:
         assert next(p for p in summary.positions if p.ticker == "PETR4").average_price == Decimal("20")
         assert next(p for p in summary.positions if p.ticker == "VALE3").average_price == Decimal("20.5")
 
-    def test_average_price_is_the_cost_of_what_is_left_after_a_sale(
+    def test_a_partial_sale_leaves_the_cost_of_what_is_left(
         self, conn: psycopg.Connection[DictRow], repo: AssetRepository, trepo: TransactionRepository, tmp_path: Path
     ) -> None:
-        # A conta ingenua (`total_invested / quantity`) desanda aqui: a view de
-        # holdings desconta o produto da venda do capital investido, entao ela
-        # passa a medir outra coisa. O preco medio das cotas que ficaram nao muda
-        # com a venda (regra da RFB).
+        # O preco medio das cotas que ficaram nao muda com a venda (regra da RFB),
+        # e o investido e ele vezes a quantidade (#85). A view de holdings, que
+        # desconta o produto bruto da venda, diria 200 - 120 = 80, e o PnL de 52
+        # carregaria os 40 de ganho realizado.
         seed_portfolio(repo, trepo)
         trepo.add_sale("PETR4", SELL, shares=Decimal("4"), unit_price=Decimal("30"))
         summary = get_portfolio_summary(
@@ -200,8 +200,48 @@ class TestPortfolioSummary:
         petr4 = next(p for p in summary.positions if p.ticker == "PETR4")
         assert petr4.quantity == Decimal("6")
         assert petr4.average_price == Decimal("20")
-        naive = petr4.total_invested / petr4.quantity
-        assert naive != petr4.average_price  # 80 / 6, que nao e preco de nada
+        assert petr4.total_invested == Decimal("120")
+        assert petr4.pnl == Decimal("12")  # 6 x 22 - 120: so o nao realizado
+        assert petr4.pnl_percent == Decimal("0.1")  # o mesmo de antes da venda
+
+    def test_a_history_the_replay_refuses_has_no_cost(
+        self, conn: psycopg.Connection[DictRow], repo: AssetRepository, trepo: TransactionRepository, tmp_path: Path
+    ) -> None:
+        # Venda datada antes da compra: o replay recusa, e a linha fica sem preco
+        # medio, sem investido e sem PnL, fora dos totais. O valor de mercado
+        # continua: a posicao existe, so o custo dela que nao se sabe.
+        seed_portfolio(repo, trepo)
+        repo.add("VALE3", Decimal("0.2"))
+        trepo.add_sale("VALE3", BUY - timedelta(days=3), shares=Decimal("5"), unit_price=Decimal("60"))
+        trepo.add_buy("VALE3", BUY, Decimal("10"), Decimal("50"))
+        brapi = FakeBrapi({"PETR4": Decimal("22"), "VALE3": Decimal("60")})
+        summary = get_portfolio_summary(conn, make_dispatcher(tmp_path, brapi=brapi), on_date=ON_DATE)
+        vale3 = next(p for p in summary.positions if p.ticker == "VALE3")
+        assert vale3.average_price is None
+        assert vale3.total_invested is None
+        assert vale3.pnl is None
+        assert vale3.market_value == Decimal("300")
+        assert summary.total_invested == Decimal("1200")  # PETR4 + CDB01
+
+    def test_a_partial_redemption_keeps_the_principal_of_what_is_left(
+        self, conn: psycopg.Connection[DictRow], repo: AssetRepository, trepo: TransactionRepository, tmp_path: Path
+    ) -> None:
+        # Duas aplicacoes de 1000 e o resgate de uma por 1100: a que ficou rende
+        # sobre os 1000 dela. O capital liquido da view (2000 - 1100 = 900)
+        # encolheria o principal pelo ganho que o resgate levou.
+        seed_portfolio(repo, trepo)
+        trepo.add_buy("CDB01", BUY, Decimal("1"), Decimal("1000"))
+        trepo.add_sale("CDB01", SELL, shares=Decimal("1"), unit_price=Decimal("1100"))
+        summary = get_portfolio_summary(
+            conn, make_dispatcher(tmp_path, brapi=FakeBrapi({"PETR4": Decimal("22")})), on_date=ON_DATE
+        )
+        cdb = next(p for p in summary.positions if p.ticker == "CDB01")
+        expected = present_value(
+            Decimal("1000"), indexer=Indexer.CDI, rate=Decimal("1.10"), is_prefixed=False,
+            purchase_date=date(2026, 1, 5), on_date=ON_DATE, cdi=cdi_series(),
+        )  # fmt: skip
+        assert cdb.market_value == expected
+        assert cdb.total_invested == Decimal("1000")
 
     def test_weights_sum_to_one(
         self, conn: psycopg.Connection[DictRow], repo: AssetRepository, trepo: TransactionRepository, tmp_path: Path

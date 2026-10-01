@@ -2,9 +2,7 @@
 
 Capital gain splits into realized (per-sale gains from the sequential
 cost-basis replay, #68) and unrealized (market value minus the current average
-cost of the units still held). Note ``position.pnl`` is NOT the unrealized gain
-— the holdings view nets sale proceeds out of ``total_invested``, so pnl mixes
-realized and unrealized (see #29 review).
+cost of the units still held — the same number as ``position.pnl`` since #85).
 
 Income is broken down per type with JCP net of the tax withheld at source.
 Capital gains are always since inception (windowed capital needs the patrimony

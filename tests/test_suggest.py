@@ -69,7 +69,7 @@ def make_pending(
 
 def make_summary(*positions: Position) -> PortfolioSummary:
     total = sum((p.market_value for p in positions if p.market_value is not None), _ZERO)
-    invested = sum((p.total_invested for p in positions), _ZERO)
+    invested = sum((p.total_invested for p in positions if p.total_invested is not None), _ZERO)
     return PortfolioSummary(list(positions), total, invested, _ZERO, _ZERO)
 
 
