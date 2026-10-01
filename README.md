@@ -257,11 +257,16 @@ guided forms in [interactive mode](#interactive-mode), which validates each
 field as you type.
 
 A sale can only come out of a position that exists, and only up to what it
-holds: both frontends refuse an oversell before writing anything (the ledger
-itself would take it and the position would simply vanish from the `holdings`
-view). `--all` sells the whole position without you having to know the number —
-the same as `Vender tudo` on the form — and it is read from the ledger at the
-moment of writing, not from what a screen saw when it opened.
+held **at the close of the sale's own date**: both frontends refuse an oversell
+before writing anything (the ledger itself would take it and the position would
+simply vanish from the `holdings` view). A purchase and a sale of the same date
+are netted, whatever order they were registered in. A sale dated in the past also
+has to leave every later sale covered — selling in February the shares a March
+sale already sold is refused, with the March sale named in the message — and a
+purchase cannot be removed while a sale depends on it. `--all` sells the whole
+position at the sale's date without you having to know the number — the same as
+`Vender tudo` on the form — and it is read from the ledger at the moment of
+writing, not from what a screen saw when it opened.
 
 ```bash
 bogle add PETR4 --weight 0.2
