@@ -71,7 +71,16 @@ o que devolve a lista de uma coluna sem mudar nada aqui."""
 _LEFT = MENU_ITEMS[: (len(MENU_ITEMS) + 1) // _COLUMNS]
 _RIGHT = MENU_ITEMS[(len(MENU_ITEMS) + 1) // _COLUMNS :]
 
-_TWR_LEGEND = "Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera proventos."
+_HELP_NOTES = (
+    '"Cotacao de": preco de hoje (D-0) da brapi, que no plano gratuito atualiza a '
+    'cada 30 minutos. "Fechamento de": ultimo fechamento, antes do pregao, em fim '
+    "de semana ou feriado, ou com a brapi fora do ar.\n\n"
+    "TWR: exclui o efeito de aportes e retiradas e considera proventos. Com menos "
+    "de 12 meses de carteira, a janela de 12m comeca na primeira transacao, e as "
+    "duas rentabilidades coincidem."
+)
+"""Como ler o resumo, na ajuda (f1) e nao embaixo dos numeros: e a mesma
+explicacao toda vez, e no painel ela ocupava as linhas das notas que mudam."""
 
 _PATRIMONY = "Patrimonio total"
 _PATRIMONY_PARTIAL = "Patrimonio parcial"
@@ -82,6 +91,7 @@ _VARIATION_PARTIAL = "Variacao parcial"
 class HomeScreen(MenuScreen):
     AUTO_FOCUS = "#menu-left"
     ENTRIES = _ENTRIES
+    HELP_NOTES: ClassVar[str] = _HELP_NOTES
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "app.quit", "Sair"),
         Binding("r", "reload", "Atualizar"),
@@ -227,7 +237,11 @@ class HomeScreen(MenuScreen):
     def _show_note(self, markup: str) -> None:
         rendered = Text.from_markup(markup)
         self.note = rendered.plain
-        self.query_one("#summary-note", Static).update(rendered)
+        note = self.query_one("#summary-note", Static)
+        note.update(rendered)
+        # Sem nota, sem a linha: o painel termina nos numeros em vez de numa
+        # margem vazia.
+        note.display = bool(rendered.plain)
 
 
 def _variation(overview: PortfolioOverview) -> str:
@@ -284,8 +298,8 @@ def _summary_title(overview: PortfolioOverview) -> str:
     summary may be, which "hoje" would not.
     """
     if overview.quote_time is not None:
-        return f"Carteira - cotacao de {overview.quote_time:%Y-%m-%d %H:%M}"
-    return f"Carteira - fechamento de {overview.as_of.isoformat()}"
+        return f"Carteira - cotacao de {overview.quote_time:%d-%m-%Y %H:%M}"
+    return f"Carteira - fechamento de {overview.as_of:%d-%m-%Y}"
 
 
 def _quote_failed_note(overview: PortfolioOverview) -> str:
@@ -368,12 +382,5 @@ def _summary_note(overview: PortfolioOverview) -> str:
         if overview.has_pending:
             return ""
         return f"[yellow]Nota:[/yellow] nenhuma posicao avaliavel no fechamento de {overview.as_of.isoformat()}."
-    if overview.twr_12m_is_shorter and overview.twr_12m_start is not None:
-        # Carteira com menos de 12 meses: a janela ancora na primeira transacao,
-        # entao a rentabilidade "12m" cobre menos que isso. A CLI diz o mesmo
-        # imprimindo a janela ao lado de cada periodo.
-        return (
-            f"[dim]{_TWR_LEGEND} A janela de 12m ancora na primeira transacao "
-            f"({overview.twr_12m_start.isoformat()}).[/dim]"
-        )
-    return f"[dim]{_TWR_LEGEND}[/dim]"
+    # O resto e a legenda de sempre (TWR, janela de 12m), que mora na ajuda (f1).
+    return ""

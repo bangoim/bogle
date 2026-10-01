@@ -17,7 +17,7 @@ import pytest
 from rich.text import Text
 from textual.screen import Screen
 from textual.widget import Widget
-from textual.widgets import Checkbox, Footer, Select, Static
+from textual.widgets import Checkbox, Footer, Label, Select, Static
 
 from bogle.domain.assets import AssetType
 from bogle.domain.transactions import TransactionType
@@ -146,6 +146,25 @@ class TestHelpOverlay:
             assert keys["i"] == "Indices"
             assert keys["o"] == "Exportar"
             assert keys["esc"] == "Voltar"
+
+    @pytest.mark.asyncio
+    async def test_a_screen_with_reading_notes_shows_them_under_the_shortcuts(self) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)  # a Home tem HELP_NOTES
+            await pilot.press("f1")
+            await settle(pilot)
+            assert app.screen.query("#help-notes")
+            assert app.screen.query_one("#help-notes-title", Label).content == "Como ler esta tela"
+
+    @pytest.mark.asyncio
+    async def test_a_screen_without_reading_notes_has_no_such_section(self) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_screen(pilot, StatusScreen())
+            await pilot.press("f1")
+            await settle(pilot)
+            assert not app.screen.query("#help-notes")
 
     @pytest.mark.asyncio
     async def test_the_global_shortcuts_are_listed_too(self) -> None:

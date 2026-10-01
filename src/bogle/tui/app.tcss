@@ -254,8 +254,7 @@ ConfirmModal, NextStepModal, EditModal, HelpModal {
 #help {
     width: 58;
     max-width: 100%;
-    height: auto;
-    max-height: 80%;
+    height: 80%;
     padding: 1 2;
     background: $surface;
     border: round $accent;
@@ -266,12 +265,18 @@ ConfirmModal, NextStepModal, EditModal, HelpModal {
     margin-bottom: 1;
 }
 
-/* Metade da altura, nao um numero fixo: a lista mais longa (a da Home, com oito
-   itens de menu) cabe em 24 linhas sem empurrar o rodape para fora, e num
-   terminal alto ela cresce em vez de rolar sem motivo. */
+/* O que sobra do dialogo depois do titulo e do rodape: num terminal alto a
+   lista (e o "Como ler" da tela, quando ela tem um) cabe inteira, e num de 24
+   linhas rola sem empurrar o rodape para fora. Com `height: auto` o dialogo se
+   media pelo conteudo inteiro, inclusive o que rolava, e sobrava um vao embaixo
+   do rodape enquanto o texto ficava escondido. */
 #help-keys {
-    height: auto;
-    max-height: 50%;
+    height: 1fr;
+}
+
+#help-notes-title {
+    text-style: bold;
+    margin-top: 1;
 }
 
 #help-footer {
