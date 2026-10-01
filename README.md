@@ -75,8 +75,9 @@ sources (yfinance, Banco Central, Tesouro Transparente) need no token.
 
 ## Usage
 
-Apply the schema migrations once before first use (see
-[Schema migrations](#schema-migrations) below).
+The schema takes care of itself: every start of `bogle` (any command, or the
+interactive mode) applies pending migrations before touching the database, and
+says so when it did. See [Schema migrations](#schema-migrations) below.
 
 ### Interactive mode
 
@@ -137,7 +138,7 @@ arrives as a notification here instead of a line on stderr.
 | Screen | What it covers | Equivalent commands |
 |--------|----------------|---------------------|
 | Posicao | Priced table (average price, quote, weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
-| Registrar | Guided forms for buy, sell and income, with a confirmation summary | `bogle buy` / `sell` / `income` |
+| Registrar | Guided forms for buy, sell and income, with a confirmation summary; a sale starts from the list of open positions and can be zeroed with `Vender tudo` | `bogle buy` / `sell` / `income` |
 | Transacoes | Ledger with a ticker filter; `d` removes the selected row after confirming | `bogle transactions`, `bogle transaction remove` |
 | Aporte | Amount → suggested split; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
 | Relatorios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
@@ -252,11 +253,19 @@ everywhere and defaults to today (America/Sao_Paulo); pass ISO dates
 guided forms in [interactive mode](#interactive-mode), which validates each
 field as you type.
 
+A sale can only come out of a position that exists, and only up to what it
+holds: both frontends refuse an oversell before writing anything (the ledger
+itself would take it and the position would simply vanish from the `holdings`
+view). `--all` sells the whole position without you having to know the number —
+the same as `Vender tudo` on the form — and it is read from the ledger at the
+moment of writing, not from what a screen saw when it opened.
+
 ```bash
 bogle add PETR4 --weight 0.2
 
 bogle buy PETR4 --shares 100 --price 30.50 --fees 5.20 --date 2026-01-15
 bogle sell PETR4 --shares 40 --price 35 --tax-withheld 0.07    # 0.005% "dedo-duro" on sales
+bogle sell PETR4 --all --price 35                              # whole position, quantity read from the ledger
 
 bogle income PETR4 --type DIVIDEND --amount 123.45
 bogle income PETR4 --type JCP --amount 200 --tax-withheld 30   # JCP requires the 15% withheld at source
@@ -273,7 +282,7 @@ equal to the invested amount. A full redemption is a SELL with
 
 ```bash
 bogle buy CDB-XP-2027 --shares 1 --price 5000 --date 2026-04-01
-bogle sell CDB-XP-2027 --shares 1 --price 5310 --date 2027-04-01   # resgate total
+bogle sell CDB-XP-2027 --all --price 5310 --date 2027-04-01   # resgate total
 ```
 
 ### Viewing your position
@@ -329,10 +338,26 @@ bogle suggest --amount 10000 --json   # machine-readable output for scripts
 
 Variable income (stocks, FIIs, ETFs, BDRs) is suggested in **whole shares**
 (rounded down; whatever the rounding leaves is re-offered to the neediest
-tickers). Tesouro and private fixed income take **exact values**. The footer
-shows the total allocated vs the contribution and any leftover cash. A warning
-flags private fixed-income suggestions, since a new contribution is a new
+tickers). Tesouro and private fixed income take **exact values**. Each row shows
+the whole trip of the weight — current, target, after the contribution, and the
+drift still left — so it is visible whether the money went where it was needed.
+The footer shows the total allocated vs the contribution and any leftover cash. A
+warning flags private fixed-income suggestions, since a new contribution is a new
 contract (own rate and date) — register it as a new asset when you execute it.
+
+**An asset with a target and no position is in the running.** A ticker you
+registered but never bought is the furthest from its target there is, so the
+suggestion is how you open the position — nothing has to be bought outside the
+tool first. If the provider cannot quote it, the ticker sits that contribution
+out with a warning (there is no way to say how many shares the money buys);
+`--price TICKER=VALOR` gets it back in.
+
+The other side of that policy: **a sale that empties a position clears the
+asset's target weight**, since a target left over from an asset you walked away
+from would take the next contribution. The command prints what it did and the
+line that undoes it; the `Venda` screen shows a dialog with a `Reverter` button.
+The asset and its whole history stay — `bogle profit` and the tax report are made
+of them.
 
 The `Aporte` screen in [interactive mode](#interactive-mode) computes the same
 split — including the side effect below, since asking for a suggestion *is* the
@@ -535,13 +560,15 @@ minutes; the slower-moving macro and Tesouro data for longer.
 
 ## Schema migrations
 
-Schema changes live in `src/bogle/migrations/` as numbered SQL files (`001_initial.sql`, `002_*.sql`, ...). They are applied by `yoyo-migrations`, which records progress in a `_yoyo_migration` table on the database side.
+Schema changes live in `src/bogle/migrations/` as numbered SQL files (`001_initial.sql`, `002_*.sql`, ...). They are applied by `yoyo-migrations`, which records progress in the `migrations.yoyo_migration` table on the database side.
 
-Apply pending migrations programmatically:
+Pending migrations are applied automatically: every start of `bogle` (a command or the interactive mode) compares the files on disk with that table — a single query, about 2 ms on a local server — and runs yoyo only when something is missing. When it does, the CLI prints `aviso: banco de dados atualizado: <ids>.` on stderr and the TUI shows the same line as a toast. A brand-new database is initialised the same way on first use.
+
+To apply them by hand (a script, a CI job):
 
 ```python
 from bogle.db import run_migrations
 run_migrations()
 ```
 
-To add a new migration, drop a new file in `src/bogle/migrations/` following the existing numbering and naming convention. yoyo will pick it up automatically on the next call to `run_migrations`.
+To add a new migration, drop a new file in `src/bogle/migrations/` following the existing numbering and naming convention. It is applied the next time `bogle` starts.
