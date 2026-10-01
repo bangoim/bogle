@@ -500,8 +500,23 @@ class TestSuggestion:
             total_pnl=Decimal("20"),
             total_dividends=Decimal("0"),
         )
-        monkeypatch.setattr(services, "default_dispatcher", lambda: None)
-        monkeypatch.setattr(services, "get_portfolio_summary", lambda conn, dispatcher: summary)
+        self.built: list[dict[str, Any]] = []
+        monkeypatch.setattr(services, "default_dispatcher", lambda **kwargs: self.built.append(kwargs))
+        monkeypatch.setattr(services, "get_allocation_summary", lambda conn, dispatcher: summary)
+
+    def test_the_informed_prices_reach_the_engine(self, priced: None) -> None:
+        suggestion = services.load_suggestion(Decimal("320"), prices={"PETR4": Decimal("30")}, today=date(2026, 3, 20))
+        item = suggestion.items[0]
+        assert item.price == Decimal("30")
+        assert item.is_manual_price
+
+    def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(self, priced: None) -> None:
+        # O caminho do 'r' da tela: sem isso a cotacao vem do cache de 5 minutos e
+        # o "Atualizar" nao atualiza nada.
+        services.load_suggestion(Decimal("320"), refresh=True, today=date(2026, 3, 20))
+        assert self.built[-1] == {"ignore_cached_quotes": True}
+        services.load_suggestion(Decimal("320"), today=date(2026, 3, 20))
+        assert self.built[-1] == {"ignore_cached_quotes": False}
 
     def test_splits_the_amount_and_records_the_evaluation(
         self, priced: None, conn: psycopg.Connection[DictRow]
@@ -510,7 +525,7 @@ class TestSuggestion:
         # de ciclo vencido parar de cobrar — a tela de Aporte herda ele do comando.
         suggestion = services.load_suggestion(Decimal("320"), today=date(2026, 3, 20))
         assert [item.ticker for item in suggestion.items] == ["PETR4"]
-        assert suggestion.total_allocated + suggestion.leftover == Decimal("320")
+        assert suggestion.total_allocated + suggestion.estimated_fees + suggestion.leftover == Decimal("320")
         assert get_setting(conn, LAST_REBALANCE_DATE) == date(2026, 3, 20)
 
     def test_an_invalid_amount_records_nothing(self, priced: None, conn: psycopg.Connection[DictRow]) -> None:

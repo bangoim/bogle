@@ -13,7 +13,7 @@ and the interface tested without a database or a network.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -31,7 +31,7 @@ from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
-from bogle.position import get_portfolio_summary
+from bogle.position import get_allocation_summary, get_portfolio_summary
 from bogle.rebalancing import AporteSuggestion, next_evaluation_date, overdue_notice, suggest_allocation
 from bogle.reports.compare import CompareReport, compute_compare
 from bogle.reports.dividends import (
@@ -477,17 +477,30 @@ def remove_asset(ticker: str) -> None:
 # ---------------------------------------------------------------------- aporte
 
 
-def load_suggestion(amount: Decimal, *, today: date | None = None) -> AporteSuggestion:
+def load_suggestion(
+    amount: Decimal,
+    *,
+    prices: Mapping[str, Decimal] | None = None,
+    refresh: bool = False,
+    today: date | None = None,
+) -> AporteSuggestion:
     """How to split ``amount`` to shrink drift, recording the evaluation.
 
     Suggesting a contribution *is* the rebalance cycle's evaluation (issue #24),
     so it stamps ``last_rebalance_date`` — the same side effect ``bogle suggest``
     has, which is what makes the overdue reminder stop nagging.
+
+    ``prices`` are the prices the user intends to pay (see
+    :func:`~bogle.rebalancing.suggest_allocation`); ``refresh`` skips the quote
+    cache, as in :func:`load_snapshot`.
     """
+    dispatcher = default_dispatcher(ignore_cached_quotes=refresh)
     conn = get_connection()
     try:
-        summary = get_portfolio_summary(conn, default_dispatcher())
-        suggestion = suggest_allocation(summary, amount)
+        # get_allocation_summary, e nao a posicao: um ativo com target e sem
+        # compra nenhuma tambem concorre ao aporte (o mesmo que `bogle suggest`).
+        summary = get_allocation_summary(conn, dispatcher)
+        suggestion = suggest_allocation(summary, amount, prices=prices)
         set_value(conn, LAST_REBALANCE_DATE, _today(today))
         return suggestion
     finally:

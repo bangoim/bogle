@@ -8,6 +8,7 @@ import io
 import json
 import os
 import subprocess
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -22,7 +23,7 @@ from bogle.cli import app
 from bogle.cli.suggest import _render, _suggestion_json
 from bogle.domain.assets import AssetType
 from bogle.position import PortfolioSummary, Position
-from bogle.rebalancing import AporteSuggestion, TickerSuggestion, suggest_allocation
+from bogle.rebalancing import AporteSuggestion, TickerSuggestion, UnquotedTarget, suggest_allocation
 from bogle.settings import LAST_REBALANCE_DATE, get_setting
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -42,6 +43,7 @@ def sample_suggestion() -> AporteSuggestion:
                 effective_cost=Decimal("9000"),
                 target_weight=Decimal("0.70"),
                 weight_after=Decimal("0.6727"),
+                current_weight=Decimal("0.64"),
             ),
             TickerSuggestion(
                 ticker="CDB01",
@@ -52,10 +54,12 @@ def sample_suggestion() -> AporteSuggestion:
                 effective_cost=Decimal("950.50"),
                 target_weight=Decimal("0.30"),
                 weight_after=Decimal("0.30"),
+                current_weight=Decimal("0.36"),
             ),
         ],
         total_allocated=Decimal("9950.50"),
-        leftover=Decimal("49.50"),
+        estimated_fees=Decimal("2.70"),  # 0.03% dos 9000 do ETF; o CDB nao paga
+        leftover=Decimal("46.80"),
         warnings=["Aporte em renda fixa privada (CDB01) cria um novo contrato."],
     )
 
@@ -68,12 +72,23 @@ class TestJson:
         assert vwra["quantity"] == "90"
         assert vwra["effective_cost"] == "9000"
         assert data["totals"]["allocated"] == "9950.5"
-        assert data["totals"]["leftover"] == "49.5"
+        assert data["totals"]["estimated_fees"] == "2.7"
+        assert data["totals"]["with_fees"] == "9953.2"
+        assert data["totals"]["leftover"] == "46.8"
         assert data["warnings"]
 
     def test_fixed_income_quantity_is_null(self) -> None:
         data = _suggestion_json(sample_suggestion())
         assert data["items"][1]["quantity"] is None
+
+    def test_carries_the_whole_trip_of_the_weight(self) -> None:
+        # Peso de onde saiu, target, peso onde chegou e o que ainda falta: sem os
+        # quatro, um script que le o JSON nao consegue dizer se o aporte resolveu.
+        vwra = _suggestion_json(sample_suggestion())["items"][0]
+        assert vwra["current_weight"] == "0.64"
+        assert vwra["target_weight"] == "0.7"
+        assert vwra["weight_after"] == "0.6727"
+        assert vwra["drift_after"] == "-0.0273"
 
 
 class TestTableRender:
@@ -82,9 +97,35 @@ class TestTableRender:
         _render(sample_suggestion(), Console(file=buffer, width=200))
         out = buffer.getvalue()
         assert "VWRA11" in out
-        assert "Total alocado: 9,950.50 / Aporte: 10,000.00" in out
-        assert "Sobra (caixa): 49.50" in out
+        assert "Total alocado: 9,950.50 / Taxa B3 (est.): 2.70 / Total com taxa: 9,953.20" in out
+        assert "Aporte: 10,000.00 / Sobra (caixa): 46.80" in out
+        assert "Taxa B3 estimada em 0.03%" in out
         assert "novo contrato" in out
+
+    def test_shows_the_weight_before_the_target_and_after(self) -> None:
+        buffer = io.StringIO()
+        _render(sample_suggestion(), Console(file=buffer, width=200))
+        out = buffer.getvalue()
+        for header in ("Peso atual", "Target", "Peso apos", "Drift apos"):
+            assert header in out
+        assert "64.00%" in out  # peso atual do VWRA11
+        assert "67.27%" in out  # peso depois do aporte
+        assert "-2.73%" in out  # o que ainda falta para o target de 70%
+
+    def test_an_unquoted_target_says_how_to_bring_it_in(self) -> None:
+        # O aviso do motor nao fala de flag; o caminho de volta e da CLI dizer.
+        suggestion = replace(
+            sample_suggestion(),
+            unquoted=[UnquotedTarget("MUND11", AssetType.ETF, Decimal("0.70"), Decimal("0"))],
+        )
+        buffer = io.StringIO()
+        _render(suggestion, Console(file=buffer, width=200))
+        assert "--price MUND11=VALOR" in buffer.getvalue()
+
+    def test_no_hint_when_every_target_has_a_quote(self) -> None:
+        buffer = io.StringIO()
+        _render(sample_suggestion(), Console(file=buffer, width=200))
+        assert "--price" not in buffer.getvalue()
 
 
 class TestCliFlow:
@@ -125,7 +166,7 @@ class TestCliFlow:
             total_dividends=Decimal("0"),
         )
         monkeypatch.setattr("bogle.cli.suggest.default_dispatcher", lambda: None)
-        monkeypatch.setattr("bogle.cli.suggest.get_portfolio_summary", lambda conn, dispatcher: summary)
+        monkeypatch.setattr("bogle.cli.suggest.get_allocation_summary", lambda conn, dispatcher: summary)
         return CliRunner()
 
     def test_json_output(self, runner: CliRunner) -> None:
@@ -134,7 +175,8 @@ class TestCliFlow:
         data = json.loads(result.stdout)
         vwra = next(item for item in data["items"] if item["ticker"] == "VWRA11")
         assert vwra["quantity"] == "100"
-        assert data["totals"]["leftover"] == "0"
+        assert data["totals"]["estimated_fees"] == "3"
+        assert data["totals"]["leftover"] == "-3"  # o floor gastou tudo, e a taxa fica faltando
 
     def test_records_last_rebalance_date(self, runner: CliRunner, conn: psycopg.Connection[DictRow]) -> None:
         assert get_setting(conn, LAST_REBALANCE_DATE) is None
@@ -144,6 +186,37 @@ class TestCliFlow:
 
     def test_invalid_amount_fails_without_recording(self, runner: CliRunner, conn: psycopg.Connection[DictRow]) -> None:
         result = runner.invoke(app, ["suggest", "--amount", "-5"])
+        assert result.exit_code != 0
+        assert get_setting(conn, LAST_REBALANCE_DATE) is None
+
+    def test_price_changes_the_shares_and_marks_the_row(self, runner: CliRunner) -> None:
+        # Ordem limitada: com 80 no lugar dos 100 de mercado, os 10.000 compram
+        # 125 cotas em vez de 100 — e a linha diz que o preco e do usuario.
+        result = runner.invoke(app, ["suggest", "--amount", "10000", "--price", "VWRA11=80"])
+        assert result.exit_code == 0, result.output
+        assert "*" in result.stdout
+        assert "executa nesse preco" in result.stdout
+
+    def test_price_in_json_keeps_the_quote_beside_it(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["suggest", "--amount", "10000", "--price", "vwra11=80", "--json"])
+        assert result.exit_code == 0, result.output
+        vwra = next(item for item in json.loads(result.stdout)["items"] if item["ticker"] == "VWRA11")
+        assert vwra["price"] == "80"
+        assert vwra["quoted_price"] == "100"
+        assert vwra["manual_price"] is True
+        assert vwra["quantity"] == "125"
+
+    def test_a_price_for_a_ticker_outside_the_portfolio_fails(
+        self, runner: CliRunner, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        result = runner.invoke(app, ["suggest", "--amount", "10000", "--price", "XPTO11=80"])
+        assert result.exit_code != 0
+        assert get_setting(conn, LAST_REBALANCE_DATE) is None
+
+    def test_a_malformed_price_fails_before_touching_the_database(
+        self, runner: CliRunner, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        result = runner.invoke(app, ["suggest", "--amount", "10000", "--price", "VWRA11"])
         assert result.exit_code != 0
         assert get_setting(conn, LAST_REBALANCE_DATE) is None
 

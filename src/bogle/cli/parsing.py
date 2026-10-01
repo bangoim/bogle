@@ -14,6 +14,7 @@ and the other way around.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -62,6 +63,27 @@ def parse_rate(value: str, option: str) -> Decimal:
     if not (Decimal("0") < rate < Decimal("10000")):
         raise ValidationError(f"{option} deve estar em (0, 10000), recebido {rate}.")
     return rate
+
+
+def parse_price_overrides(values: Sequence[str], option: str) -> dict[str, Decimal]:
+    """Parse repeated ``TICKER=PRECO`` options into ``{ticker: price}``.
+
+    The syntax only exists in the command (the interface asks per row), but the
+    number goes through :func:`parse_decimal` all the same, so ``114,86`` and
+    ``114.86`` mean the same thing in both. Whether the ticker is in the portfolio
+    and whether the price makes sense for its type is checked by
+    :func:`~bogle.rebalancing.suggest_allocation`, which has the positions.
+    """
+    prices: dict[str, Decimal] = {}
+    for raw in values:
+        ticker, separator, price = raw.partition("=")
+        if not separator or not ticker.strip():
+            raise ValidationError(f"{option} espera TICKER=PRECO (ex: VWRA11=114,86), recebido {raw!r}.")
+        name = ticker.strip().upper()
+        if name in prices:
+            raise ValidationError(f"{option} repetido para {name}: informe um preco so por ticker.")
+        prices[name] = parse_decimal(price.strip(), f"{option} {name}")
+    return prices
 
 
 def parse_date(value: str, option: str) -> datetime:

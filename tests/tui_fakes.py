@@ -8,8 +8,9 @@ exactly the seam that module exists for.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
 from rich.text import Text
@@ -68,7 +69,11 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "add_asset", lambda **kwargs: make_asset(**kwargs))
     monkeypatch.setattr(services, "update_asset", lambda **kwargs: make_asset(**kwargs))
     monkeypatch.setattr(services, "remove_asset", lambda ticker: None)
-    monkeypatch.setattr(services, "load_suggestion", lambda amount, **_: make_suggestion(amount=amount))
+    monkeypatch.setattr(
+        services,
+        "load_suggestion",
+        lambda amount, **kwargs: make_suggestion(amount=amount, prices=kwargs.get("prices")),
+    )
     monkeypatch.setattr(services, "load_cycle", lambda **_: make_cycle())
     monkeypatch.setattr(services, "load_settings", make_settings)
     monkeypatch.setattr(services, "save_setting", lambda key, raw: raw)
@@ -377,20 +382,41 @@ def make_assets() -> list[Asset]:
     ]
 
 
-def make_suggestion(*, amount: Decimal | None = None, **overrides: Any) -> AporteSuggestion:
+QUOTE_TIME = datetime(2026, 8, 11, 17, 7, tzinfo=UTC)
+"""Timestamp da cotacao nas sugestoes de teste. Em UTC, como os provedores mandam:
+as telas mostram 14:07, o horario local (America/Sao_Paulo)."""
+
+
+def make_suggestion(
+    *, amount: Decimal | None = None, prices: Mapping[str, Decimal] | None = None, **overrides: Any
+) -> AporteSuggestion:
+    """A suggestion for the screen tests, honoring manual ``prices``.
+
+    ``prices`` reprices the variable-income line the way the engine does — shares
+    from the informed price — so the screen can be tested against a table that
+    really changed, and not only against the call it made.
+    """
     value = amount if amount is not None else Decimal("1500")
+    manual = {ticker.upper(): price for ticker, price in (prices or {}).items()}
+    auvp_price = manual.get("AUVP11", Decimal("126.25"))
+    auvp_shares = (Decimal("1010.00") / auvp_price).to_integral_value(rounding=ROUND_DOWN)
     fields: dict[str, Any] = {
         "amount": value,
         "items": [
             TickerSuggestion(
                 ticker="AUVP11",
                 asset_type=AssetType.FII,
-                price=Decimal("126.25"),
+                price=auvp_price,
                 allocation=Decimal("1010.00"),
-                quantity=Decimal("8"),
-                effective_cost=Decimal("1010.00"),
+                quantity=auvp_shares,
+                effective_cost=auvp_shares * auvp_price,
                 target_weight=Decimal("0.3"),
                 weight_after=Decimal("0.2840"),
+                current_weight=Decimal("0.2610"),
+                quoted_price=Decimal("126.25"),
+                is_manual_price="AUVP11" in manual,
+                price_source="brapi",
+                as_of=QUOTE_TIME,
             ),
             TickerSuggestion(
                 ticker="CDB-XP-2027",
@@ -401,10 +427,14 @@ def make_suggestion(*, amount: Decimal | None = None, **overrides: Any) -> Aport
                 effective_cost=Decimal("489.50"),
                 target_weight=Decimal("0.1"),
                 weight_after=Decimal("0.0980"),
+                current_weight=Decimal("0.0710"),
+                quoted_price=Decimal("811.20"),
+                price_source="calculado",
             ),
         ],
         "total_allocated": Decimal("1499.50"),
-        "leftover": Decimal("0.50"),
+        "estimated_fees": Decimal("0.30"),  # 0.03% do AUVP11; o CDB nao paga
+        "leftover": Decimal("0.20"),
         "warnings": [],
     }
     fields.update(overrides)

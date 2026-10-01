@@ -186,6 +186,17 @@ def signed(value: Decimal | None, *, percent: bool) -> str:
     return f"[{sign_color(value)}]{body}[/{sign_color(value)}]"
 
 
+def shortfall(value: Decimal) -> str:
+    """:func:`money` as Rich markup, red when negative: cash that should not be.
+
+    Uncolored while amounts are hidden, like :func:`signed` — red dots would still
+    say the money was not enough.
+    """
+    if value < 0 and not _HIDDEN:
+        return f"[red]{money(value)}[/red]"
+    return money(value)
+
+
 # ------------------------------------------------------------------ entrada
 
 

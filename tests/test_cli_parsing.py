@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bogle.cli.parsing import parse_date, parse_decimal, parse_rate, parse_weight
+from bogle.cli.parsing import parse_date, parse_decimal, parse_price_overrides, parse_rate, parse_weight
 from bogle.domain.errors import ValidationError
 
 
@@ -63,3 +63,33 @@ class TestParseWeight:
     def test_out_of_range(self) -> None:
         with pytest.raises(ValidationError, match=r"deve estar em \(0, 1\]"):
             parse_weight("1.5", "--weight")
+
+
+class TestParsePriceOverrides:
+    def test_pairs_become_a_mapping_with_upper_case_tickers(self) -> None:
+        assert parse_price_overrides(["vwra11=114,86", "B5P211=110.67"], "--price") == {
+            "VWRA11": Decimal("114.86"),
+            "B5P211": Decimal("110.67"),
+        }
+
+    def test_empty_gives_an_empty_mapping(self) -> None:
+        assert parse_price_overrides([], "--price") == {}
+
+    def test_spaces_around_the_pair_are_tolerated(self) -> None:
+        assert parse_price_overrides([" vwra11 = 114.86 "], "--price") == {"VWRA11": Decimal("114.86")}
+
+    @pytest.mark.parametrize("raw", ["VWRA11", "=114.86", "114.86"])
+    def test_a_pair_without_both_halves_is_refused(self, raw: str) -> None:
+        with pytest.raises(ValidationError, match="TICKER=PRECO"):
+            parse_price_overrides([raw], "--price")
+
+    def test_the_price_goes_through_the_shared_number_parser(self) -> None:
+        # Milhar com separador e o que torna um numero ambiguo, aqui como em
+        # qualquer outro campo.
+        with pytest.raises(ValidationError, match="--price VWRA11"):
+            parse_price_overrides(["VWRA11=1.114,86"], "--price")
+
+    def test_the_same_ticker_twice_is_refused(self) -> None:
+        # Silenciosamente valeria o ultimo, e o usuario leria o primeiro.
+        with pytest.raises(ValidationError, match="repetido para VWRA11"):
+            parse_price_overrides(["VWRA11=114", "vwra11=115"], "--price")

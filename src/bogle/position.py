@@ -10,12 +10,17 @@ Pass ``dispatcher=None`` for a base-data-only view (no API calls): the
 market-dependent fields come back ``None``. Otherwise it degrades gracefully — a
 ticker whose price cannot be fetched reports ``None`` and drops out of the totals,
 rather than failing the whole portfolio.
+
+Two views over the same data, and the difference matters:
+:func:`get_portfolio_summary` is what you *have* (the ``holdings`` view, which
+only lists open positions), while :func:`get_allocation_summary` is what you
+*want* — the same positions plus the assets that so far are only a target weight.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -26,7 +31,7 @@ from psycopg.rows import DictRow
 from bogle.analytics.twr import compute_twr
 from bogle.data.dispatcher import PriceDispatcher
 from bogle.db import DEFAULT_TIMEZONE
-from bogle.domain.assets import Asset, AssetType
+from bogle.domain.assets import PRIVATE_FIXED_INCOME_TYPES, Asset, AssetType
 from bogle.domain.cost_basis import replay_cost_basis
 from bogle.domain.errors import BogleError, ValidationError
 from bogle.domain.holdings import Holding
@@ -255,3 +260,74 @@ def get_positions(
     conn: psycopg.Connection[DictRow], dispatcher: PriceDispatcher | None = None, *, on_date: date | None = None
 ) -> list[Position]:
     return get_portfolio_summary(conn, dispatcher, on_date=on_date).positions
+
+
+def _target_price(
+    dispatcher: PriceDispatcher, asset: Asset, on_date: date
+) -> tuple[Decimal | None, str | None, datetime | None]:
+    """The unit price of an asset nobody owns yet, or ``None`` when unquotable."""
+    if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
+        # Renda fixa privada nao tem preco unitario: o dispatcher devolve o valor
+        # presente de um principal, e o de um contrato que ainda nao existe e
+        # zero. Perguntar isso ao BCB seria uma chamada de rede para chegar a 0.
+        return _ZERO, None, None
+    try:
+        info = dispatcher.get_price_info(asset, principal=_ZERO, on_date=on_date)
+    except (BogleError, ValueError):
+        return None, None, None
+    return info.price, info.source, info.as_of
+
+
+def _pending_position(dispatcher: PriceDispatcher, asset: Asset, total_value: Decimal, *, on_date: date) -> Position:
+    """A target with nothing behind it yet, shaped as a position worth nothing."""
+    price, source, as_of = _target_price(dispatcher, asset, on_date)
+    # Peso de zero sobre um patrimonio zero nao existe — a mesma regra que
+    # get_portfolio_summary aplica quando nao ha valor de mercado nenhum.
+    current_weight = _ZERO if total_value > _ZERO else None
+    return Position(
+        ticker=asset.ticker,
+        asset_type=asset.asset_type,
+        quantity=_ZERO,
+        total_invested=_ZERO,
+        target_weight=asset.target_weight,
+        dividends=_ZERO,
+        price=price,
+        market_value=_ZERO,
+        current_weight=current_weight,
+        drift=-asset.target_weight if current_weight is not None else None,
+        price_source=source,
+        as_of=as_of,
+    )
+
+
+def get_allocation_summary(
+    conn: psycopg.Connection[DictRow], dispatcher: PriceDispatcher, *, on_date: date | None = None
+) -> PortfolioSummary:
+    """Every position *plus* the assets that exist only as a target weight.
+
+    An asset registered with a target and no open position — never bought, or
+    sold down to zero — has no row in the ``holdings`` view, so
+    :func:`get_portfolio_summary` never sees it. For the contribution engine that
+    absence is the whole bug: a target of 10% that receives nothing is not a
+    target, and the first purchase of a ticker would have to happen outside the
+    tool. Here they come back as positions worth nothing (quantity 0, market
+    value 0, ``current_weight`` 0), which is what makes
+    :func:`~bogle.rebalancing.suggest_allocation` measure their need exactly like
+    everyone else's — a zero is still a distance from the target.
+
+    The totals are the portfolio's own, untouched: a position worth nothing adds
+    nothing to the patrimony, to the invested capital, to the PnL or to the
+    dividends. This view is for splitting a contribution, never for reporting
+    what the portfolio *is* — that is what :func:`get_portfolio_summary` says,
+    and it is what every screen and report keeps calling.
+    """
+    summary = get_portfolio_summary(conn, dispatcher, on_date=on_date)
+    held = {position.ticker for position in summary.positions}
+    pending = [
+        _pending_position(dispatcher, asset, summary.total_value, on_date=on_date or date.today())
+        for asset in AssetRepository(conn).list()
+        if asset.ticker not in held and asset.target_weight > _ZERO
+    ]
+    if not pending:
+        return summary
+    return replace(summary, positions=sorted([*summary.positions, *pending], key=lambda p: p.ticker))

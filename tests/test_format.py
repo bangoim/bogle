@@ -29,6 +29,7 @@ from bogle.format import (
     rate,
     separators,
     separators_for,
+    shortfall,
     sign_color,
     signed,
     signed_money,
@@ -187,6 +188,16 @@ class TestSigned:
         assert signed(None, percent=False) == DASH
 
 
+class TestShortfall:
+    def test_cash_left_is_plain_money(self) -> None:
+        # Sobra positiva nao e ganho: sem sinal e sem verde.
+        assert shortfall(Decimal("0.92")) == "0.92"
+        assert shortfall(Decimal("0")) == "0.00"
+
+    def test_missing_cash_is_red(self) -> None:
+        assert shortfall(Decimal("-2.14")) == "[red]-2.14[/red]"
+
+
 class TestHiddenAmounts:
     """Privacy mode: amounts out, percentages in."""
 
@@ -210,6 +221,8 @@ class TestHiddenAmounts:
         # Verde numa fileira de pontos seria ler um valor que nao esta na tela.
         assert signed(Decimal("685.43"), percent=False) == f"[dim]{MASK}[/dim]"
         assert signed(Decimal("-685.43"), percent=False) == f"[dim]{MASK}[/dim]"
+        # Pontos vermelhos ainda diriam que o dinheiro nao deu.
+        assert shortfall(Decimal("-2.14")) == MASK
 
     def test_unavailable_still_reads_as_unavailable(self) -> None:
         # "-" e "nao tem valor"; a mascara e "tem, mas nao mostro".
