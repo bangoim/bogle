@@ -312,10 +312,32 @@ class TestAssets:
     def test_updates_the_weight(self, seeded: None) -> None:
         asset = services.update_asset(ticker="petr4", target_weight=Decimal("0.5"))
         assert asset.target_weight == Decimal("0.5")
+        # Relido por outra conexao, e nao so no objeto devolvido: a escrita vinha
+        # depois de uma leitura na mesma conexao, e era descartada no close —
+        # devolvendo o valor novo enquanto o banco ficava no antigo.
+        persisted = next(a for a in services.list_assets() if a.ticker == "PETR4")
+        assert persisted.target_weight == Decimal("0.5")
 
     def test_updates_the_type_between_variable_income_types(self, seeded: None) -> None:
         asset = services.update_asset(ticker="PETR4", asset_type=AssetType.ETF)
         assert asset.asset_type is AssetType.ETF
+        persisted = next(a for a in services.list_assets() if a.ticker == "PETR4")
+        assert persisted.asset_type is AssetType.ETF
+
+    def test_updates_type_and_weight_together(self, seeded: None) -> None:
+        asset = services.update_asset(ticker="PETR4", target_weight=Decimal("0.5"), asset_type=AssetType.ETF)
+        assert (asset.asset_type, asset.target_weight) == (AssetType.ETF, Decimal("0.5"))
+        persisted = next(a for a in services.list_assets() if a.ticker == "PETR4")
+        assert (persisted.asset_type, persisted.target_weight) == (AssetType.ETF, Decimal("0.5"))
+
+    def test_a_refused_weight_leaves_the_type_alone(self, seeded: None) -> None:
+        # As duas escritas numa transacao so: o peso estoura a soma, e o tipo nao
+        # pode ficar trocado por conta disso.
+        with pytest.raises(WeightSumExceededError):
+            services.update_asset(ticker="PETR4", target_weight=Decimal("0.95"), asset_type=AssetType.ETF)
+        persisted = next(a for a in services.list_assets() if a.ticker == "PETR4")
+        assert persisted.asset_type is AssetType.STOCK
+        assert persisted.target_weight == Decimal("0.4")
 
     def test_changing_a_fixed_income_type_is_refused(self, conn: psycopg.Connection[DictRow]) -> None:
         services.add_asset(

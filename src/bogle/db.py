@@ -28,14 +28,29 @@ def get_connection(database_url: str | None = None) -> psycopg.Connection[DictRo
 
     The session timezone is set to ``America/Sao_Paulo`` and rows are returned
     as ``dict``-like mappings.
+
+    **Autocommit**, and that is load-bearing. Every caller here opens a
+    connection, does one operation and closes it, declaring atomicity with
+    ``conn.transaction()`` where it needs it. Without autocommit, a *read* before
+    the write (``repo.get(ticker)`` before ``repo.update_weight(...)``, the
+    portfolio summary before stamping ``last_rebalance_date``) already opened an
+    implicit transaction — and psycopg then downgrades ``conn.transaction()`` to a
+    SAVEPOINT, which commits nothing on its own. Closing the connection rolled the
+    whole thing back, so the write was silently lost while the caller happily
+    reported success with the row it had just read back.
+
+    With autocommit, a ``conn.transaction()`` block is always a real transaction
+    (committed on exit, rolled back on exception) and a bare statement commits by
+    itself. The cost is that two writes are only atomic together when a caller
+    wraps them in one ``conn.transaction()`` — which is now a visible decision
+    instead of an accident.
     """
     if database_url is None:
         database_url = get_database_url()
 
-    conn = psycopg.Connection[DictRow].connect(database_url, row_factory=dict_row)
+    conn = psycopg.Connection[DictRow].connect(database_url, row_factory=dict_row, autocommit=True)
     with conn.cursor() as cur:
         cur.execute(f"SET TIME ZONE '{DEFAULT_TIMEZONE}'")
-    conn.commit()
     return conn
 
 

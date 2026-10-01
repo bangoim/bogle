@@ -429,11 +429,14 @@ def update_asset(*, ticker: str, target_weight: Decimal | None = None, asset_typ
         asset = repo.get(ticker)
         if asset is None:
             raise AssetNotFoundError(ticker.upper())
-        if asset_type is not None and asset_type != asset.asset_type:
-            validate_type_change(asset.ticker, asset.asset_type, asset_type)
-            asset = repo.update_type(ticker, asset_type)
-        if target_weight is not None:
-            asset = repo.update_weight(ticker, target_weight)
+        # Os dois numa transacao so: mudar tipo e peso e uma alteracao, e metade
+        # dela aplicada seria pior que nenhuma.
+        with conn.transaction():
+            if asset_type is not None and asset_type != asset.asset_type:
+                validate_type_change(asset.ticker, asset.asset_type, asset_type)
+                asset = repo.update_type(ticker, asset_type)
+            if target_weight is not None:
+                asset = repo.update_weight(ticker, target_weight)
         return asset
     finally:
         conn.close()

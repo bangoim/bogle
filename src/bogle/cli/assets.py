@@ -155,11 +155,14 @@ def update(
         asset = repo.get(ticker)
         if asset is None:
             raise AssetNotFoundError(ticker.upper())
-        if asset_type is not None and asset_type != asset.asset_type:
-            validate_type_change(asset.ticker, asset.asset_type, asset_type)
-            asset = repo.update_type(ticker, asset_type)
-        if weight_dec is not None:
-            asset = repo.update_weight(ticker, weight_dec)
+        # Uma transacao para as duas escritas: metade da alteracao aplicada seria
+        # pior que nenhuma (mesma razao que em `services.update_asset`).
+        with conn.transaction():
+            if asset_type is not None and asset_type != asset.asset_type:
+                validate_type_change(asset.ticker, asset.asset_type, asset_type)
+                asset = repo.update_type(ticker, asset_type)
+            if weight_dec is not None:
+                asset = repo.update_weight(ticker, weight_dec)
     finally:
         conn.close()
     typer.echo(f"asset {asset.ticker} atualizado: tipo {asset.asset_type}, peso {asset.target_weight:.2%}.")
