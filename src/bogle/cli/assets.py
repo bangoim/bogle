@@ -9,11 +9,14 @@ from rich.console import Console
 from rich.table import Table
 
 from bogle.cli.parsing import parse_date, parse_rate, parse_weight
+from bogle.closeout import split_closed
 from bogle.db import get_connection
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError, ValidationError
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
+from bogle.rebalancing import weight_sum_notice
 from bogle.repositories.assets import AssetRepository
+from bogle.repositories.holdings import HoldingRepository
 
 
 def _parse_provided[T](
@@ -133,7 +136,7 @@ def update(
         None,
         "--weight",
         "-w",
-        help="Novo peso-alvo em decimal entre 0 e 1.",
+        help="Novo peso-alvo em decimal entre 0 e 1; 0 tira o ativo do plano e mantem o historico.",
     ),
     asset_type: AssetType | None = typer.Option(  # noqa: B008 — padrao do typer, OptionInfo e sentinela imutavel
         None,
@@ -148,7 +151,7 @@ def update(
     # fixa exige adicionar ou limpar metadados, o que este comando nao faz.
     if weight is None and asset_type is None:
         raise ValidationError("Nada para atualizar. Informe --weight e/ou --type.")
-    weight_dec = parse_weight(weight, "--weight") if weight is not None else None
+    weight_dec = parse_weight(weight, "--weight", allow_zero=True) if weight is not None else None
     conn = get_connection()
     try:
         repo = AssetRepository(conn)
@@ -183,6 +186,7 @@ def list_assets() -> None:
     conn = get_connection()
     try:
         assets = AssetRepository(conn).list()
+        held = {holding.ticker for holding in HoldingRepository(conn).list()}
     finally:
         conn.close()
 
@@ -190,13 +194,22 @@ def list_assets() -> None:
         typer.echo("Nenhum ativo cadastrado. Use 'bogle add' para comecar.")
         return
 
+    # Mesma divisao da tela de Ativos: sem posicao e sem target, o ativo fica
+    # por causa do historico, numa secao propria no fim (bogle.closeout).
+    roster = split_closed(assets, held)
     table = Table(title="Carteira", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Target Weight", justify="right")
-    for asset in assets:
+    for asset in roster.in_plan:
         table.add_row(asset.ticker, f"{asset.target_weight:.2%}")
+    if roster.closed:
+        table.add_section()
+        table.add_row("[bold]Encerrados[/bold]", "", style="dim")
+        for asset in roster.closed:
+            table.add_row(asset.ticker, f"{asset.target_weight:.2%}", style="dim")
 
-    total = sum((a.target_weight for a in assets), start=Decimal("0"))
-    table.caption = f"Soma dos pesos: {total:.2%}"
+    total = sum((a.target_weight for a in roster.in_plan), start=Decimal("0"))
+    gap = weight_sum_notice(total)
+    table.caption = f"Soma dos pesos: {total:.2%}" + (f" — {gap}" if gap else "")
 
     Console().print(table)

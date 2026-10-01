@@ -74,6 +74,24 @@ def spy(monkeypatch: pytest.MonkeyPatch) -> AssetsSpy:
     return assets
 
 
+@pytest.fixture
+def closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The shape of a real portfolio after two sales that emptied their positions:
+    one asset held, one target still to be bought, two closed (no position, 0%)."""
+    stub_services(monkeypatch)
+    monkeypatch.setattr(
+        services,
+        "list_assets",
+        lambda: [
+            make_asset(ticker="AUVP11", asset_type=AssetType.ETF, target_weight=Decimal("0")),
+            make_asset(ticker="B5P211", asset_type=AssetType.ETF, target_weight=Decimal("0.1")),
+            make_asset(ticker="NB1011", asset_type=AssetType.ETF, target_weight=Decimal("0.3")),
+            make_asset(ticker="VWRA11", asset_type=AssetType.ETF, target_weight=Decimal("0")),
+        ],
+    )
+    monkeypatch.setattr(services, "held_tickers", lambda: {"B5P211"})
+
+
 def fields_shown(screen: AssetFormScreen) -> dict[str, bool]:
     return {field.id: field.display for field in screen.query(Field) if field.id is not None}
 
@@ -149,11 +167,97 @@ class TestList:
             assert cdb[2] == "10.00%"  # peso continua visivel tambem
 
     @pytest.mark.asyncio
-    async def test_the_note_carries_the_weight_sum(self, spy: AssetsSpy) -> None:
+    async def test_a_sum_below_one_hundred_says_what_it_costs(self, spy: AssetsSpy) -> None:
+        # Parte da carteira sem alvo nao aparece em lugar nenhum, e some no
+        # aporte: a sugestao mede cada necessidade contra o patrimonio futuro,
+        # entao o que falta para 100% fica em caixa.
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, AssetsScreen())
-            assert screen.note == "4 ativos. Soma dos pesos: 80.00% (o maximo e 100.00%)."
+            assert screen.note == (
+                "4 ativos. Soma dos pesos: 80.00% — faltam 20% para 100%: o aporte nao e distribuido por inteiro."
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_closed_sum_says_only_the_sum(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub_services(monkeypatch)
+        monkeypatch.setattr(
+            services,
+            "list_assets",
+            lambda: [
+                make_asset(ticker="AUVP11", target_weight=Decimal("0.4")),
+                make_asset(ticker="PETR4", target_weight=Decimal("0.6")),
+            ],
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            assert screen.note == "2 ativos. Soma dos pesos: 100.00% (o maximo e 100.00%)."
+
+    @pytest.mark.asyncio
+    async def test_a_single_asset_is_said_in_the_singular(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub_services(monkeypatch)
+        monkeypatch.setattr(services, "list_assets", lambda: [make_asset(ticker="AUVP11", target_weight=Decimal("1"))])
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            assert screen.note.startswith("1 ativo. ")
+
+    @pytest.mark.asyncio
+    async def test_closed_assets_go_last_under_their_own_heading(self, closed: None) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            assert [row[0] for row in table_rows(screen)] == ["B5P211", "NB1011", "Encerrados", "AUVP11", "VWRA11"]
+            closed_ticker = screen.query_one(DataTable).get_row_at(3)[0]
+            assert any("dim" in str(span.style) for span in closed_ticker.spans)
+
+    @pytest.mark.asyncio
+    async def test_the_note_counts_the_closed_ones_apart(self, closed: None) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            assert screen.note == (
+                "2 ativos no plano e 2 encerrados (sem posicao e sem target). Soma dos pesos: 40.00% — "
+                "faltam 60% para 100%: o aporte nao e distribuido por inteiro."
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_closed_asset_can_still_be_edited(self, closed: None) -> None:
+        # A selecao vai pela chave da linha: o titulo ocupa um indice, e sem isso
+        # o `u` na linha do AUVP11 abriria o formulario do ativo errado.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            screen.query_one(DataTable).move_cursor(row=3)
+            await pilot.press("u")
+            await settle(pilot)
+            form = app.screen
+            assert isinstance(form, AssetUpdateScreen)
+            assert form.asset.ticker == "AUVP11"
+
+    @pytest.mark.asyncio
+    async def test_the_heading_selects_nothing(self, closed: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, AssetsScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            screen.query_one(DataTable).move_cursor(row=2)
+            await pilot.press("u")
+            await settle(pilot)
+            assert isinstance(app.screen, AssetsScreen)
+            assert toasts.severity_of("Nenhum ativo selecionado") == "warning"
+
+    @pytest.mark.asyncio
+    async def test_a_position_with_no_target_is_not_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub_services(monkeypatch)
+        monkeypatch.setattr(services, "list_assets", lambda: [make_asset(ticker="PETR4", target_weight=Decimal("0"))])
+        monkeypatch.setattr(services, "held_tickers", lambda: {"PETR4"})
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetsScreen())
+            assert [row[0] for row in table_rows(screen)] == ["PETR4"]
 
     @pytest.mark.asyncio
     async def test_an_empty_portfolio_says_how_to_start(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -354,6 +458,19 @@ class TestRegistering:
             assert screen.field("weight").error == "Peso-alvo deve estar em (0, 1], recebido 1.5."
 
     @pytest.mark.asyncio
+    async def test_a_zero_weight_is_refused_when_registering(self, spy: AssetsSpy) -> None:
+        # So a alteracao aceita zero: cadastrar e entrar no plano.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, AssetFormScreen())
+            screen.field("ticker").set_value("VALE3")
+            screen.field("weight").set_value("0")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            assert spy.added == []
+            assert screen.field("weight").error == "Peso-alvo deve estar em (0, 1], recebido 0."
+
+    @pytest.mark.asyncio
     async def test_the_weight_sum_guard_keeps_the_user_on_the_form(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stub_services(monkeypatch)
         spy = AssetsSpy(error=WeightSumExceededError(Decimal("1.2")))
@@ -410,6 +527,39 @@ class TestUpdating:
             await pilot.press("enter")
             await settle(pilot)
             assert spy.updated == [{"ticker": "AUVP11", "target_weight": Decimal("0.25")}]
+
+    @pytest.mark.asyncio
+    async def test_zero_takes_the_asset_out_of_the_plan(self, spy: AssetsSpy) -> None:
+        # O caminho de volta de um "Reverter" apertado por engano depois de uma
+        # venda total: antes, o formulario recusava o zero e o target ficava preso.
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_screen(pilot, AssetsScreen())
+            await pilot.press("u")  # AUVP11, 30%
+            await settle(pilot)
+            form = app.screen
+            assert isinstance(form, AssetUpdateScreen)
+            form.field("weight").set_value("0")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            await pilot.press("enter")
+            await settle(pilot)
+            assert spy.updated == [{"ticker": "AUVP11", "target_weight": Decimal("0")}]
+
+    @pytest.mark.asyncio
+    async def test_a_negative_weight_is_still_refused(self, spy: AssetsSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_screen(pilot, AssetsScreen())
+            await pilot.press("u")
+            await settle(pilot)
+            form = app.screen
+            assert isinstance(form, AssetUpdateScreen)
+            form.field("weight").set_value("-0.1")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            assert spy.updated == []
+            assert form.field("weight").error == "Peso-alvo deve estar em [0, 1], recebido -0.1."
 
     @pytest.mark.asyncio
     async def test_nothing_changed_is_refused_before_the_database(

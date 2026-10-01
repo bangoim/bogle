@@ -64,6 +64,20 @@ class TestParseWeight:
         with pytest.raises(ValidationError, match=r"deve estar em \(0, 1\]"):
             parse_weight("1.5", "--weight")
 
+    def test_zero_is_refused_for_a_new_asset(self) -> None:
+        with pytest.raises(ValidationError, match=r"deve estar em \(0, 1\]"):
+            parse_weight("0", "--weight")
+
+    def test_zero_is_accepted_when_changing_an_asset(self) -> None:
+        # O caminho de volta de um target restaurado por engano: sem isso, so a
+        # venda que zera a posicao chegava ao zero (migracao 006).
+        assert parse_weight("0", "--weight", allow_zero=True) == Decimal("0")
+
+    @pytest.mark.parametrize("value", ["-0.1", "1.5"])
+    def test_the_open_range_still_has_both_ends(self, value: str) -> None:
+        with pytest.raises(ValidationError, match=r"deve estar em \[0, 1\]"):
+            parse_weight(value, "--weight", allow_zero=True)
+
 
 class TestParsePriceOverrides:
     def test_pairs_become_a_mapping_with_upper_case_tickers(self) -> None:

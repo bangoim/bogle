@@ -88,6 +88,24 @@ def _reason(drift: Decimal, current: Decimal, target: Decimal, threshold: Decima
     return f"Peso atual {_pct(current)} esta {_pp(drift)} p.p. acima do target de {_pct(target)}; politica no-sell."
 
 
+def weight_sum_notice(total: Decimal) -> str | None:
+    """What to say about target weights that do not add up to 100%, or ``None``.
+
+    A warning and not an error: redistributing weights has to pass through
+    incomplete states — you lower one before raising another — and refusing them
+    would make editing impossible. The repository still refuses a sum *above*
+    100% (:class:`WeightSumExceededError`), which is unrecoverable arithmetic
+    rather than a step on the way somewhere.
+
+    Left alone, though, the gap is money with no target: :func:`suggest_allocation`
+    measures each need against the future patrimony, so what is missing from the
+    100% is a slice of every contribution that stays in cash.
+    """
+    if total >= Decimal("1"):
+        return None
+    return f"faltam {_pct(Decimal('1') - total)} para 100%: o aporte nao e distribuido por inteiro"
+
+
 def classify_positions(positions: list[Position], threshold: Decimal = DEFAULT_THRESHOLD) -> list[TickerRecommendation]:
     """Classify every position as BUY or HOLD (input order preserved)."""
     missing = [p.ticker for p in positions if p.current_weight is None or p.drift is None]

@@ -2,7 +2,9 @@
 
 The list covers ``bogle list`` — and shows more than it does, because the fixed
 income metadata (issuer, indexer, rate, dates) has nowhere else to be seen — plus
-``bogle add``, ``update`` and ``remove`` as forms.
+``bogle add``, ``update`` and ``remove`` as forms. Closed assets (no position, no
+target) go last, under their own heading: still registered, because the ledger
+points at them, but no longer part of the portfolio being defined here.
 
 The registration form is where the interface earns the most over the command: the
 fields a type accepts are the only ones on screen. TESOURO shows no issuer, a
@@ -28,6 +30,7 @@ from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Select,
 
 from bogle import format as fmt
 from bogle.cli.parsing import parse_date, parse_rate, parse_weight
+from bogle.closeout import AssetRoster, split_closed
 from bogle.domain.assets import (
     FIXED_INCOME_TYPES,
     PRIVATE_FIXED_INCOME_TYPES,
@@ -36,6 +39,7 @@ from bogle.domain.assets import (
     AssetType,
     Indexer,
 )
+from bogle.rebalancing import weight_sum_notice
 from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import DataScreen
@@ -51,11 +55,12 @@ _COLUMNS = ("Ticker", "Tipo", "Target", "Emissor", "Indexador", "Taxa", "Liquide
 _INDEXERS = tuple(indexer for indexer in Indexer if indexer is not Indexer.PREFIXADO)
 
 _EMPTY = "Nenhum ativo cadastrado. Use 'a' para adicionar o primeiro."
+_CLOSED_HEADING = "Encerrados"
 _WEIGHT_HINT = "fracao decimal: 0.4 = 40%"
 _RATE_HINT = "1.10 = 110% do CDI; 0.065 = IPCA + 6,5%"
 
 
-class AssetsScreen(DataScreen[list[Asset]]):
+class AssetsScreen(DataScreen[AssetRoster]):
     SUB_TITLE = "ativos"
     AUTO_FOCUS = "#assets"
     LOADING = "#assets"
@@ -83,11 +88,14 @@ class AssetsScreen(DataScreen[list[Asset]]):
 
     @property
     def selected(self) -> Asset | None:
-        assets = self.report
+        roster = self.report
         table = self.query_one(DataTable)
-        if not assets or table.cursor_row < 0 or table.cursor_row >= len(assets):
+        if roster is None or not table.is_valid_coordinate(table.cursor_coordinate):
             return None
-        return assets[table.cursor_row]
+        # Pela chave da linha, e nao pelo indice: o titulo "Encerrados" ocupa uma
+        # linha sem ser ativo nenhum, e nele a selecao e vazia.
+        ticker = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        return next((asset for asset in (*roster.in_plan, *roster.closed) if asset.ticker == ticker), None)
 
     # --- acoes ----------------------------------------------------------
 
@@ -119,30 +127,26 @@ class AssetsScreen(DataScreen[list[Asset]]):
     # --- carga ----------------------------------------------------------
 
     @override
-    def load(self) -> list[Asset]:
-        return services.list_assets()
+    def load(self) -> AssetRoster:
+        return split_closed(services.list_assets(), services.held_tickers())
 
     @override
     def clear_content(self) -> None:
         self.query_one(DataTable).clear()
 
     @override
-    def render_report(self, report: list[Asset]) -> None:
+    def render_report(self, report: AssetRoster) -> None:
         table = self.query_one(DataTable)
         table.clear()  # mantem as colunas
-        for asset in report:
-            table.add_row(
-                cells.ticker(asset.ticker),
-                cells.text(asset.asset_type.value),
-                cells.pct(asset.target_weight),
-                cells.text(asset.issuer or fmt.DASH),
-                cells.text(_indexer_of(asset)),
-                cells.rate(asset.rate),
-                cells.text(_liquidity_of(asset)),
-                cells.text(_date_of(asset.purchase_date)),
-                cells.text(_date_of(asset.maturity_date)),
-                key=asset.ticker,
-            )
+        for asset in report.in_plan:
+            table.add_row(*_row_of(asset), key=asset.ticker)
+        if report.closed:
+            table.add_row(Text(_CLOSED_HEADING, style="bold dim"), *(Text("") for _ in _COLUMNS[1:]))
+            for asset in report.closed:
+                row = _row_of(asset)
+                for cell in row:
+                    cell.stylize("dim")
+                table.add_row(*row, key=asset.ticker)
         self.show_note(_note_for(report))
 
     # --- remocao --------------------------------------------------------
@@ -373,7 +377,7 @@ class AssetUpdateScreen(WriteScreen[Asset]):
                 id="weight",
                 value=_weight_text(self.asset.target_weight),
                 placeholder=_WEIGHT_HINT,
-                validators=[DecimalField("Peso-alvo", parse=parse_weight)],
+                validators=[DecimalField("Peso-alvo", parse=_parse_changed_weight)],
             )
             yield ControlRow(
                 "Tipo",
@@ -412,7 +416,7 @@ class AssetUpdateScreen(WriteScreen[Asset]):
     def collect(self) -> Entry | None:
         if not self.check_fields():
             return None
-        weight = parse_weight(self.field("weight").value, "Peso-alvo")
+        weight = _parse_changed_weight(self.field("weight").value, "Peso-alvo")
         kind = self.asset_type
         changed_weight = weight != self.asset.target_weight
         changed_type = kind is not self.asset.asset_type
@@ -457,9 +461,28 @@ def _switchable_types(asset: Asset) -> tuple[AssetType, ...]:
     return (asset.asset_type,)
 
 
+def _parse_changed_weight(value: str, option: str) -> Decimal:
+    """The weight as ``bogle update`` reads it: zero takes the asset out of the plan."""
+    return parse_weight(value, option, allow_zero=True)
+
+
 def _weight_text(weight: Decimal) -> str:
     """The weight as the field takes it back: a plain fraction, no percent sign."""
     return format(weight.normalize(), "f")
+
+
+def _row_of(asset: Asset) -> list[Text]:
+    return [
+        cells.ticker(asset.ticker),
+        cells.text(asset.asset_type.value),
+        cells.pct(asset.target_weight),
+        cells.text(asset.issuer or fmt.DASH),
+        cells.text(_indexer_of(asset)),
+        cells.rate(asset.rate),
+        cells.text(_liquidity_of(asset)),
+        cells.text(_date_of(asset.purchase_date)),
+        cells.text(_date_of(asset.maturity_date)),
+    ]
 
 
 def _indexer_of(asset: Asset) -> str:
@@ -478,8 +501,23 @@ def _date_of(value: datetime | None) -> str:
     return f"{value:%Y-%m-%d}" if value is not None else fmt.DASH
 
 
-def _note_for(assets: list[Asset]) -> str:
-    if not assets:
+def _note_for(roster: AssetRoster) -> str:
+    if not roster.in_plan and not roster.closed:
         return f"[yellow]{_EMPTY}[/yellow]"
-    total = sum((asset.target_weight for asset in assets), Decimal("0"))
-    return f"[dim]{len(assets)} ativos. Soma dos pesos: {fmt.pct(total)} (o maximo e 100.00%).[/dim]"
+    total = sum((asset.target_weight for asset in roster.in_plan), Decimal("0"))
+    subject = _subject_of(roster)
+    gap = weight_sum_notice(total)
+    if gap is None:
+        return f"[dim]{subject}. Soma dos pesos: {fmt.pct(total)} (o maximo e 100.00%).[/dim]"
+    # Amarelo, e nao dim: a soma incompleta e a unica coisa na tela que diz que
+    # uma parte da carteira nao tem alvo — e ela nao aparece em lugar nenhum.
+    return f"[yellow]{subject}. Soma dos pesos: {fmt.pct(total)} — {gap}.[/yellow]"
+
+
+def _subject_of(roster: AssetRoster) -> str:
+    """How many assets the note counts: the plan, and the closed ones apart."""
+    in_plan, closed = len(roster.in_plan), len(roster.closed)
+    if not closed:
+        return "1 ativo" if in_plan == 1 else f"{in_plan} ativos"
+    plan = {0: "Nenhum ativo no plano", 1: "1 ativo no plano"}.get(in_plan, f"{in_plan} ativos no plano")
+    return f"{plan} e {closed} {'encerrado' if closed == 1 else 'encerrados'} (sem posicao e sem target)"

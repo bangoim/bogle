@@ -48,6 +48,7 @@ from bogle.reports.profit import ProfitReport, compute_profit
 from bogle.reports.returns import ReturnsReport, compute_returns
 from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
 from bogle.repositories.assets import AssetRepository
+from bogle.repositories.holdings import HoldingRepository
 from bogle.repositories.transactions import TransactionRepository
 from bogle.sales import resolve_sale_shares
 from bogle.settings import (
@@ -430,6 +431,17 @@ def list_assets() -> list[Asset]:
     conn = get_connection()
     try:
         return AssetRepository(conn).list()
+    finally:
+        conn.close()
+
+
+def held_tickers() -> set[str]:
+    """Tickers with an open position: what sets a closed asset apart in the list
+    (:func:`~bogle.closeout.split_closed`). No quote involved — only whether the
+    position exists."""
+    conn = get_connection()
+    try:
+        return {holding.ticker for holding in HoldingRepository(conn).list()}
     finally:
         conn.close()
 

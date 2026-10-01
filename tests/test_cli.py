@@ -67,6 +67,38 @@ def test_update_success() -> None:
     assert "70.00%" in result.stdout
 
 
+def test_update_to_zero_takes_the_asset_out_of_the_plan() -> None:
+    assert run_cli("add", "VTI", "-w", "0.5").returncode == 0
+    result = run_cli("update", "VTI", "-w", "0")
+    assert result.returncode == 0
+    assert "peso 0.00%" in result.stdout
+
+
+def test_add_still_refuses_a_zero_weight() -> None:
+    # Cadastrar e entrar no plano: um ativo que entra com nada nao esta entrando.
+    result = run_cli("add", "VTI", "-w", "0")
+    assert result.returncode == 1
+    assert "deve estar em (0, 1]" in result.stderr
+
+
+def test_list_puts_closed_assets_in_their_own_section() -> None:
+    # VWRA11 vendido por inteiro (a venda zera o target): encerrado. NB1011 tem
+    # target e nenhuma compra ainda: continua no plano, e nao entre os encerrados.
+    assert run_cli("add", "VWRA11", "-w", "0.6", "-t", "etf").returncode == 0
+    assert run_cli("add", "NB1011", "-w", "0.3", "-t", "etf").returncode == 0
+    assert run_cli("buy", "VWRA11", "-s", "10", "-p", "100").returncode == 0
+    assert run_cli("sell", "VWRA11", "--all", "-p", "110").returncode == 0
+    result = run_cli("list")
+    assert result.returncode == 0
+    out = result.stdout
+    assert out.index("NB1011") < out.index("Encerrados") < out.index("VWRA11")
+
+
+def test_list_without_closed_assets_has_no_section() -> None:
+    assert run_cli("add", "VTI", "-w", "0.5").returncode == 0
+    assert "Encerrados" not in run_cli("list").stdout
+
+
 def test_update_not_found() -> None:
     result = run_cli("update", "XYZ", "-w", "0.1")
     assert result.returncode == 1

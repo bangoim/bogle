@@ -1,10 +1,11 @@
 """Shared parsers for user input, in both frontends.
 
 Reading a value the user typed lives here, and so do the ranges that belong to
-the *value itself* — a target weight is a fraction in ``(0, 1]``, a contracted
-rate is positive and bounded by its column. Coherence between fields (which
-metadata a type requires, whether a ticker exists) belongs to the domain
-validators and repositories, which aggregate friendly errors.
+the *value itself* — a target weight is a fraction in ``(0, 1]`` (``[0, 1]`` when
+it changes an existing asset), a contracted rate is positive and bounded by its
+column. Coherence between fields (which metadata a type requires, whether a
+ticker exists) belongs to the domain validators and repositories, which aggregate
+friendly errors.
 
 Every rule takes the field's name as an argument, so the message names what the
 user was filling: ``--weight`` from the command, ``Peso-alvo`` from the form. The
@@ -48,11 +49,21 @@ def parse_decimal(value: str, option: str) -> Decimal:
     return parsed
 
 
-def parse_weight(value: str, option: str) -> Decimal:
-    """Parse a target weight: a decimal fraction in ``(0, 1]`` (``0.6`` = 60%)."""
+def parse_weight(value: str, option: str, *, allow_zero: bool = False) -> Decimal:
+    """Parse a target weight: a decimal fraction in ``(0, 1]`` (``0.6`` = 60%).
+
+    ``allow_zero`` opens the range to ``[0, 1]``, for changing an existing asset:
+    zero is how an asset leaves the plan and keeps its history (migration 006),
+    and without it the only way to get there was a sale that empties the position
+    — a target put back by mistake could not be taken out again. Registering an
+    asset still takes a weight: one that enters the plan with nothing is not
+    entering it.
+    """
     weight = parse_decimal(value, option)
-    if not (Decimal("0") < weight <= Decimal("1")):
-        raise ValidationError(f"{option} deve estar em (0, 1], recebido {weight}.")
+    above_floor = weight >= Decimal("0") if allow_zero else weight > Decimal("0")
+    if not (above_floor and weight <= Decimal("1")):
+        interval = "[0, 1]" if allow_zero else "(0, 1]"
+        raise ValidationError(f"{option} deve estar em {interval}, recebido {weight}.")
     return weight
 
 

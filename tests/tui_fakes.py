@@ -68,6 +68,7 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "export_chart", lambda **kwargs: kwargs["path"])
     # Ativos, aporte, ciclo e configuracoes (issue #76).
     monkeypatch.setattr(services, "list_assets", make_assets)
+    monkeypatch.setattr(services, "held_tickers", set)
     monkeypatch.setattr(services, "add_asset", lambda **kwargs: make_asset(**kwargs))
     monkeypatch.setattr(services, "update_asset", lambda **kwargs: make_asset(**kwargs))
     monkeypatch.setattr(services, "remove_asset", lambda ticker: None)

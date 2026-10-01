@@ -478,6 +478,29 @@ class TestAssets:
         with pytest.raises(AssetNotFoundError):
             services.update_asset(ticker="NOPE3", target_weight=Decimal("0.1"))
 
+    def test_held_tickers_are_the_open_positions_only(self, seeded: None) -> None:
+        # MXRF11 tem target e nenhuma compra; PETR4 foi comprado. O que separa um
+        # encerrado de um ativo ainda por comprar e so isso: a posicao existe?
+        services.record_buy(ticker="PETR4", when=WHEN, shares=Decimal("1"), unit_price=Decimal("30"), fees=Decimal("0"))
+        assert services.held_tickers() == {"PETR4"}
+
+    def test_a_position_sold_out_is_no_longer_held(self, seeded: None) -> None:
+        services.record_buy(ticker="PETR4", when=WHEN, shares=Decimal("1"), unit_price=Decimal("30"), fees=Decimal("0"))
+        services.record_sell(
+            ticker="PETR4",
+            when=WHEN,
+            shares=Decimal("1"),
+            unit_price=Decimal("32"),
+            fees=Decimal("0"),
+            tax_withheld=Decimal("0"),
+        )
+        assert services.held_tickers() == set()
+
+    def test_the_weight_can_go_to_zero(self, seeded: None) -> None:
+        services.update_asset(ticker="PETR4", target_weight=Decimal("0"))
+        persisted = next(a for a in services.list_assets() if a.ticker == "PETR4")
+        assert persisted.target_weight == Decimal("0")
+
     def test_removes_an_asset_without_transactions(self, seeded: None) -> None:
         services.remove_asset("MXRF11")
         assert [asset.ticker for asset in services.list_assets()] == ["PETR4"]
