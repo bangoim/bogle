@@ -19,6 +19,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from bogle.charts import Series
 from bogle.reports.compare import CompareReport
+from bogle.reports.valuation import with_reasons
 from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import PeriodScreen
@@ -138,10 +139,8 @@ def _note_for(report: CompareReport) -> str:
         # O ultimo ponto pode estar forward-filled: quem manda e a data do dado.
         lines[0] += f"   [dim]Dados ate {report.data_as_of.isoformat()}[/dim]"
     if report.excluded:
-        excluded = escape(", ".join(report.excluded))
-        lines.append(
-            f"[yellow]Nota:[/yellow] a serie da carteira nao considera {excluded} (sem historico de precos no periodo)."
-        )
+        excluded = escape(with_reasons(report.excluded, report.excluded_reasons))
+        lines.append(f"[yellow]Nota:[/yellow] a serie da carteira nao considera {excluded}.")
     lines.extend(
         f"[yellow]Nota:[/yellow] {escape(index)}: {escape(message)}" for index, message in report.index_errors.items()
     )

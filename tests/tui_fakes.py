@@ -193,7 +193,7 @@ def snapshot_of(*positions: Position, **overrides: Any) -> PortfolioSnapshot:
     summary = PortfolioSummary(
         positions=list(positions),
         total_value=sum((p.market_value for p in positions if p.market_value is not None), zero),
-        total_invested=sum((p.total_invested for p in positions), zero),
+        total_invested=sum((p.total_invested for p in positions if p.total_invested is not None), zero),
         total_pnl=sum((p.pnl for p in positions if p.pnl is not None), zero),
         total_dividends=sum((p.dividends for p in positions), zero),
     )

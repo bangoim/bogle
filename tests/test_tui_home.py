@@ -16,7 +16,7 @@ from psycopg import errors as pg_errors
 from bogle import format as fmt
 from bogle.domain.errors import MarketDataError
 from bogle.format import MASK
-from bogle.reports.valuation import NO_SOURCE, SHORT_SERIES, series_starts_at
+from bogle.reports.valuation import NO_SOURCE, NOTHING_RETURNED, SHORT_SERIES, series_starts_at
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 from bogle.tui.screens.config import ConfigScreen
@@ -253,6 +253,45 @@ class TestSummary:
             note = app.screen.note  # type: ignore[attr-defined]
             assert "fora do patrimonio, da variacao e das rentabilidades: TESOURO-IPCA-2035" in note
             assert "Fora das rentabilidades, mas dentro do patrimonio: VWRA11" in note
+
+    @pytest.mark.asyncio
+    async def test_a_sold_ticker_is_not_said_to_be_inside_the_patrimony(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Issue #84: vendido antes da referencia, ele vale zero ali. Fora das
+        # rentabilidades, sim; "dentro do patrimonio" seria falso.
+        use_overview(
+            monkeypatch,
+            make_overview(
+                excluded_from_returns=["VWRA11"],
+                sold_excluded=["AUVP11"],
+                returns_reasons={
+                    "VWRA11": series_starts_at(date(2026, 7, 20), date(2026, 1, 9)),
+                    "AUVP11": NOTHING_RETURNED,
+                },
+            ),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "fora das rentabilidades, mas dentro do patrimonio: VWRA11 (" in note
+            assert f"Vendidos, fora das rentabilidades: AUVP11 ({NOTHING_RETURNED})" in note
+            assert "AUVP11" not in note.split("Vendidos")[0]
+            assert "feche e abra o bogle" in note  # o motivo e do provedor
+
+    @pytest.mark.asyncio
+    async def test_a_sold_ticker_alone_still_gets_the_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(
+            monkeypatch,
+            make_overview(sold_excluded=["AUVP11"], returns_reasons={"AUVP11": NO_SOURCE}),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            assert "Nota: vendidos, fora das rentabilidades: AUVP11" in home.note
+            # O patrimonio esta inteiro: o rotulo continua "total".
+            assert home.query_one("#patrimony", Metric).caption == "Patrimonio total"
 
     @pytest.mark.asyncio
     async def test_a_permanent_exclusion_does_not_suggest_retrying(self, monkeypatch: pytest.MonkeyPatch) -> None:

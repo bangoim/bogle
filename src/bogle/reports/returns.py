@@ -7,7 +7,7 @@ widest window is reused by every sub-window, so history is fetched once.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
@@ -41,6 +41,8 @@ class ReturnsReport:
     excluded: list[str]
     index_errors: dict[str, str]
     """Friendly message per index that could not be resolved (any window)."""
+    excluded_reasons: dict[str, str] = field(default_factory=dict)
+    """Why each excluded ticker is out (see :mod:`bogle.reports.valuation`)."""
 
 
 def compute_returns(
@@ -77,4 +79,6 @@ def compute_returns(
                 index_returns[index] = None
                 index_errors.setdefault(index, str(exc))
         rows.append(PeriodReturn(period=period, start=start, end=today, twr=twr, index_returns=index_returns))
-    return ReturnsReport(rows=rows, excluded=valuation.excluded, index_errors=index_errors)
+    return ReturnsReport(
+        rows=rows, excluded=valuation.excluded, index_errors=index_errors, excluded_reasons=valuation.reasons
+    )

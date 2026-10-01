@@ -291,12 +291,13 @@ bogle sell CDB-XP-2027 --all --price 5310 --date 2027-04-01   # resgate total
 ### Viewing your position
 
 `bogle position` prices the portfolio on the fly and shows, per ticker: current
-price, quantity, market value, current weight, drift vs target, invested capital,
-nominal PnL (R$ and %) and time-weighted return (TWR). The footer carries the
-portfolio totals (invested, patrimony, variation), the month profit and income
-received (12m), then the price source(s) and the latest quote timestamp. The
-month profit needs price history, so it is omitted (shown as `-`) under
-`--no-prices`; income (12m) comes straight from the ledger and is always shown.
+price, quantity, average price, market value, current weight, drift vs target,
+unrealized PnL (R$ and %, over the average cost) and time-weighted return
+(TWR). The footer carries the portfolio totals (invested, patrimony, variation),
+the month profit and income received (12m), then the price source(s) and the
+latest quote timestamp. The month profit needs price history, so it is omitted
+(shown as `-`) under `--no-prices`; income (12m) comes straight from the ledger
+and is always shown.
 When nothing could be priced — `--no-prices`, or every quote failing — patrimony
 and variation also read `-` instead of `0.00`, which would claim the portfolio is
 worth nothing.
@@ -414,9 +415,15 @@ as lines) and opens it in the browser — add `--no-open` to only write the file
 
 Semantics worth knowing:
 
-- **Variacao** (`position`) = patrimony − invested capital = capital gain
-  (realized + unrealized, since the holdings view nets sale proceeds out of
-  the invested capital). **Lucro total** (`profit`) = that + income received.
+- **Total investido** (`position`, the Home) = average price × quantity of the
+  open positions, purchase fees included — the same "Preco medio" of the table.
+  **Variacao** = patrimony − that = the **unrealized** gain alone: a sale takes
+  out the cost of the units it sold, and its gain goes to `bogle profit`.
+  **Lucro total** (`profit`) = realized + unrealized + income received.
+- Historical numbers (`return`, `compare`, `history`, the Home's TWRs and the
+  month profit in `position`) cover every ticker held during the window,
+  including the ones sold inside it, up to the sale. A ticker sold before the
+  window does not enter it.
 - Income is reported with **JCP net** of the tax withheld at source; the other
   types are gross. The two income figures in `bogle position` use different
   lenses on purpose (not a bug): the per-ticker `dividends` field (`--json`) is

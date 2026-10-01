@@ -1,9 +1,9 @@
 """Aggregated portfolio summary (issue #28).
 
 Headline numbers come straight from the live position (#19):
-``variation = total_value - total_invested`` is the capital gain over the
-capital still at risk (realized + unrealized — the view nets sale proceeds out
-of ``total_invested``; income is NOT in it, see #29 for the decomposition).
+``variation = total_value - total_invested`` is the unrealized gain over the
+average cost of the units still held (#85; the realized gain and the income are
+NOT in it, see #29 for the decomposition).
 
 "Lucro do mes" is the R$ P&L of the window: the patrimony delta minus what was
 contributed, plus what was withdrawn and received as income — otherwise a fresh

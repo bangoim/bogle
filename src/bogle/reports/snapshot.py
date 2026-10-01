@@ -12,7 +12,7 @@ view); income comes straight from the ledger and is always available.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
@@ -35,7 +35,9 @@ class PortfolioSnapshot:
     """``None`` without a dispatcher (no historical prices to value the window)."""
     income_12m: Decimal
     excluded: list[str]
-    """Tickers left out of the month profit for lacking price history."""
+    """Tickers left out of the month profit (see :mod:`bogle.reports.valuation`)."""
+    excluded_reasons: dict[str, str] = field(default_factory=dict)
+    """Why each of them is out."""
 
     @property
     def has_prices(self) -> bool:
@@ -66,8 +68,10 @@ def compute_snapshot(
     income_12m = income_received(transactions, start=twelve_month_start(today), end=today)
     month_profit: Decimal | None = None
     excluded: list[str] = []
+    excluded_reasons: dict[str, str] = {}
     if valuation is not None:
         excluded = valuation.excluded
+        excluded_reasons = valuation.reasons
         value_start = patrimony_at(valuation, month_start)
         value_end = patrimony_at(valuation, today)
         if value_start is not None and value_end is not None:
@@ -78,4 +82,5 @@ def compute_snapshot(
         month_profit=month_profit,
         income_12m=income_12m,
         excluded=excluded,
+        excluded_reasons=excluded_reasons,
     )

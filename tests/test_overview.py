@@ -19,6 +19,7 @@ from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import NetworkError, QuoteNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.reports.overview import compute_current_overview, compute_overview, invested_at, pending_after
+from bogle.reports.valuation import NOTHING_RETURNED
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from tests.test_valuation import FakeBcb, FakeYfinance, bar, make_dispatcher
@@ -163,22 +164,66 @@ class TestComputeOverview:
         assert overview.invested == Decimal("200")  # nao desconta os 100 da venda
         assert overview.patrimony == Decimal("250")  # ainda as 10 cotas
 
-    def test_a_position_closed_today_leaves_the_reference_close_unavailable(
+    def test_a_position_closed_after_the_reference_still_counts_at_it(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
     ) -> None:
-        # Limite herdado de build_portfolio_valuation, que parte das posicoes
-        # ativas *agora*: zerar o ticker hoje tira ele da avaliacao, inclusive
-        # para datas em que ainda era mantido. Mesma politica dos relatorios
-        # historicos da CLI (history/compare/return), e a Home avisa em vez de
-        # mostrar um numero errado.
+        # A avaliacao partia das posicoes abertas *agora*: zerar o ticker depois
+        # da referencia tirava ele ate das datas em que ainda era mantido, e o
+        # resumo saia vazio (#84). O ledger diz que ele estava la.
         TransactionRepository(conn).add_sale(
             "PETR4", shares=Decimal("10"), unit_price=Decimal("25"), date=datetime(2026, 7, 21, 12, tzinfo=UTC)
         )
         dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
         overview = compute_overview(conn, dispatcher, as_of=AS_OF)
-        assert overview.patrimony is None
-        assert overview.variation is None
-        assert not overview.is_empty
+        assert overview.patrimony == Decimal("250")
+        assert overview.invested == Decimal("200")
+        assert overview.twr_total == Decimal("0.25")
+        assert overview.pending_entries == 1
+
+    def test_a_ticker_sold_inside_the_window_stays_in_the_returns(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O vies de sobrevivencia da #84: VALE3 caiu 10% e foi vendida; medir so
+        # o que sobrou (PETR4, +25%) seria a rentabilidade de quem ficou.
+        AssetRepository(conn).add("VALE3", Decimal("0.3"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("18"), date=datetime(2025, 7, 18, 12, tzinfo=UTC)
+        )
+        history = {**HISTORY, "VALE3.SA": [bar("2025-01-06", "20"), bar("2025-07-18", "18")]}
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), as_of=AS_OF)
+        # 06/01 -> 18/07/2025: 400 viram 220 + 180 = 400 (0%); dai em diante so
+        # PETR4, 220 -> 250.
+        assert overview.twr_total == Decimal("250") / Decimal("220") - 1
+        assert overview.patrimony == Decimal("250")  # VALE3 vale zero na referencia
+        assert overview.invested == Decimal("200")  # e nao custa nada
+        assert overview.excluded == []
+        assert overview.sold_excluded == []
+
+    def test_a_sold_ticker_without_history_is_named_apart(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Fora das rentabilidades, mas nao "dentro do patrimonio": na referencia
+        # ele nao vale nada, e dizer o contrario seria falso.
+        AssetRepository(conn).add("VALE3", Decimal("0.3"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("18"), date=datetime(2025, 7, 18, 12, tzinfo=UTC)
+        )
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY))), as_of=AS_OF)
+        assert overview.sold_excluded == ["VALE3"]
+        assert overview.returns_reasons == {"VALE3": NOTHING_RETURNED}
+        assert overview.excluded == []
+        assert overview.excluded_from_returns == []
+        assert overview.returns_are_partial
+        assert not overview.is_partial  # o patrimonio esta inteiro
+        assert overview.twr_total == Decimal("0.25")  # so PETR4
 
     def test_twelve_month_window_anchors_on_inception_and_says_so(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
@@ -265,20 +310,24 @@ class TestStalePrices:
         assert overview.stale_prices == {}
 
 
-class TestVariationPercent:
-    def test_negative_invested_capital_has_no_percentage(
+class TestVariationIsUnrealized:
+    """Valor investido pelo custo medio (#85): a variacao e so o ganho nao realizado."""
+
+    def test_a_partial_sale_takes_its_gain_out_of_the_variation(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
     ) -> None:
-        # Venda lucrativa deixa o investido negativo (ver Holding); porcentagem
-        # sobre essa base nao significaria nada.
+        # Pelo capital liquido (200 - 225 de venda) o investido ficava negativo e
+        # a variacao carregava o ganho da venda. Pelo custo medio sobra 1 cota a
+        # 20: o ganho realizado (9 x 5) e do `bogle profit`, nao daqui.
         TransactionRepository(conn).add_sale(
             "PETR4", shares=Decimal("9"), unit_price=Decimal("25"), date=datetime(2026, 7, 17, 12, tzinfo=UTC)
         )
         dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
         overview = compute_overview(conn, dispatcher, as_of=AS_OF)
-        assert overview.invested < 0
-        assert overview.variation is not None
-        assert overview.variation_percent is None
+        assert overview.invested == Decimal("20")
+        assert overview.patrimony == Decimal("25")
+        assert overview.variation == Decimal("5")
+        assert overview.variation_percent == Decimal("0.25")  # igual a de antes da venda
 
 
 def txn(
@@ -308,7 +357,7 @@ def txn(
 
 
 class TestInvestedAt:
-    """The as-of mirror of the ``holdings`` view."""
+    """Average cost of the positions held at a date (#85)."""
 
     def test_counts_buys_with_their_fees(self) -> None:
         buy = txn(TransactionType.BUY, "2026-01-05", shares="10", price="20", fees="5")
@@ -318,16 +367,43 @@ class TestInvestedAt:
         buy = txn(TransactionType.BUY, "2026-05-05", shares="10", price="20")
         assert invested_at([buy], date(2026, 3, 1)) == Decimal("0")
 
-    def test_sale_returns_its_gross_proceeds_to_the_base(self) -> None:
+    def test_a_sale_takes_out_the_cost_of_what_it_sold(self) -> None:
+        # E nao o produto da venda: os 20 de ganho sao realizados e ficam fora.
         txns = [
             txn(TransactionType.BUY, "2026-01-05", shares="10", price="20"),
             txn(TransactionType.SELL, "2026-02-05", shares="4", price="25"),
         ]
-        assert invested_at(txns, date(2026, 3, 1)) == Decimal("100")  # 200 - 100
+        assert invested_at(txns, date(2026, 3, 1)) == Decimal("120")  # 6 x 20
+
+    def test_a_buy_after_a_partial_sale_averages_over_what_was_left(self) -> None:
+        # Replay da RFB: 6 cotas a 20 + 4 a 30 = 240 em 10 cotas. A formula
+        # agregada (compras / cotas compradas) daria 14 cotas a 22,86.
+        txns = [
+            txn(TransactionType.BUY, "2026-01-05", shares="10", price="20"),
+            txn(TransactionType.SELL, "2026-02-05", shares="4", price="25"),
+            txn(TransactionType.BUY, "2026-03-05", shares="4", price="30"),
+        ]
+        assert invested_at(txns, date(2026, 4, 1)) == Decimal("240")
+
+    def test_the_fees_of_a_sale_do_not_touch_the_cost(self) -> None:
+        txns = [
+            txn(TransactionType.BUY, "2026-01-05", shares="10", price="20", fees="10"),
+            txn(TransactionType.SELL, "2026-02-05", shares="5", price="25", fees="3"),
+        ]
+        assert invested_at(txns, date(2026, 3, 1)) == Decimal("105")  # 5 x 21
+
+    def test_a_ticker_the_replay_refuses_is_left_out(self) -> None:
+        # Venda maior que a posicao na data: a avaliacao ja exclui o ticker, com
+        # o motivo; somar um custo que o replay recusa seria inventar um numero.
+        txns = [
+            txn(TransactionType.SELL, "2026-01-02", ticker="MXRF11", shares="10", price="10"),
+            txn(TransactionType.BUY, "2026-01-05", ticker="MXRF11", shares="20", price="9"),
+            txn(TransactionType.BUY, "2026-01-05", ticker="PETR4", shares="10", price="20"),
+        ]
+        assert invested_at(txns, date(2026, 3, 1)) == Decimal("200")  # so PETR4
 
     def test_a_closed_position_leaves_the_base_entirely(self) -> None:
-        # Igual a view holdings: posicao zerada nao aparece, entao o lucro
-        # realizado nao vira "capital investido negativo".
+        # Posicao zerada nao custa nada: o lucro realizado nao vira capital.
         txns = [
             txn(TransactionType.BUY, "2026-01-05", shares="10", price="20"),
             txn(TransactionType.SELL, "2026-02-05", shares="10", price="30"),
@@ -393,14 +469,21 @@ class TestPendingAfterTheReference:
         txns = [txn(TransactionType.DIVIDEND, "2026-08-01", amount="50")]
         assert pending_after(txns, date(2026, 7, 20)) == (1, Decimal("0"))
 
-    def test_a_sale_returns_its_gross_proceeds(self) -> None:
+    def test_a_sale_takes_out_the_cost_of_what_it_sold(self) -> None:
         # Mesma convencao de invested_at, para o valor ser comparavel com a base
-        # em que ele vai entrar.
+        # em que ele vai entrar: 205 de compra, menos 4 cotas a 20,50.
         txns = [
             txn(TransactionType.BUY, "2026-08-01", shares="10", price="20", fees="5"),
             txn(TransactionType.SELL, "2026-08-02", shares="4", price="25"),
         ]
-        assert pending_after(txns, date(2026, 7, 20)) == (2, Decimal("105"))  # 205 - 100
+        assert pending_after(txns, date(2026, 7, 20)) == (2, Decimal("123"))
+
+    def test_a_pending_sale_of_a_position_held_at_the_reference(self) -> None:
+        txns = [
+            txn(TransactionType.BUY, "2026-07-01", shares="10", price="20"),
+            txn(TransactionType.SELL, "2026-08-02", shares="10", price="25"),
+        ]
+        assert pending_after(txns, date(2026, 7, 20)) == (1, Decimal("-200"))
 
     def test_the_reference_day_itself_is_not_pending(self) -> None:
         txns = [txn(TransactionType.BUY, "2026-07-20", shares="1", price="10")]
@@ -440,10 +523,12 @@ class TestCurrentOverview:
 
     TODAY = date(2026, 7, 20)  # segunda-feira; o ultimo fechamento e o de sexta, 17/07
 
-    def dispatcher(self, tmp_path: Any, brapi: FakeBrapi, *, today: date | None = None) -> PriceDispatcher:
+    def dispatcher(
+        self, tmp_path: Any, brapi: FakeBrapi, *, today: date | None = None, history: dict[str, Any] | None = None
+    ) -> PriceDispatcher:
         return PriceDispatcher(
             brapi=brapi,
-            yfinance=FakeYfinance(dict(HISTORY)),
+            yfinance=FakeYfinance(history if history is not None else dict(HISTORY)),
             tesouro=NoTesouro(),
             bcb=FakeBcb(),
             quote_cache=DiskCache("quotes", base_dir=tmp_path),
@@ -478,6 +563,26 @@ class TestCurrentOverview:
         assert overview.pending_entries == 0
         assert overview.invested == Decimal("455")  # 200 + 255
         assert overview.patrimony == Decimal("520")  # 20 x 26
+
+    def test_a_sold_ticker_is_not_quoted_today(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Vendido nao vale nada hoje: pedir a cotacao dele seria uma chamada a
+        # toa, e a falha dela derrubaria um resumo D-0 perfeitamente bom para D-1.
+        AssetRepository(conn).add("VALE3", Decimal("0"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("21"), date=datetime(2025, 7, 18, 12, tzinfo=UTC)
+        )
+        brapi = self.quote("26", datetime(2026, 7, 20, 17, 7, tzinfo=UTC))
+        history = {**HISTORY, "VALE3.SA": [bar("2025-01-06", "20"), bar("2025-07-18", "21")]}
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, brapi, history=history), today=self.TODAY)
+        assert overview.is_live
+        assert brapi.quote_calls == ["PETR4"]
+        assert overview.quote_failed == []
 
     def test_brapi_down_falls_back_to_the_last_close_and_says_why(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any

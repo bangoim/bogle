@@ -7,16 +7,24 @@ previous close (D-1) when there is no quote from today to use, before the
 session opens, on a weekend, or with brapi down:
 
 1. **patrimony** — market value of the positions on that date;
-2. **variation** — patrimony minus the capital invested in them (R$ and %);
+2. **variation** — patrimony minus what those positions cost (R$ and %);
 3. **twr_12m** / **twr_total** — time-weighted return over the last 12 months
    and since the first transaction.
+
+"What they cost" is the average cost (issue #85): the RFB's sequential replay
+of :mod:`bogle.domain.cost_basis`, fees included, times the quantity still held
+— the same "Preco medio" the Position screen shows. The variation is then the
+unrealized gain alone. The old base, net capital (buys minus gross sale
+proceeds), slipped the gain of a *partial* sale into it, and not the gain of a
+total one, since the ticker left the view; the realized gain has its own report
+in ``bogle profit``.
 
 TWR (issue #20) is the honest lens for a headline return: it removes the size
 and the timing of contributions and withdrawals and credits income, so a fresh
 aporte never reads as performance.
 
 Everything is measured *at* ``as_of``, invested capital included: reading it off
-the ``holdings`` view instead would mix in transactions dated after the
+the ledger as it stands today instead would mix in transactions dated after the
 reference date, and a buy registered today would show up as a loss the size of
 the aporte (the money is in the base, the shares are not in the patrimony yet).
 
@@ -37,6 +45,11 @@ return could not be computed. The price is that the two pairs of numbers cover
 slightly different portfolios, which is why the note names the ticker and the
 numbers it is missing from instead of just saying "no history".
 
+A ticker sold out before ``as_of`` is still part of both TWRs for the time it
+was held (issue #84). When it cannot be priced it is out of them, and of nothing
+else — it is worth zero at ``as_of`` — so it gets a list of its own,
+``sold_excluded``, instead of being told "inside the patrimony".
+
 ``as_of`` is a trading day (``previous_business_day`` walks over weekends and
 national holidays), but the provider having published that session's bar is a
 separate matter — and one ticker having it while another does not is routine. The
@@ -55,7 +68,6 @@ leaving the user pressing "Atualizar".
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -66,7 +78,8 @@ from psycopg.rows import DictRow
 from bogle.analytics.business_days import is_business_day, previous_business_day
 from bogle.analytics.twr import compute_twr
 from bogle.data.dispatcher import PriceDispatcher
-from bogle.domain.transactions import Transaction, TransactionType
+from bogle.domain.cost_basis import replay_by_ticker
+from bogle.domain.transactions import Transaction
 from bogle.position import local_time
 from bogle.reports.periods import period_start
 from bogle.reports.valuation import (
@@ -87,7 +100,7 @@ class PortfolioOverview:
     inception: date | None
     """First transaction ever; ``None`` when the ledger is empty."""
     invested: Decimal
-    """Capital in the positions that could be valued, as of ``as_of``."""
+    """Average cost of the positions that could be valued, as of ``as_of`` (#85)."""
     patrimony: Decimal | None
     """``None`` when nothing could be valued at ``as_of``."""
     twr_12m: Decimal | None
@@ -104,8 +117,12 @@ class PortfolioOverview:
     excluded_from_returns: list[str] = field(default_factory=list)
     """In ``patrimony``/``variation``, out of the two TWRs: priceable at ``as_of``
     but not from the start of the window (a series that begins after the position)."""
+    sold_excluded: list[str] = field(default_factory=list)
+    """Sold out by ``as_of`` and out of the two TWRs (no history for the time it
+    was held). Worth zero at ``as_of``, so it is missing from nothing else."""
     returns_reasons: dict[str, str] = field(default_factory=dict)
-    """Why each ticker in ``excluded_from_returns`` is out of the returns."""
+    """Why each ticker in ``excluded_from_returns`` and ``sold_excluded`` is out
+    of the returns."""
     stale_prices: dict[str, date] = field(default_factory=dict)
     """Tickers priced at a close *older* than ``as_of``, and the one used instead.
 
@@ -155,8 +172,8 @@ class PortfolioOverview:
 
     @property
     def returns_are_partial(self) -> bool:
-        """``True`` when the TWRs cover less of the portfolio than the patrimony does."""
-        return bool(self.excluded) or bool(self.excluded_from_returns)
+        """``True`` when the TWRs cover less of the portfolio than they should."""
+        return bool(self.excluded) or bool(self.excluded_from_returns) or bool(self.sold_excluded)
 
     @property
     def all_reasons(self) -> dict[str, str]:
@@ -174,8 +191,8 @@ class PortfolioOverview:
 
     @property
     def variation_percent(self) -> Decimal | None:
-        # Invested capital goes negative once sales returned more cash than went
-        # in (see Holding), and a percentage over that base would be nonsense.
+        # Sem posicao avaliavel o custo e zero, e uma porcentagem sobre ele nao
+        # existe.
         variation = self.variation
         if variation is None or self.invested <= _ZERO:
             return None
@@ -194,42 +211,30 @@ def pending_after(transactions: list[Transaction], on: date) -> tuple[int, Decim
     and finding a summary that did not budge reads as a screen that failed to
     refresh, which is exactly what it does not do. The caller says it out loud.
 
-    The amount follows ``invested_at``'s convention (a buy costs its fees, a sale
-    returns its gross proceeds), so it is comparable with the base it will join.
-    Income moves neither, and only shows up in the count.
+    The amount is what they will do to ``invested_at`` (a buy adds its cost,
+    fees included; a sale takes out the average cost of what it sold, not its
+    proceeds), so it is comparable with the base it will join. Income moves
+    neither, and only shows up in the count.
     """
-    count = 0
-    moved = _ZERO
-    for txn in transactions:
-        if _as_date(txn.date) <= on:
-            continue
-        count += 1
-        if txn.transaction_type is TransactionType.BUY:
-            moved += txn.total_cost
-        elif txn.transaction_type is TransactionType.SELL:
-            moved -= txn.total_investment
-    return count, moved
+    count = sum(1 for txn in transactions if _as_date(txn.date) > on)
+    if count == 0:
+        return 0, _ZERO
+    return count, invested_at(transactions, date.max) - invested_at(transactions, on)
 
 
 def invested_at(transactions: list[Transaction], on: date) -> Decimal:
-    """Capital in the positions still held at ``on``.
+    """Average cost of the positions still held at ``on`` (issue #85).
 
-    Mirrors the ``holdings`` view — BUY cost (fees included) minus gross SELL
-    proceeds, counting only tickers with shares left — but as of a past date, so
-    it is comparable with a patrimony valued on that same date.
+    The sequential replay of :mod:`bogle.domain.cost_basis` over the ledger up to
+    ``on`` — so it is comparable with a patrimony valued on that same date — and,
+    per ticker, average cost times the quantity left. A sale takes out the cost of
+    the units it sold and nothing else: its gain is realized, and stays out.
+
+    A ticker the replay refuses is left out; the valuation already excluded it,
+    with the reason, from the patrimony this is compared with.
     """
-    shares: dict[str, Decimal] = defaultdict(lambda: _ZERO)
-    invested: dict[str, Decimal] = defaultdict(lambda: _ZERO)
-    for txn in transactions:
-        if _as_date(txn.date) > on:
-            continue
-        if txn.transaction_type is TransactionType.BUY:
-            shares[txn.ticker] += txn.shares
-            invested[txn.ticker] += txn.total_cost
-        elif txn.transaction_type is TransactionType.SELL:
-            shares[txn.ticker] -= txn.shares
-            invested[txn.ticker] -= txn.total_investment
-    return sum((value for ticker, value in invested.items() if shares[ticker] > _ZERO), _ZERO)
+    states, _ = replay_by_ticker([t for t in transactions if _as_date(t.date) <= on])
+    return sum((state.invested for state in states.values()), _ZERO)
 
 
 def compute_overview(
@@ -282,6 +287,7 @@ def compute_overview(
     # diferentes.
     spot = valuation.spot
     returns_reasons = {ticker: reason for ticker, reason in valuation.reasons.items() if ticker not in spot.reasons}
+    sold = set(valuation.sold)
     return PortfolioOverview(
         as_of=as_of,
         inception=inception,
@@ -292,7 +298,8 @@ def compute_overview(
         twr_12m_start=start_12m,
         excluded=spot.excluded,
         excluded_reasons=spot.reasons,
-        excluded_from_returns=sorted(returns_reasons),
+        excluded_from_returns=sorted(ticker for ticker in returns_reasons if ticker not in sold),
+        sold_excluded=sorted(ticker for ticker in returns_reasons if ticker in sold),
         returns_reasons=returns_reasons,
         stale_prices=stale_at_end(valuation),
         pending_entries=pending_entries,

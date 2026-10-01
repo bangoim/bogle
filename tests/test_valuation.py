@@ -16,6 +16,7 @@ from bogle.data.dispatcher import PriceDispatcher
 from bogle.data.models import HistPoint, SeriesPoint
 from bogle.domain.errors import MarketDataError, QuoteNotFoundError
 from bogle.reports.valuation import (
+    INCONSISTENT_LEDGER,
     NO_SOURCE,
     NOTHING_RETURNED,
     RETRIABLE,
@@ -29,6 +30,7 @@ from bogle.reports.valuation import (
     series_starts_at,
     spot_patrimony,
     stale_at_end,
+    with_reasons,
 )
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
@@ -384,6 +386,22 @@ class TestSeriesFreshness:
         assert spot_patrimony(valuation) is not None  # precificado, so nao por barra
 
 
+class TestWithReasons:
+    def test_each_ticker_carries_its_own_reason(self) -> None:
+        reasons = {"VWRA11": NOTHING_RETURNED, "TESOURO SELIC 2029": NO_SOURCE}
+        assert with_reasons(["TESOURO SELIC 2029", "VWRA11"], reasons) == (
+            f"TESOURO SELIC 2029 ({NO_SOURCE}), VWRA11 ({NOTHING_RETURNED})"
+        )
+
+    def test_a_ticker_without_a_reason_is_listed_bare(self) -> None:
+        assert (
+            with_reasons(["PETR4", "VALE3"], {"VALE3": INCONSISTENT_LEDGER}) == f"PETR4, VALE3 ({INCONSISTENT_LEDGER})"
+        )
+
+    def test_nothing_to_list(self) -> None:
+        assert with_reasons([], {}) == ""
+
+
 class TestFirstTransactionDate:
     def test_min_date(self) -> None:
         from tests.test_dividends import make_buy
@@ -547,3 +565,171 @@ class TestProviderShortSeries:
             conn, make_dispatcher(tmp_path), start=date(2026, 1, 5), end=date(2026, 7, 20)
         )
         assert valuation.reasons == {"PETR4": NOTHING_RETURNED}
+
+
+SOLD_HISTORY = {
+    "PETR4.SA": [bar("2026-01-05", "20"), bar("2026-03-02", "22"), bar("2026-07-01", "25")],
+    "VALE3.SA": [bar("2026-01-05", "50"), bar("2026-03-02", "40"), bar("2026-07-01", "45")],
+}
+
+
+class TestSoldTickers:
+    """Issue #84: the window's portfolio comes from the ledger, not the open positions."""
+
+    @pytest.fixture
+    def seeded(self, conn: psycopg.Connection[DictRow]) -> None:
+        # PETR4 fica; VALE3 cai 20% e e vendida por inteiro em 02/03.
+        assets = AssetRepository(conn)
+        assets.add("PETR4", Decimal("0.5"))
+        assets.add("VALE3", Decimal("0"))
+        transactions = TransactionRepository(conn)
+        transactions.add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        transactions.add_buy(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("50"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        transactions.add_sale(
+            "VALE3", shares=Decimal("10"), unit_price=Decimal("40"), date=datetime(2026, 3, 2, 12, tzinfo=UTC)
+        )
+
+    def test_the_twr_covers_the_time_the_sold_ticker_was_held(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # 05/01 -> 02/03: 700 viram 220 + 400 = 620. Dai em diante so PETR4,
+        # 220 -> 250. Medir so a sobrevivente daria os 25% dela.
+        valuation = build_portfolio_valuation(
+            conn,
+            make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(SOLD_HISTORY))),
+            start=date(2026, 1, 5),
+            end=date(2026, 7, 20),
+        )
+        assert valuation.excluded == []
+        assert valuation.sold == ["VALE3"]
+        assert portfolio_twr(valuation) == (Decimal("620") / Decimal("700")) * (Decimal("250") / Decimal("220")) - 1
+
+    def test_the_patrimony_before_the_sale_has_the_sold_position(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        valuation = build_portfolio_valuation(
+            conn,
+            make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(SOLD_HISTORY))),
+            start=date(2026, 1, 5),
+            end=date(2026, 7, 20),
+        )
+        series = patrimony_series(valuation, [date(2026, 2, 1), date(2026, 3, 2), date(2026, 7, 20)])
+        assert [p.value for p in series] == [Decimal("700"), Decimal("220"), Decimal("250")]
+
+    def test_the_sold_ticker_is_worth_nothing_at_the_end(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        valuation = build_portfolio_valuation(
+            conn,
+            make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(SOLD_HISTORY))),
+            start=date(2026, 1, 5),
+            end=date(2026, 7, 20),
+        )
+        assert spot_patrimony(valuation) == Decimal("250")
+        assert {t.ticker for t in valuation.spot.transactions} == {"PETR4"}
+        assert valuation.series_end == {"PETR4": date(2026, 7, 1)}  # o vendido nao fica "atrasado"
+
+    def test_a_ticker_sold_before_the_window_changes_nothing_and_is_not_fetched(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        yf = FakeYfinance(dict(SOLD_HISTORY))
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 4, 1), end=date(2026, 7, 20)
+        )
+        assert "VALE3.SA" not in yf.calls
+        assert valuation.sold == []
+        assert valuation.excluded == []
+        assert {t.ticker for t in valuation.transactions} == {"PETR4"}
+        assert portfolio_twr(valuation) == Decimal("25") / Decimal("22") - 1
+
+    def test_a_ticker_sold_on_the_first_day_of_the_window_is_out_of_it(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O patrimonio de `start` e o do fim do dia, ja sem ele: nao ha nada da
+        # posicao dentro da janela.
+        yf = FakeYfinance(dict(SOLD_HISTORY))
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 3, 2), end=date(2026, 7, 20)
+        )
+        assert "VALE3.SA" not in yf.calls
+        assert valuation.sold == []
+
+    def test_a_sold_ticker_without_history_is_excluded_with_the_reason(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        history = {"PETR4.SA": SOLD_HISTORY["PETR4.SA"]}
+        valuation = build_portfolio_valuation(
+            conn,
+            make_dispatcher(tmp_path, yfinance=FakeYfinance(history)),
+            start=date(2026, 1, 5),
+            end=date(2026, 7, 20),
+        )
+        assert valuation.excluded == ["VALE3"]
+        assert valuation.reasons == {"VALE3": NOTHING_RETURNED}
+        assert valuation.sold == ["VALE3"]
+        # Nada a dizer sobre o fim da janela: ali ele nao vale nada de qualquer jeito.
+        assert valuation.spot.excluded == []
+        assert portfolio_twr(valuation) == Decimal("0.25")
+
+    def test_a_private_fixed_income_redeemed_inside_the_window_is_valued_until_then(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        # O principal sai do custo medio das transacoes: a view `holdings` ja nao
+        # tem a linha de um titulo resgatado por inteiro.
+        from bogle.data.fixed_income import present_value
+        from bogle.domain.assets import AssetType
+
+        purchase = datetime(2026, 1, 5, 12, tzinfo=UTC)
+        AssetRepository(conn).add(
+            "CDB-XP-2027",
+            Decimal("0"),
+            asset_type=AssetType.CDB,
+            issuer="XP",
+            rate=Decimal("0.12"),
+            is_prefixed=True,
+            purchase_date=purchase,
+            maturity_date=datetime(2027, 1, 5, 12, tzinfo=UTC),
+        )
+        transactions = TransactionRepository(conn)
+        transactions.add_buy("CDB-XP-2027", shares=Decimal("1"), unit_price=Decimal("1000"), date=purchase)
+        transactions.add_sale(
+            "CDB-XP-2027", shares=Decimal("1"), unit_price=Decimal("1040"), date=datetime(2026, 5, 4, 12, tzinfo=UTC)
+        )
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+        assert valuation.excluded == []
+        assert valuation.sold == ["CDB-XP-2027"]
+        expected = present_value(
+            Decimal("1000"), indexer=None, rate=Decimal("0.12"), is_prefixed=True,
+            purchase_date=date(2026, 1, 5), on_date=date(2026, 3, 2),
+        )  # fmt: skip
+        assert patrimony_at(valuation, date(2026, 3, 2)) == expected
+        assert patrimony_at(valuation, date(2026, 7, 20)) == _ZERO
+
+    def test_a_ledger_the_replay_refuses_is_excluded_without_fetching(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Any
+    ) -> None:
+        # Venda datada antes da compra: a quantidade fica negativa no meio do
+        # caminho, e o valor junto. Nao ha o que buscar; o ledger e que precisa
+        # de conserto.
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        transactions = TransactionRepository(conn)
+        transactions.add_sale(
+            "PETR4", shares=Decimal("5"), unit_price=Decimal("21"), date=datetime(2026, 1, 2, 12, tzinfo=UTC)
+        )
+        transactions.add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        yf = FakeYfinance(dict(SOLD_HISTORY))
+        valuation = build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 2), end=date(2026, 7, 20)
+        )
+        assert valuation.reasons == {"PETR4": INCONSISTENT_LEDGER}
+        assert valuation.spot.reasons == {"PETR4": INCONSISTENT_LEDGER}  # ainda tem cotas no fim
+        assert INCONSISTENT_LEDGER not in RETRIABLE
+        assert yf.calls == []

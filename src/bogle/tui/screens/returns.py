@@ -20,6 +20,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Footer, Header, Static
 
 from bogle.reports.returns import PeriodReturn, ReturnsReport
+from bogle.reports.valuation import with_reasons
 from bogle.tui import cells, services
 from bogle.tui.screens.data import DataScreen
 from bogle.tui.widgets.indices import IndicesInput
@@ -121,8 +122,8 @@ def _versus(row: PeriodReturn, index: str) -> tuple[Text, Text]:
 def _note_for(report: ReturnsReport) -> str:
     lines = [f"[dim]{_TWR_LEGEND}[/dim]"]
     if report.excluded:
-        excluded = escape(", ".join(report.excluded))
-        lines.append(f"[yellow]Nota:[/yellow] TWR nao considera {excluded} (sem historico de precos no periodo).")
+        excluded = escape(with_reasons(report.excluded, report.excluded_reasons))
+        lines.append(f"[yellow]Nota:[/yellow] TWR nao considera {excluded}.")
     lines.extend(
         f"[yellow]Nota:[/yellow] {escape(index)}: {escape(message)}" for index, message in report.index_errors.items()
     )

@@ -26,6 +26,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 from bogle import format as fmt
 from bogle.charts import Series
 from bogle.reports.history import HistoryReport
+from bogle.reports.valuation import with_reasons
 from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import PeriodScreen
@@ -139,8 +140,6 @@ def _note_for(report: HistoryReport) -> str:
     granularity = _GRANULARITY[report.granularity]
     lines = [f"[dim]{len(report.points)} pontos, amostragem {granularity}[/dim]"]
     if report.excluded:
-        excluded = escape(", ".join(report.excluded))
-        lines.append(
-            f"[yellow]Nota:[/yellow] patrimonio nao considera {excluded} (sem historico de precos no periodo)."
-        )
+        excluded = escape(with_reasons(report.excluded, report.excluded_reasons))
+        lines.append(f"[yellow]Nota:[/yellow] patrimonio nao considera {excluded}.")
     return "\n".join(lines)

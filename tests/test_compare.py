@@ -102,7 +102,8 @@ class TestComputeCompare:
             unit_price=Decimal("1000"),
             date=datetime(2026, 6, 22, 12, tzinfo=UTC),
         )
-        with pytest.raises(ValidationError, match="sem historico: TESOURO SELIC 2029"):
+        # O motivo de cada um, e nao um "sem historico" fixo que nao vale para todos.
+        with pytest.raises(ValidationError, match=r"Fora: TESOURO SELIC 2029 \(sem fonte de historico gratuita\)\."):
             compute_compare(conn, make_dispatcher(tmp_path), period="1m", indices=(), today=TODAY)
 
 

@@ -9,7 +9,7 @@ market indices are closes) and every series is normalized to 100 at the start.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
@@ -26,6 +26,7 @@ from bogle.reports.valuation import (
     build_portfolio_valuation,
     date_grid,
     first_transaction_date,
+    with_reasons,
 )
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
@@ -58,6 +59,8 @@ class CompareReport:
     """Freshest real data date across all series. The last grid point is
     forward-filled from this when the market has no bar for ``grid[-1]`` yet,
     so it (not ``grid[-1]``) is what the numbers actually reflect."""
+    excluded_reasons: dict[str, str] = field(default_factory=dict)
+    """Why each excluded ticker is out (see :mod:`bogle.reports.valuation`)."""
 
 
 def _base_100(levels: list[Decimal]) -> list[Decimal]:
@@ -84,8 +87,8 @@ def compute_compare(
     valuation = build_portfolio_valuation(conn, dispatcher, start=start, end=today)
     if valuation.valuator is None or not valuation.transactions:
         raise ValidationError(
-            "Nenhuma posicao com historico de precos para comparar"
-            + (f" (sem historico: {', '.join(valuation.excluded)})." if valuation.excluded else ".")
+            "Nenhuma posicao com historico de precos para comparar."
+            + (f" Fora: {with_reasons(valuation.excluded, valuation.reasons)}." if valuation.excluded else "")
         )
 
     grid = date_grid(start, today, GRANULARITY_BY_PERIOD[period])
@@ -111,6 +114,7 @@ def compute_compare(
         excluded=valuation.excluded,
         index_errors=index_errors,
         data_as_of=data_as_of,
+        excluded_reasons=valuation.reasons,
     )
 
 

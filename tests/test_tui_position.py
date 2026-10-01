@@ -15,6 +15,7 @@ from textual.widgets import DataTable
 from bogle.domain.assets import AssetType
 from bogle.domain.errors import QuoteNotFoundError
 from bogle.format import MASK
+from bogle.reports.valuation import INCONSISTENT_LEDGER, NO_SOURCE
 from bogle.tui import services
 from bogle.tui.screens.position import PositionScreen
 from tests.tui_fakes import (
@@ -221,11 +222,20 @@ class TestTotals:
 
     @pytest.mark.asyncio
     async def test_excluded_tickers_are_noted(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(services, "load_snapshot", lambda **_: make_snapshot(excluded=["TESOURO-SELIC-2029"]))
+        # O motivo de cada um: um ledger inconsistente nao e falta de historico.
+        snapshot = make_snapshot(
+            excluded=["TESOURO-SELIC-2029", "VALE3"],
+            excluded_reasons={"TESOURO-SELIC-2029": NO_SOURCE, "VALE3": INCONSISTENT_LEDGER},
+        )
+        monkeypatch.setattr(services, "load_snapshot", lambda **_: snapshot)
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
-            assert "lucro do mes nao considera TESOURO-SELIC-2029" in screen.note
+            assert (
+                f"lucro do mes nao considera TESOURO-SELIC-2029 ({NO_SOURCE}), VALE3 ({INCONSISTENT_LEDGER})."
+                in screen.note
+            )
+            assert "sem historico de precos no periodo" not in screen.note
 
 
 class TestLoading:

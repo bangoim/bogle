@@ -13,6 +13,7 @@ from bogle.db import get_connection
 from bogle.format import points, sign_color, signed_pct
 from bogle.reports.periods import parse_period
 from bogle.reports.returns import DEFAULT_PERIODS, PeriodReturn, ReturnsReport, compute_returns
+from bogle.reports.valuation import with_reasons
 
 _CONSOLE = Console()
 
@@ -47,7 +48,7 @@ def _render(report: ReturnsReport, indices: tuple[str, ...], console: Console) -
 
     if report.excluded:
         console.print(
-            f"\n[yellow]Nota:[/yellow] TWR nao considera {', '.join(report.excluded)} (sem historico de precos no periodo)."
+            f"\n[yellow]Nota:[/yellow] TWR nao considera {with_reasons(report.excluded, report.excluded_reasons)}."
         )
     for index, message in report.index_errors.items():
         console.print(f"[yellow]Nota:[/yellow] {index}: {message}")
