@@ -153,3 +153,25 @@ class TestLoadPreferences:
         assert preferences.decimal_separator == fmt.CANONICAL_DECIMAL
         assert preferences.hide_amounts is False
         assert preferences.theme == DEFAULT_THEME
+
+
+class TestStartupNotices:
+    """What the launcher applied on the way in is said as soon as there is a screen."""
+
+    @pytest.mark.asyncio
+    async def test_are_toasted_as_soon_as_the_app_opens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, BogleApp)
+        app = BogleApp(notices=["banco de dados atualizado: 006_allow_zero_target_weight."])
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert toasts.messages == ["banco de dados atualizado: 006_allow_zero_target_weight."]
+
+    @pytest.mark.asyncio
+    async def test_none_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, BogleApp)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert toasts.messages == []

@@ -21,10 +21,15 @@ def run_tui() -> None:
     """Open the interface. Entry point called by the Typer callback."""
     # Import tardio: manter o custo do textual fora dos comandos diretos.
     from bogle import format as fmt
+    from bogle.db import migrated_notice
     from bogle.tui import services
     from bogle.tui.app import BogleApp
 
+    # Schema primeiro: as preferencias e todo worker que vem depois leem o que
+    # ele deixou. O que foi aplicado vira toast assim que houver tela para isso.
+    applied = services.update_schema()
     preferences = services.load_preferences()
     fmt.configure(preferences.decimal_separator)
     fmt.hide_amounts(preferences.hide_amounts)
-    BogleApp(theme=preferences.theme).run()
+    notices = [migrated_notice(applied)] if applied else []
+    BogleApp(theme=preferences.theme, notices=notices).run()

@@ -14,6 +14,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from psycopg import errors as pg_errors
 from psycopg.rows import DictRow
 
 from bogle import format as fmt
@@ -567,3 +568,30 @@ class TestChartExport:
         # Nome estavel: pedir duas vezes sobrescreve em vez de sujar o diretorio.
         assert services.chart_path("compare-12m") == services.chart_path("compare-12m")
         assert services.chart_path("compare-12m") != services.chart_path("history-12m")
+
+
+class TestUpdateSchema:
+    """Runs before the first screen; only a database that is down is left to the Home."""
+
+    def test_nothing_pending_on_a_migrated_database(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert services.update_schema() == []
+
+    def test_reports_what_it_applied(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(services, "migrate_if_pending", lambda: ["006_allow_zero_target_weight"])
+        assert services.update_schema() == ["006_allow_zero_target_weight"]
+
+    def test_a_database_that_is_down_is_left_to_the_home_screen(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def boom() -> list[str]:
+            raise psycopg.OperationalError("connection refused")
+
+        monkeypatch.setattr(services, "migrate_if_pending", boom)
+        assert services.update_schema() == []
+
+    def test_a_migration_that_fails_is_not_swallowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Abrir a interface sobre um schema pela metade so adiaria o erro.
+        def boom() -> list[str]:
+            raise pg_errors.SyntaxError("syntax error at or near")
+
+        monkeypatch.setattr(services, "migrate_if_pending", boom)
+        with pytest.raises(pg_errors.SyntaxError):
+            services.update_schema()

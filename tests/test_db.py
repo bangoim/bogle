@@ -9,12 +9,16 @@ their own connections and read back through a second one.
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 import pytest
+from psycopg import errors as pg_errors
 from psycopg.rows import DictRow
+from yoyo import read_migrations
 
-from bogle.db import get_connection
+from bogle import db
+from bogle.db import get_connection, migrate_if_pending, pending_migrations
 from bogle.domain.assets import AssetType
 from bogle.domain.errors import WeightSumExceededError
 from bogle.repositories.assets import AssetRepository
@@ -105,3 +109,45 @@ class TestWritesSurviveTheClose:
             assert asset.target_weight == Decimal("0.3")
         finally:
             reader.close()
+
+
+class TestPendingMigrations:
+    """The start-up check: one query, and the apply only when it finds something."""
+
+    def test_a_migrated_database_has_nothing_pending(self) -> None:
+        # bogle_test recebeu tudo no conftest.
+        assert pending_migrations(TEST_DATABASE_URL) == []
+        assert migrate_if_pending(TEST_DATABASE_URL) == []
+
+    def test_a_new_file_is_pending_until_applied(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        # Um diretorio so com a migracao nova: o yoyo nao se importa com as
+        # antigas que estao na tabela e nao no diretorio.
+        (tmp_path / "999_probe.sql").write_text("SELECT 1;\n")
+        monkeypatch.setattr(db, "_migrations_path", lambda: tmp_path)
+        try:
+            assert pending_migrations(TEST_DATABASE_URL) == ["999_probe"]
+            assert migrate_if_pending(TEST_DATABASE_URL) == ["999_probe"]
+            assert pending_migrations(TEST_DATABASE_URL) == []
+            assert migrate_if_pending(TEST_DATABASE_URL) == []
+        finally:
+            conn.execute("DELETE FROM migrations.yoyo_migration WHERE migration_id = '999_probe'")
+            conn.execute("DELETE FROM migrations.yoyo_log WHERE migration_id = '999_probe'")
+
+    def test_a_database_without_the_schema_has_everything_pending(self, conn: psycopg.Connection[DictRow]) -> None:
+        # O primeiro `bogle` em um banco recem-criado: nem a tabela do yoyo existe.
+        fresh = "bogle_test_fresh"
+        try:
+            conn.execute(f"DROP DATABASE IF EXISTS {fresh} WITH (FORCE)")
+            conn.execute(f"CREATE DATABASE {fresh}")
+        except pg_errors.InsufficientPrivilege:
+            pytest.skip("precisa de CREATEDB para simular um banco recem-criado")
+        url = TEST_DATABASE_URL.rsplit("/", 1)[0] + "/" + fresh
+        everything = [migration.id for migration in read_migrations(str(db._migrations_path()))]
+        try:
+            assert pending_migrations(url) == everything
+            assert migrate_if_pending(url) == everything
+            assert pending_migrations(url) == []
+        finally:
+            conn.execute(f"DROP DATABASE {fresh} WITH (FORCE)")

@@ -11,6 +11,7 @@ the way the last one was left.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, override, runtime_checkable
 
@@ -50,7 +51,7 @@ class BogleApp(App[None]):
         Binding("question_mark", "help", "Ajuda", tooltip="Atalhos desta tela", show=False),
     ]
 
-    def __init__(self, *, theme: str = DEFAULT_THEME) -> None:
+    def __init__(self, *, theme: str = DEFAULT_THEME, notices: Sequence[str] = ()) -> None:
         super().__init__()
         # Classes CSS por tamanho de terminal: um terminal baixo esconde o logo
         # (para o menu nao sumir) e um estreito empilha o resumo em uma coluna.
@@ -63,12 +64,17 @@ class BogleApp(App[None]):
         self._preferred_theme = theme
         self._saved_theme = theme
         """The theme currently in ``user_settings``; guards a pointless write."""
+        self._startup_notices = tuple(notices)
+        """What the launcher wants said as soon as there is a screen to say it on
+        (the migrations it applied on the way in)."""
 
     @override
     def get_default_screen(self) -> Screen[None]:
         return HomeScreen()
 
     def on_mount(self) -> None:
+        for notice in self._startup_notices:
+            self.notify(notice, timeout=8, markup=False)
         if self._preferred_theme in self.available_themes:
             self.theme = self._preferred_theme
             return

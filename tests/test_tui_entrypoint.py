@@ -19,6 +19,7 @@ from typer.testing import CliRunner
 from bogle import cli as cli_mod
 from bogle import format as fmt
 from bogle.cli import app
+from bogle.tui import run_tui, services
 from tests.test_cli import PROJECT_ROOT, run_cli
 
 BO_BIN = PROJECT_ROOT / ".venv" / "bin" / "bo"
@@ -146,3 +147,56 @@ class TestPreferences:
         monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido desde 2026-07-01."))
         result = CliRunner().invoke(app, ["status"])
         assert "aviso:" not in result.output
+
+
+class TestRunTui:
+    """``run_tui``: schema first, preferences second, and the app hears what changed."""
+
+    @pytest.fixture
+    def launched(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        """Swap the Textual app for a recorder of how it was built and whether it ran."""
+        record: dict[str, Any] = {}
+
+        class FakeApp:
+            def __init__(self, **kwargs: Any) -> None:
+                record.update(kwargs)
+
+            def run(self) -> None:
+                record["ran"] = True
+
+        monkeypatch.setattr("bogle.tui.app.BogleApp", FakeApp)
+        monkeypatch.setattr(services, "load_preferences", services.Preferences)
+        return record
+
+    def test_an_applied_migration_is_announced_on_open(
+        self, launched: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(services, "update_schema", lambda: ["006_allow_zero_target_weight"])
+        run_tui()
+        assert launched["ran"] is True
+        assert launched["notices"] == ["banco de dados atualizado: 006_allow_zero_target_weight."]
+
+    def test_nothing_pending_means_nothing_to_say(
+        self, launched: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(services, "update_schema", list)
+        run_tui()
+        assert launched["notices"] == []
+
+    def test_the_schema_is_updated_before_the_preferences_are_read(
+        self, launched: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        order: list[str] = []
+
+        def update_schema() -> list[str]:
+            order.append("schema")
+            return []
+
+        def load_preferences() -> services.Preferences:
+            order.append("preferences")
+            return services.Preferences()
+
+        monkeypatch.setattr(services, "update_schema", update_schema)
+        monkeypatch.setattr(services, "load_preferences", load_preferences)
+        run_tui()
+        assert order == ["schema", "preferences"]

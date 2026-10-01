@@ -20,11 +20,13 @@ from decimal import Decimal
 from pathlib import Path
 from tempfile import gettempdir
 
+import psycopg
+
 from bogle import charts
 from bogle import format as fmt
 from bogle.analytics.business_days import previous_business_day
 from bogle.data import default_dispatcher
-from bogle.db import get_connection
+from bogle.db import get_connection, migrate_if_pending
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
@@ -76,6 +78,23 @@ class Preferences:
     decimal_separator: str = fmt.CANONICAL_DECIMAL
     hide_amounts: bool = False
     theme: str = DEFAULT_THEME
+
+
+def update_schema() -> list[str]:
+    """Apply pending migrations before the first screen queries anything.
+
+    Synchronous like :func:`load_preferences`, and for the same reason: the
+    workers that follow read the schema this leaves behind. A database that is
+    down is not this function's problem — the app opens anyway and the Home screen
+    reports it, as it always did — so that case answers "nothing applied". Any
+    other database error (a migration that did not apply) propagates to the CLI
+    shim: opening the interface over a half-migrated schema would only move the
+    error to a worse moment.
+    """
+    try:
+        return migrate_if_pending()
+    except psycopg.OperationalError:
+        return []
 
 
 def load_preferences() -> Preferences:

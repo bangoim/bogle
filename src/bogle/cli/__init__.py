@@ -19,7 +19,7 @@ from bogle.cli import returns as returns_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
 from bogle.cli import transactions as transactions_cli
-from bogle.db import get_connection
+from bogle.db import get_connection, migrate_if_pending, migrated_notice
 from bogle.domain.errors import BogleError
 from bogle.rebalancing import overdue_notice
 from bogle.settings import DECIMAL_SEPARATOR, LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
@@ -84,6 +84,20 @@ def _read_preferences() -> tuple[str, str | None]:
     return separator, overdue_notice(last, period, today=date.today())
 
 
+def _update_schema() -> None:
+    """Apply pending migrations before the command touches the database.
+
+    A version that ships a migration cannot depend on the user remembering to
+    apply it: before this, the sale that empties a position hit the ``CHECK`` that
+    006 relaxes, and the error surfaced on the sale — the wrong moment, in the
+    wrong words. The check is one query; the line on stderr only appears when
+    something was applied.
+    """
+    applied = migrate_if_pending()
+    if applied:
+        typer.echo(f"aviso: {migrated_notice(applied)}", err=True)
+
+
 def _is_interactive() -> bool:
     """True when both ends are a real terminal, which a full-screen TUI needs.
 
@@ -109,6 +123,7 @@ def _main(ctx: typer.Context) -> None:
 
         run_tui()
         return
+    _update_schema()
     separator, notice = _read_preferences()
     fmt.configure(separator)
     # `status` ja reporta o ciclo por inteiro; avisar de novo seria ruido.
@@ -116,7 +131,15 @@ def _main(ctx: typer.Context) -> None:
         typer.echo(f"aviso: {notice}", err=True)
 
 
-def _run() -> None:  # pragma: no cover - tiny shim for the console_script
+def _run() -> None:
+    """Console-script shim: one line on stderr for the failures the app expects.
+
+    A ``BogleError`` is the user's mistake, a connection failure is the database's
+    absence, and any other ``psycopg.Error`` — a constraint the schema still
+    enforces, a migration that did not apply — is a database state to explain, not
+    a bug to dump as a traceback. Anything else *is* a bug and keeps its traceback.
+    Same mapping as the TUI's :func:`bogle.tui.errors.message_for`.
+    """
     load_dotenv()  # picks up BRAPI_TOKEN (and future secrets) from a local .env
     try:
         app()
@@ -129,4 +152,7 @@ def _run() -> None:  # pragma: no cover - tiny shim for the console_script
             "Verifique BOGLE_DATABASE_URL e se o PostgreSQL esta rodando.",
             err=True,
         )
+        sys.exit(1)
+    except psycopg.Error as exc:
+        typer.echo(f"erro no banco de dados: {exc}", err=True)
         sys.exit(1)
