@@ -35,9 +35,11 @@ class SnapshotSpy:
     def __init__(self, *, snapshot: Any = None) -> None:
         self.snapshot = snapshot if snapshot is not None else make_snapshot()
         self.calls: list[bool] = []
+        self.refreshes: list[bool] = []
 
-    def __call__(self, *, with_prices: bool, **_: Any) -> Any:
+    def __call__(self, *, with_prices: bool, refresh: bool = False, **_: Any) -> Any:
         self.calls.append(with_prices)
+        self.refreshes.append(refresh)
         return self.snapshot
 
 
@@ -309,6 +311,27 @@ class TestActions:
             await pilot.press("r")
             await settle(pilot)
             assert spy.calls == [True, True]
+
+    @pytest.mark.asyncio
+    async def test_r_asks_the_provider_again_instead_of_the_cache(self, spy: SnapshotSpy) -> None:
+        # Abrir a tela aproveita a cotacao dos ultimos 5 minutos; 'r' nao, senao a
+        # tecla repete o mesmo preco e parece nao ter feito nada.
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_position(pilot)
+            assert spy.refreshes == [False]
+            await pilot.press("r")
+            await settle(pilot)
+            assert spy.refreshes == [False, True]
+
+    @pytest.mark.asyncio
+    async def test_toggling_the_mode_reuses_the_cache(self, spy: SnapshotSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_position(pilot)
+            await pilot.press("p")
+            await settle(pilot)
+            assert spy.refreshes == [False, False]
 
 
 class TestFailures:

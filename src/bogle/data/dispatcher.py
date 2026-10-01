@@ -153,6 +153,7 @@ class PriceDispatcher:
         bcb: SeriesSource,
         quote_cache: DiskCache | None = None,
         quote_ttl: float = _QUOTE_TTL,
+        ignore_cached_quotes: bool = False,
         clock: Callable[[], date] | None = None,
     ) -> None:
         self._brapi = brapi
@@ -161,6 +162,10 @@ class PriceDispatcher:
         self._bcb = bcb
         self._cache = quote_cache if quote_cache is not None else DiskCache("quotes")
         self._quote_ttl = quote_ttl
+        # Nao lê o cache, mas escreve nele: e o "Atualizar" de uma tela de preco
+        # ao vivo, cujo unico proposito e ver a cotacao de agora. As telas
+        # seguintes voltam a aproveitar os 5 minutos.
+        self._ignore_cached_quotes = ignore_cached_quotes
         self._today = clock if clock is not None else date.today
 
     # --- prices ---------------------------------------------------------
@@ -181,7 +186,7 @@ class PriceDispatcher:
 
     def _variable_income_info(self, ticker: str) -> PriceInfo:
         key = f"quote:{ticker}"
-        cached = self._cache.get(key)
+        cached = None if self._ignore_cached_quotes else self._cache.get(key)
         if cached is not None:
             return _price_info_from_cache(cached)
         try:

@@ -79,13 +79,13 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
     # --- carga ----------------------------------------------------------
 
     @override
-    def fetch(self) -> None:
+    def fetch(self, *, refresh: bool = False) -> None:
         # Sem valor nao ha o que calcular: a tela abre explicando em vez de
         # chamar o servico com nada.
         if self.amount is None:
             self.show_note(_HINT)
             return
-        super().fetch()
+        super().fetch(refresh=refresh)
 
     @override
     def load(self) -> AporteSuggestion:

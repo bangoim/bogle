@@ -265,6 +265,23 @@ class TestLoadSnapshot:
         assert snapshot.month_profit is None
         assert snapshot.summary.total_invested == Decimal("300")
 
+    def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(
+        self, seeded: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built: list[dict[str, Any]] = []
+        monkeypatch.setattr(services, "default_dispatcher", lambda **kwargs: built.append(kwargs))
+        monkeypatch.setattr(services, "compute_snapshot", lambda conn, dispatcher, **_: None)
+        services.load_snapshot(with_prices=True, refresh=True, today=date(2026, 3, 20))
+        assert built == [{"ignore_cached_quotes": True}]
+        services.load_snapshot(with_prices=True, today=date(2026, 3, 20))
+        assert built[-1] == {"ignore_cached_quotes": False}
+
+    def test_without_prices_no_dispatcher_is_built_at_all(self, seeded: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        built: list[dict[str, Any]] = []
+        monkeypatch.setattr(services, "default_dispatcher", lambda **kwargs: built.append(kwargs))
+        services.load_snapshot(with_prices=False, refresh=True, today=date(2026, 3, 20))
+        assert built == []
+
 
 class TestAssets:
     def test_lists_what_was_registered(self, seeded: None) -> None:

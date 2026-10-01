@@ -85,6 +85,7 @@ def make_dispatcher(
     yfinance: FakeQuoteClient | None = None,
     tesouro: FakeTesouro | None = None,
     bcb: FakeBcb | None = None,
+    ignore_cached_quotes: bool = False,
 ) -> PriceDispatcher:
     return PriceDispatcher(
         brapi=brapi or FakeQuoteClient(),
@@ -92,6 +93,7 @@ def make_dispatcher(
         tesouro=tesouro or FakeTesouro(None),
         bcb=bcb or FakeBcb(),
         quote_cache=DiskCache("quotes", base_dir=tmp_path),
+        ignore_cached_quotes=ignore_cached_quotes,
         clock=lambda: TODAY,
     )
 
@@ -123,6 +125,22 @@ class TestVariableIncome:
         d = make_dispatcher(tmp_path, brapi=brapi)
         d.get_price(stock())
         d.get_price(stock())
+        assert brapi.quote_calls == ["PETR4"]
+
+    def test_ignore_cached_quotes_asks_the_provider_again(self, tmp_path: Path) -> None:
+        # O "Atualizar" de uma tela de preco ao vivo: com o cache de 5 min lido, a
+        # tecla devolveria o mesmo numero e pareceria quebrada.
+        brapi = FakeQuoteClient({"PETR4": Decimal("41.15")})
+        make_dispatcher(tmp_path, brapi=brapi).get_price(stock())
+        fresh = make_dispatcher(tmp_path, brapi=brapi, ignore_cached_quotes=True)
+        assert fresh.get_price(stock()) == Decimal("41.15")
+        assert brapi.quote_calls == ["PETR4", "PETR4"]
+
+    def test_a_bypassed_read_still_writes_the_cache(self, tmp_path: Path) -> None:
+        # Quem vem depois aproveita a cotacao nova, em vez de bater na API de novo.
+        brapi = FakeQuoteClient({"PETR4": Decimal("41.15")})
+        make_dispatcher(tmp_path, brapi=brapi, ignore_cached_quotes=True).get_price(stock())
+        make_dispatcher(tmp_path, brapi=brapi).get_price(stock())
         assert brapi.quote_calls == ["PETR4"]
 
     def test_falls_back_to_yfinance_on_brapi_failure(self, tmp_path: Path) -> None:

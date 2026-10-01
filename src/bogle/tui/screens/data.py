@@ -36,6 +36,12 @@ class DataScreen[R](Screen[None]):
     NOTE: ClassVar[str] = "#note"
     """Selector of the ``Static`` carrying the message under the content."""
 
+    LIVE_PRICES: ClassVar[bool] = False
+    """``True`` on the screens that show a quote, which makes ``r`` skip the
+    5-minute quote cache. Whoever presses "Atualizar" on a price is asking for the
+    price *now*, and a cached answer makes the key look broken; navigating between
+    screens keeps reusing the cache, so the provider is not hit for every move."""
+
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Voltar"),
         Binding("r", "reload", "Atualizar"),
@@ -47,6 +53,7 @@ class DataScreen[R](Screen[None]):
         """Last loaded report; ``None`` until the worker finishes (or after a failure)."""
         self.note = ""
         """Plain text of the message under the content (read by the tests)."""
+        self._refresh_quotes = False
 
     # --- a implementar por cada tela --------------------------------------
 
@@ -72,12 +79,23 @@ class DataScreen[R](Screen[None]):
         self.fetch()
 
     def action_reload(self) -> None:
-        self.fetch()
+        self.fetch(refresh=True)
 
-    def fetch(self) -> None:
-        """Start (or restart) the load."""
+    def fetch(self, *, refresh: bool = False) -> None:
+        """Start (or restart) the load. ``refresh`` asks for fresh quotes."""
+        self._refresh_quotes = refresh and self.LIVE_PRICES
         self.show_loading(True)
         self._fetch()
+
+    @property
+    def refresh_quotes(self) -> bool:
+        """Whether the load in flight should bypass the quote cache.
+
+        Read by :meth:`load` in the worker thread. A load started meanwhile has
+        already replaced this one (the worker is ``exclusive``), so the stale read
+        a race could produce belongs to a result that is thrown away.
+        """
+        return self._refresh_quotes
 
     def render_amounts(self) -> None:
         """Redraw from what is loaded, after the privacy toggle (see ``BogleApp``)."""

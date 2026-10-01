@@ -13,11 +13,14 @@ from bogle.data.dispatcher import PriceDispatcher
 __all__ = ["PriceDispatcher", "default_dispatcher"]
 
 
-def default_dispatcher() -> PriceDispatcher:
+def default_dispatcher(*, ignore_cached_quotes: bool = False) -> PriceDispatcher:
     """A dispatcher wired to the real clients (reads env/caches lazily).
 
     Imports the clients lazily so importing :mod:`bogle.data` — or running a CLI
     command that never prices anything — does not pull in yfinance/pandas.
+
+    ``ignore_cached_quotes=True`` is what a screen's "Atualizar" builds: the quote
+    is fetched again instead of read from the 5-minute cache.
     """
     from bogle.data.bcb import BcbClient
     from bogle.data.brapi import BrapiClient
@@ -29,4 +32,5 @@ def default_dispatcher() -> PriceDispatcher:
         yfinance=YFinanceClient(),
         tesouro=TesouroClient(),
         bcb=BcbClient(),
+        ignore_cached_quotes=ignore_cached_quotes,
     )

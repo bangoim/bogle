@@ -4,7 +4,8 @@ Same columns and same numbers as ``bogle position`` — both call
 :func:`~bogle.reports.snapshot.compute_snapshot` — with the table made
 navigable. Prices come from the network, so the load runs in a worker thread and
 the table shows its loading state meanwhile; ``p`` switches to the base-data-only
-view (the equivalent of ``--no-prices``) and ``r`` refetches.
+view (the equivalent of ``--no-prices``) and ``r`` refetches, skipping the
+five-minute quote cache so the number really does change.
 """
 
 from __future__ import annotations
@@ -85,7 +86,10 @@ class PositionScreen(Screen[None]):
             self._show(self.snapshot)
 
     def action_reload(self) -> None:
-        self._load()
+        # 'r' aqui fura o cache de cotacoes: quem aperta "Atualizar" numa tela de
+        # preco ao vivo quer o preco de agora, e repetir o de cinco minutos atras
+        # faz a tecla parecer quebrada.
+        self._load(refresh=True)
 
     def action_toggle_prices(self) -> None:
         self.with_prices = not self.with_prices
@@ -93,17 +97,17 @@ class PositionScreen(Screen[None]):
 
     # --- carga ----------------------------------------------------------
 
-    def _load(self) -> None:
+    def _load(self, *, refresh: bool = False) -> None:
         # O modo fica no subtitulo (o cabecalho e mais visivel que um rodape).
         self.sub_title = "posicao - precos ao vivo" if self.with_prices else "posicao - sem precos"
         self.query_one(DataTable).loading = True
-        self._fetch(self.with_prices)
+        self._fetch(self.with_prices, refresh)
 
     @work(thread=True, exclusive=True, group="position")
-    def _fetch(self, with_prices: bool) -> None:
+    def _fetch(self, with_prices: bool, refresh: bool = False) -> None:
         worker = get_current_worker()
         try:
-            snapshot = services.load_snapshot(with_prices=with_prices)
+            snapshot = services.load_snapshot(with_prices=with_prices, refresh=refresh)
         except HANDLED as exc:
             if not worker.is_cancelled:
                 self.app.call_from_thread(self._show_failure, message_for(exc))

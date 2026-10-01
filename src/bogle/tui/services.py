@@ -152,11 +152,16 @@ def load_overview(*, today: date | None = None) -> PortfolioOverview:
         conn.close()
 
 
-def load_snapshot(*, with_prices: bool, today: date | None = None) -> PortfolioSnapshot:
-    """The current position. ``with_prices=False`` is the ``--no-prices`` view."""
+def load_snapshot(*, with_prices: bool, refresh: bool = False, today: date | None = None) -> PortfolioSnapshot:
+    """The current position. ``with_prices=False`` is the ``--no-prices`` view.
+
+    ``refresh=True`` is the screen's "Atualizar": it asks the provider again
+    instead of reusing a quote cached in the last five minutes.
+    """
+    dispatcher = default_dispatcher(ignore_cached_quotes=refresh) if with_prices else None
     conn = get_connection()
     try:
-        return compute_snapshot(conn, default_dispatcher() if with_prices else None, today=_today(today))
+        return compute_snapshot(conn, dispatcher, today=_today(today))
     finally:
         conn.close()
 
