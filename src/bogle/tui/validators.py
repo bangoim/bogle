@@ -113,6 +113,11 @@ class HeldShares(Validator):
     typed. It is checked again on the way to the database
     (:func:`~bogle.sales.resolve_sale_shares`, which the command shares) — this
     one exists so the correction happens next to the field.
+
+    The ceiling here is today's position; the one on the way to the database is
+    the position on the sale's date. Today's always bounds it from above (a sale
+    in the past can only have less room, never more), so this one never refuses
+    what the ledger would take.
     """
 
     def __init__(self, ticker: str, available: Decimal, *, label: str = "Quantidade") -> None:

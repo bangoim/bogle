@@ -66,6 +66,15 @@ class TransactionRepository:
             rows = cur.fetchall()
         return [_row_to_transaction(r) for r in rows]
 
+    def get(self, transaction_id: int) -> Transaction:
+        """One transaction by ID; ``TransactionNotFoundError`` when there is none."""
+        with self._conn.cursor() as cur:
+            cur.execute(f"SELECT {_SELECT_COLUMNS} FROM transactions WHERE id = %s", (transaction_id,))
+            row = cur.fetchone()
+        if row is None:
+            raise TransactionNotFoundError(transaction_id)
+        return _row_to_transaction(row)
+
     # ------------------------------------------------------------------
     # Trades
     # ------------------------------------------------------------------
