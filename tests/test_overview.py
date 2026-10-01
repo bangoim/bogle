@@ -14,7 +14,7 @@ from psycopg.rows import DictRow
 
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.transactions import Transaction, TransactionType
-from bogle.reports.overview import compute_overview, invested_at
+from bogle.reports.overview import compute_overview, invested_at, pending_after
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from tests.test_valuation import FakeYfinance, bar, make_dispatcher
@@ -105,6 +105,30 @@ class TestComputeOverview:
         assert overview.invested == Decimal("200")  # so PETR4, nao os 5000 do titulo
         assert overview.patrimony == Decimal("250")
 
+    def test_a_late_series_is_out_of_the_returns_but_inside_the_patrimonio(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Serie que comeca depois da posicao (listagem nova): o TWR nao pode
+        # caminhar de janeiro, mas o fechamento da referencia existe. Excluir do
+        # patrimonio esconderia dinheiro que o provedor precifica — e nenhuma
+        # tentativa do usuario mudaria isso, ja que o provedor nao tem mais.
+        AssetRepository(conn).add("VWRA11", Decimal("0.3"))
+        TransactionRepository(conn).add_buy(
+            "VWRA11", shares=Decimal("10"), unit_price=Decimal("100"), date=datetime(2025, 6, 2, 12, tzinfo=UTC)
+        )
+        history = dict(HISTORY) | {"VWRA11.SA": [bar("2026-07-01", "110"), bar("2026-07-17", "115")]}
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), as_of=AS_OF)
+
+        assert overview.excluded == []
+        assert overview.excluded_from_returns == ["VWRA11"]
+        assert overview.patrimony == Decimal("250") + Decimal("1150")
+        assert overview.invested == Decimal("200") + Decimal("1000")
+        assert overview.twr_total == Decimal("0.25")  # so PETR4: 20 -> 25
+        assert not overview.is_partial  # patrimonio esta inteiro
+        assert overview.returns_are_partial  # as rentabilidades nao
+        assert "2026-07-01" in overview.returns_reasons["VWRA11"]
+        assert overview.all_reasons == overview.returns_reasons
+
     def test_a_buy_dated_after_the_reference_is_not_in_the_invested_base(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
     ) -> None:
@@ -186,6 +210,55 @@ class TestComputeOverview:
         assert overview.variation is None
         assert overview.twr_total is None
         assert not overview.is_empty
+
+
+class TestStalePrices:
+    """O provedor nao publicou a barra do dia de referencia para algum ticker."""
+
+    def test_a_ticker_without_the_reference_close_is_named_with_the_date_used(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # A ultima barra do fake e de 17/jul e a referencia e 20/jul: o preco
+        # entra no patrimonio (e o melhor disponivel), mas nao e do dia que o
+        # painel anuncia. Sem dizer isso, a Home e a tela de Posicao — que tem a
+        # cotacao do dia que falta — mostram patrimonios diferentes sem motivo
+        # visivel, que foi exatamente a duvida que trouxe isto.
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
+        overview = compute_overview(conn, dispatcher, as_of=AS_OF)
+
+        assert overview.stale_prices == {"PETR4": date(2026, 7, 17)}
+        assert overview.has_stale_prices
+        assert overview.patrimony == Decimal("250")  # dentro do numero, so nao do dia
+        assert overview.excluded == []  # atrasado nao e excluido
+
+    def test_a_series_that_reaches_the_reference_reports_nothing(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        history = {"PETR4.SA": [*HISTORY["PETR4.SA"], bar("2026-07-20", "26")]}
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), as_of=AS_OF)
+        assert overview.stale_prices == {}
+        assert not overview.has_stale_prices
+        assert overview.patrimony == Decimal("260")
+
+    def test_only_the_lagging_tickers_are_named(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Um ticker com a barra do dia e outro sem e a situacao normal: cada
+        # provedor publica no seu tempo. So o atrasado entra na nota.
+        AssetRepository(conn).add("VWRA11", Decimal("0.3"))
+        TransactionRepository(conn).add_buy(
+            "VWRA11", shares=Decimal("10"), unit_price=Decimal("100"), date=datetime(2025, 1, 6, 12, tzinfo=UTC)
+        )
+        history = dict(HISTORY) | {"VWRA11.SA": [bar("2025-01-06", "100"), bar("2026-07-20", "115")]}
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(history)), as_of=AS_OF)
+        assert overview.stale_prices == {"PETR4": date(2026, 7, 17)}
+
+    def test_a_ticker_nothing_can_price_is_excluded_not_stale(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        overview = compute_overview(conn, make_dispatcher(tmp_path), as_of=AS_OF)
+        assert overview.excluded == ["PETR4"]
+        assert overview.stale_prices == {}
 
 
 class TestVariationPercent:
@@ -271,3 +344,60 @@ class TestInvestedAt:
             txn(TransactionType.SELL, "2026-02-05", ticker="MXRF11", shares="100", price="10"),
         ]
         assert invested_at(txns, date(2026, 3, 1)) == Decimal("200")  # so PETR4
+
+
+class TestPendingAfterTheReference:
+    """Lancamentos com data posterior ao fechamento de referencia."""
+
+    def test_a_buy_registered_today_is_counted_with_its_cost(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # O caso que trouxe isto: registrar uma compra, voltar para a Home e ver
+        # o mesmo numero. Esta certo (a referencia e um fechamento passado) e nao
+        # se explica sozinho.
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("19"), unit_price=Decimal("110.69"), date=datetime(2026, 7, 21, 12, tzinfo=UTC)
+        )
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY))), as_of=AS_OF)
+        assert overview.pending_entries == 1
+        assert overview.pending_invested == Decimal("2103.11")
+        assert overview.has_pending
+        assert overview.patrimony == Decimal("250")  # segue o fechamento, sem a compra
+        assert overview.invested == Decimal("200")
+
+    def test_nothing_after_the_reference_has_nothing_pending(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        overview = compute_overview(conn, make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY))), as_of=AS_OF)
+        assert overview.pending_entries == 0
+        assert overview.pending_invested == Decimal("0")
+        assert not overview.has_pending
+
+    def test_a_whole_portfolio_bought_after_the_reference_is_all_pending(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Referencia anterior a primeira transacao: o resumo sai vazio, e o motivo
+        # e justamente que tudo esta pendente.
+        overview = compute_overview(conn, make_dispatcher(tmp_path), as_of=date(2024, 12, 31))
+        assert overview.patrimony is None
+        assert overview.pending_entries == 1
+        assert overview.pending_invested == Decimal("200")
+
+    def test_income_is_counted_but_moves_no_capital(self) -> None:
+        # Um provento nao entra no patrimonio nem no capital investido: aparece na
+        # contagem, e um valor ao lado dele seria uma conta que ninguem fez.
+        txns = [txn(TransactionType.DIVIDEND, "2026-08-01", amount="50")]
+        assert pending_after(txns, date(2026, 7, 20)) == (1, Decimal("0"))
+
+    def test_a_sale_returns_its_gross_proceeds(self) -> None:
+        # Mesma convencao de invested_at, para o valor ser comparavel com a base
+        # em que ele vai entrar.
+        txns = [
+            txn(TransactionType.BUY, "2026-08-01", shares="10", price="20", fees="5"),
+            txn(TransactionType.SELL, "2026-08-02", shares="4", price="25"),
+        ]
+        assert pending_after(txns, date(2026, 7, 20)) == (2, Decimal("105"))  # 205 - 100
+
+    def test_the_reference_day_itself_is_not_pending(self) -> None:
+        txns = [txn(TransactionType.BUY, "2026-07-20", shares="1", price="10")]
+        assert pending_after(txns, date(2026, 7, 20)) == (0, Decimal("0"))

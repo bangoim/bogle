@@ -200,6 +200,9 @@ class HomeScreen(MenuScreen):
         self.query_one("#summary").border_title = f"Carteira - fechamento de {overview.as_of.isoformat()}"
         # Com ticker excluido o numero e um subconjunto da carteira: o rotulo diz
         # isso, em vez de deixar so a nota explicando um "total" que nao e total.
+        # So estes dois ganham "parcial": em "Rentabilidade total" o total e o
+        # periodo (desde a primeira transacao), e "total parcial" leria como se
+        # fossem a mesma coisa. Quem esta fora das rentabilidades a nota nomeia.
         patrimony = self.query_one("#patrimony", Metric)
         variation = self.query_one("#variation", Metric)
         patrimony.set_caption(_PATRIMONY_PARTIAL if overview.is_partial else _PATRIMONY)
@@ -232,29 +235,112 @@ def _variation(overview: PortfolioOverview) -> str:
     return absolute if percent is None else f"{absolute}  ({fmt.signed(percent, percent=True)})"
 
 
-def _excluded_note(overview: PortfolioOverview) -> str:
-    """Which tickers are out of the four numbers, and why each one is.
+def _listed(tickers: list[str], reasons: dict[str, str]) -> str:
+    return ", ".join(f"{escape(ticker)} ({escape(reasons.get(ticker, ''))})".replace(" ()", "") for ticker in tickers)
 
-    The reason matters: "no price history" reads like a fact about the asset, but
-    two of the three causes are the provider having a bad minute — and those the
-    user can do something about, which is why the retry line only shows up then.
+
+def _excluded_note(overview: PortfolioOverview) -> str:
+    """Which tickers are out of which numbers, and why each one is.
+
+    Two lists, because they are two different situations: a ticker nothing can
+    price is out of all four numbers, while one whose series merely starts after
+    the position still counts in the patrimony (its close at D-1 exists) and only
+    misses the returns. Saying "out of everything" for the second would hide real
+    money and make the Home disagree with the Position screen.
+
+    The reason matters too: "no price history" reads like a fact about the asset,
+    but two of the four causes are the provider having a bad minute — and those
+    the user can do something about, which is why the retry line only shows up
+    then. A series that is simply short is not one of them: the provider was
+    already asked for everything it has.
     """
-    listed = ", ".join(
-        f"{escape(ticker)} ({escape(overview.excluded_reasons.get(ticker, ''))})".replace(" ()", "")
-        for ticker in overview.excluded
-    )
-    note = f"[yellow]Nota:[/yellow] fora do patrimonio, da variacao e das rentabilidades: {listed}."
-    if RETRIABLE & set(overview.excluded_reasons.values()):
+    clauses = []
+    if overview.excluded:
+        clauses.append(
+            "fora do patrimonio, da variacao e das rentabilidades: "
+            f"{_listed(overview.excluded, overview.excluded_reasons)}"
+        )
+    if overview.excluded_from_returns:
+        clauses.append(
+            "fora das rentabilidades, mas dentro do patrimonio: "
+            f"{_listed(overview.excluded_from_returns, overview.returns_reasons)}"
+        )
+    # A primeira clausula continua a frase do "Nota:"; as seguintes viram frase
+    # propria, e so por isso ganham maiuscula.
+    body = ". ".join([clauses[0], *(clause[0].upper() + clause[1:] for clause in clauses[1:])])
+    note = f"[yellow]Nota:[/yellow] {body}."
+    if RETRIABLE & set(overview.all_reasons.values()):
         note += " [dim]'r' pede de novo; se insistir, feche e abra o bogle.[/dim]"
     return note
 
 
+def _stale_note(overview: PortfolioOverview) -> str:
+    """Which tickers are priced before the reference close, and at which one.
+
+    The provider publishes each session's bar on its own schedule: asked for a
+    date it has not reached, the valuator answers with the last close it has and
+    says nothing. So the panel announces one fechamento while part of the
+    portfolio sits on an earlier one — and the user finds the Position screen,
+    whose live quote already has the missing day, showing a different patrimony.
+
+    Names the ticker and the date, like the exclusion note does, instead of a
+    single "os dados estao atrasados": with both, the difference against the
+    Position screen is checkable line by line, which is what turns a number that
+    looks wrong into a number that is merely older.
+    """
+    listed = ", ".join(
+        f"{escape(ticker)} ({when.isoformat()})" for ticker, when in sorted(overview.stale_prices.items())
+    )
+    return (
+        f"[yellow]Nota:[/yellow] sem fechamento de {overview.as_of.isoformat()} para {listed}; "
+        "avaliados no ultimo fechamento disponivel."
+    )
+
+
+def _pending_note(overview: PortfolioOverview) -> str:
+    """What was registered after the reference close, and is therefore not here.
+
+    First line of the note on purpose: it is the answer to the question the user
+    has at that exact moment — they registered a purchase, came back, and the
+    summary is identical. Without it the only reading left is that 'r' is broken.
+    """
+    count = overview.pending_entries
+    entries = "1 lancamento" if count == 1 else f"{count} lancamentos"
+    verb = "ainda nao entra" if count == 1 else "ainda nao entram"
+    # Sem valor quando o movimento e zero: um provento nao muda patrimonio nem
+    # capital investido, e um "+0.00" ao lado dele soaria como um erro de conta.
+    moved = f" ({fmt.signed_money(overview.pending_invested)})" if overview.pending_invested != 0 else ""
+    return (
+        f"[yellow]Nota:[/yellow] {entries} depois de {overview.as_of.isoformat()}{moved} {verb}: "
+        f"o resumo e do fechamento desse dia."
+    )
+
+
 def _note_for(overview: PortfolioOverview) -> str:
+    """The note under the metrics: what is pending, how fresh it is, what it is.
+
+    In that order because it is the order of the questions: what I just
+    registered is missing, then why the number does not match the live quote,
+    then how to read what is on screen.
+    """
+    lines = [_pending_note(overview)] if overview.has_pending else []
+    if overview.has_stale_prices:
+        lines.append(_stale_note(overview))
+    lines.append(_summary_note(overview))
+    return "\n".join(line for line in lines if line)
+
+
+def _summary_note(overview: PortfolioOverview) -> str:
     if overview.is_empty:
         return "[yellow]Nenhuma transacao registrada ainda.[/yellow]"
-    if overview.excluded:
+    if overview.excluded or overview.excluded_from_returns:
         return _excluded_note(overview)
     if overview.patrimony is None:
+        # Carteira inteira comprada depois da referencia: a linha de cima ja
+        # explicou o vazio, e repetir "no fechamento de X" seria dizer a mesma
+        # coisa duas vezes, com "Nota:" duas vezes.
+        if overview.has_pending:
+            return ""
         return f"[yellow]Nota:[/yellow] nenhuma posicao avaliavel no fechamento de {overview.as_of.isoformat()}."
     if overview.twr_12m_is_shorter and overview.twr_12m_start is not None:
         # Carteira com menos de 12 meses: a janela ancora na primeira transacao,

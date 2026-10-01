@@ -134,6 +134,31 @@ class PriceInfo:
     as_of: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class HistoricalPricing:
+    """A valuator plus what the provider's series turned out to cover.
+
+    ``series_start`` is filled only when the whole series was asked for and it
+    *still* begins after the date the caller needs (``covering``): the shortfall
+    is the series itself, not a bad answer, and asking a third time cannot change
+    it. ``None`` means "not known to be definitive" — either the series covers,
+    or the second request failed and the next attempt may well succeed.
+    """
+
+    valuator: Valuator | None
+    series_start: date | None = None
+    series_end: date | None = None
+    """Freshest bar in the series behind ``valuator``, from the same fetch — free.
+
+    The other end of the same question, and the one the caller reports: a
+    provider publishes a session's bar on its own schedule, and asked for a date
+    it does not have yet the valuator carries the last close forward without a
+    word. Knowing how fresh the series really is turns that into something the
+    screen can say. ``None`` for a computed source (private fixed income), which
+    has a value for every date and can never lag.
+    """
+
+
 def _price_info_to_cache(info: PriceInfo) -> dict[str, Any]:
     return {"price": str(info.price), "source": info.source, "as_of": info.as_of.isoformat() if info.as_of else None}
 
@@ -343,7 +368,7 @@ class PriceDispatcher:
         history). Used to report how fresh a chart/table really is, since the
         window end may be forward-filled from an older close.
         """
-        history = self._variable_income_history(ticker, start, end)
+        history, _ = self._variable_income_history(ticker, start, end)
         return _as_date(history[-1].date) if history else None
 
     def latest_index_date(self, index: str, start: date, end: date) -> date | None:
@@ -372,6 +397,18 @@ class PriceDispatcher:
     def build_twr_valuator(
         self, asset: Asset, *, unit_principal: Decimal, start: date, end: date, covering: date | None = None
     ) -> Valuator | None:
+        """Just the valuator of :meth:`build_historical_pricing` — see it for the rules.
+
+        Kept for the callers that only need to price or not price (the per-ticker
+        TWR of the position table), and do not report *why* when they cannot.
+        """
+        return self.build_historical_pricing(
+            asset, unit_principal=unit_principal, start=start, end=end, covering=covering
+        ).valuator
+
+    def build_historical_pricing(
+        self, asset: Asset, *, unit_principal: Decimal, start: date, end: date, covering: date | None = None
+    ) -> HistoricalPricing:
         """A valuator ``(holdings, on_date) -> Decimal`` for the TWR engine, or None.
 
         Variable income marks to the ticker's historical close (long history via
@@ -383,21 +420,24 @@ class PriceDispatcher:
         ``covering`` is the date the series has to reach back to for the caller to
         be able to use it (usually when the position starts). Given it, a first
         answer that falls short is asked again a different way — see
-        :meth:`_variable_income_history`.
+        :meth:`_variable_income_history` — and the result says whether the
+        remaining shortfall is the provider's whole series or just a bad answer.
         """
         from bogle.analytics.twr import price_history_valuator
 
         if asset.asset_type in VARIABLE_INCOME_TYPES:
-            history = self._variable_income_history(asset.ticker, start, end, covering=covering)
-            return price_history_valuator({asset.ticker: history}) if history else None
+            history, series_start = self._variable_income_history(asset.ticker, start, end, covering=covering)
+            valuator = price_history_valuator({asset.ticker: history}) if history else None
+            series_end = _as_date(history[-1].date) if history else None
+            return HistoricalPricing(valuator, series_start, series_end)
         if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
-            return self._fixed_income_valuator(asset, unit_principal, end)
-        return None
+            return HistoricalPricing(self._fixed_income_valuator(asset, unit_principal, end))
+        return HistoricalPricing(None)
 
     def _variable_income_history(
         self, ticker: str, start: date, end: date, *, covering: date | None = None
-    ) -> list[HistPoint]:
-        """Historical closes for ``[start, end]``, best-effort.
+    ) -> tuple[list[HistPoint], date | None]:
+        """Historical closes for ``[start, end]``, best-effort, and the series' start.
 
         Long history via yfinance (.SA for B3); brapi's free plan only covers ~3
         months. Yahoo sometimes answers a dated range with just its last weeks —
@@ -405,16 +445,26 @@ class PriceDispatcher:
         from every historical number because of it. When ``covering`` says how far
         back the series has to reach, a short answer is asked again as the whole
         series (a different request shape, which sometimes comes back complete)
-        and trimmed here. It is a second chance, not a guarantee: when the provider
-        insists, the short series is returned and the caller reports the ticker as
-        excluded.
+        and trimmed here.
+
+        It is a second chance, not a guarantee. When the whole series comes back
+        and *also* starts too late, its first date is returned alongside the
+        points: at that point the provider has said everything it has, and only
+        the caller's message changes — there is nothing left to retry. A second
+        request that fails outright returns ``None`` instead, which keeps the
+        ticker in the "worth trying again" bucket.
         """
         symbol = _yahoo_symbol(ticker)
         history = self._history_or_empty(symbol, start=start, end=end)
         if covering is None or _reaches(history, covering):
-            return history
+            return history, None
         widest = [point for point in self._history_or_empty(symbol) if start <= _as_date(point.date) <= end]
-        return widest if _reaches(widest, covering) else history
+        if _reaches(widest, covering):
+            return widest, None
+        # `widest` empty means the second request brought nothing (an error, or a
+        # provider that only answers dated ranges): the series' real start stays
+        # unknown, so it is not reported as definitive.
+        return (widest or history), (_as_date(widest[0].date) if widest else None)
 
     def _history_or_empty(self, symbol: str, *, start: date | None = None, end: date | None = None) -> list[HistPoint]:
         try:

@@ -16,7 +16,7 @@ from psycopg import errors as pg_errors
 from bogle import format as fmt
 from bogle.domain.errors import MarketDataError
 from bogle.format import MASK
-from bogle.reports.valuation import NO_SOURCE, SHORT_SERIES
+from bogle.reports.valuation import NO_SOURCE, SHORT_SERIES, series_starts_at
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 from bogle.tui.screens.config import ConfigScreen
@@ -142,6 +142,60 @@ class TestSummary:
             assert "feche e abra o bogle" in note
 
     @pytest.mark.asyncio
+    async def test_a_late_series_is_reported_as_out_of_the_returns_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A posicao entra no patrimonio (o fechamento de D-1 existe) e sai so das
+        # rentabilidades: a nota tem de separar as duas coisas, senao o usuario
+        # procura no patrimonio um dinheiro que esta la.
+        reason = series_starts_at(date(2026, 7, 20), date(2026, 1, 9))
+        use_overview(
+            monkeypatch,
+            make_overview(excluded_from_returns=["VWRA11"], returns_reasons={"VWRA11": reason}),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "fora das rentabilidades, mas dentro do patrimonio: VWRA11" in note
+            assert "fora do patrimonio" not in note
+            assert reason in note
+
+    @pytest.mark.asyncio
+    async def test_a_series_the_provider_cannot_extend_does_not_suggest_retrying(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # O provedor ja foi perguntado pela serie inteira: 'r' devolveria o mesmo,
+        # e foi essa promessa que fez o usuario insistir por dez minutos.
+        use_overview(
+            monkeypatch,
+            make_overview(
+                excluded_from_returns=["VWRA11"],
+                returns_reasons={"VWRA11": series_starts_at(date(2026, 7, 20), date(2026, 1, 9))},
+            ),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert "feche e abra" not in app.screen.note  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_both_kinds_of_exclusion_are_reported_apart(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(
+            monkeypatch,
+            make_overview(
+                excluded=["TESOURO-IPCA-2035"],
+                excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
+                excluded_from_returns=["VWRA11"],
+                returns_reasons={"VWRA11": series_starts_at(date(2026, 7, 20), date(2026, 1, 9))},
+            ),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "fora do patrimonio, da variacao e das rentabilidades: TESOURO-IPCA-2035" in note
+            assert "Fora das rentabilidades, mas dentro do patrimonio: VWRA11" in note
+
+    @pytest.mark.asyncio
     async def test_a_permanent_exclusion_does_not_suggest_retrying(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Nada que o usuario faca traz historico de Tesouro (#17): sugerir tentar
         # de novo seria mandar bater numa porta fechada.
@@ -212,6 +266,77 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             assert metric(app.screen, "variation") == "+150.00"  # type: ignore[arg-type]
+
+
+class TestStalePrices:
+    """Ticker precificado num fechamento anterior ao da referencia."""
+
+    @pytest.mark.asyncio
+    async def test_names_each_lagging_ticker_and_the_close_it_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A duvida que trouxe isto: a Home mostrava um patrimonio e a tela de
+        # Posicao outro, sem nada na tela explicando a diferenca. O provedor nao
+        # tinha publicado a barra do dia para dois tickers, o valuator carregou o
+        # fechamento anterior e o painel seguiu anunciando o dia da referencia.
+        use_overview(
+            monkeypatch,
+            make_overview(stale_prices={"AUVP11": date(2026, 8, 10), "B5P211": date(2026, 8, 10)}),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "sem fechamento de 2026-08-11 para AUVP11 (2026-08-10), B5P211 (2026-08-10)" in note
+            assert "avaliados no ultimo fechamento disponivel" in note
+
+    @pytest.mark.asyncio
+    async def test_a_portfolio_priced_on_the_reference_day_says_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "sem fechamento" not in note
+            assert "TWR" in note  # a legenda de sempre segue no lugar
+
+    @pytest.mark.asyncio
+    async def test_it_is_not_an_exclusion(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # O preco e real, so nao e do dia: o ticker esta dentro do patrimonio, e
+        # chamar isso de "fora" mandaria o usuario procurar um dinheiro que esta la.
+        use_overview(monkeypatch, make_overview(stale_prices={"AUVP11": date(2026, 8, 10)}))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            assert "fora do patrimonio" not in home.note
+            assert home.query_one("#patrimony", Metric).caption == "Patrimonio total"
+
+    @pytest.mark.asyncio
+    async def test_it_coexists_with_the_pending_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # As duas coisas podem valer ao mesmo tempo, e respondem perguntas
+        # diferentes: o que registrei nao entrou, e o que entrou esta atrasado.
+        use_overview(
+            monkeypatch,
+            make_overview(
+                pending_entries=1,
+                pending_invested=Decimal("2103.11"),
+                stale_prices={"AUVP11": date(2026, 8, 10)},
+            ),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert note.count("Nota:") == 2
+            assert note.index("ainda nao entra") < note.index("sem fechamento")
+
+    @pytest.mark.asyncio
+    async def test_ticker_with_brackets_is_not_read_as_markup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview(stale_prices={"TES[/]2035": date(2026, 8, 10)}))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert "TES[/]2035 (2026-08-10)" in app.screen.note  # type: ignore[attr-defined]
 
 
 class TestHiddenAmounts:
@@ -582,3 +707,106 @@ class TestRebalanceReminder:
         async with app.run_test() as pilot:
             await settle(pilot)
             assert toasts.calls == []
+
+
+class TestPendingEntries:
+    """O que foi registrado depois da referencia, e por isso nao esta nos numeros."""
+
+    @pytest.mark.asyncio
+    async def test_a_purchase_registered_today_is_explained(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Sem esta linha, registrar uma compra e voltar para um resumo identico
+        # deixa uma unica leitura possivel: a de que o 'r' nao funciona.
+        use_overview(monkeypatch, make_overview(pending_entries=2, pending_invested=Decimal("3707.23")))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "2 lancamentos depois de 2026-08-11 (+3,707.23) ainda nao entram" in note
+            assert "o resumo e do fechamento desse dia" in note
+
+    @pytest.mark.asyncio
+    async def test_one_entry_is_said_in_the_singular(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview(pending_entries=1, pending_invested=Decimal("2103.11")))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert "1 lancamento depois de 2026-08-11 (+2,103.11) ainda nao entra" in app.screen.note  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_an_entry_that_moves_no_capital_shows_no_amount(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Provento: nao muda patrimonio nem capital investido, e um "+0.00" ao
+        # lado dele soaria como uma conta errada.
+        use_overview(monkeypatch, make_overview(pending_entries=1, pending_invested=Decimal("0")))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "1 lancamento depois de 2026-08-11 ainda nao entra" in note
+            assert "0.00" not in note
+
+    @pytest.mark.asyncio
+    async def test_nothing_pending_says_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert "ainda nao entra" not in app.screen.note  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_it_coexists_with_an_exclusion(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Duas informacoes independentes: o que esta pendente e o que ficou de
+        # fora. Esconder uma pela outra deixaria metade da conta sem explicacao.
+        use_overview(
+            monkeypatch,
+            make_overview(
+                excluded=["TESOURO-IPCA-2035"],
+                excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
+                pending_entries=1,
+                pending_invested=Decimal("2103.11"),
+            ),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "1 lancamento depois de" in note
+            assert "TESOURO-IPCA-2035" in note
+
+    @pytest.mark.asyncio
+    async def test_a_portfolio_bought_entirely_after_the_reference_says_it_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Nada avaliavel *porque* tudo e posterior a referencia: a linha de
+        # pendentes ja explica, e a generica repetiria "no fechamento de X".
+        use_overview(
+            monkeypatch,
+            make_overview(patrimony=None, pending_entries=1, pending_invested=Decimal("2103.11")),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert note.count("Nota:") == 1
+            assert "nenhuma posicao avaliavel" not in note
+
+    @pytest.mark.asyncio
+    async def test_an_empty_close_with_nothing_pending_keeps_its_own_note(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        use_overview(monkeypatch, make_overview(patrimony=None))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert "nenhuma posicao avaliavel no fechamento de 2026-08-11" in app.screen.note  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_the_amount_is_masked_with_the_others(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview(pending_entries=1, pending_invested=Decimal("2103.11")))
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            await pilot.press("h")
+            await pilot.pause()
+            note = app.screen.note  # type: ignore[attr-defined]
+            assert "2,103.11" not in note
+            assert MASK in note
