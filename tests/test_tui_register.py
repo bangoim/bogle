@@ -300,7 +300,7 @@ class TestBuyFlow:
             await pilot.press("enter")  # confirma
             await settle(pilot)
             assert isinstance(app.screen, NextStepModal)
-            await pilot.click("#home")
+            await pilot.click("#dialog-home")
             await settle(pilot)
             assert isinstance(app.screen, HomeScreen)
             assert len(app.screen_stack) == 1

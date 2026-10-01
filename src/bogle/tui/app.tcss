@@ -6,7 +6,9 @@
 
 /* ---------------------------------------------------------------- Home */
 
-#home {
+/* Com escopo na tela: um id nao e unico em CSS, e um `#home` solto tambem pegava
+   o botao "Voltar a Home" dos dialogos. */
+HomeScreen #home {
     padding: 1 2;
     align-horizontal: center;
 }
@@ -160,6 +162,30 @@ HomeScreen.-wide #menu {
    fixa. */
 .field-row Checkbox {
     width: 5;
+}
+
+/* O Select dos formularios e `compact` para a linha caber em 1 (.field-row), e o
+   compacto do textual apaga a borda com `!important` — o que apaga tambem a borda
+   de foco dele. Sem borda e sem cursor proprio, nada dizia que o Tab tinha
+   chegado no campo: o tipo focado era identico ao tipo em repouso. */
+.field-row Select:focus > SelectCurrent {
+    background: $primary 30%;
+    text-style: bold;
+}
+
+/* Tema ANSI nao mistura cor (o `30%` viraria um bloco solido); ali o foco e o
+   video invertido, que e como o proprio terminal marca selecao. */
+.field-row Select:focus > SelectCurrent:ansi {
+    background: transparent;
+    text-style: bold reverse;
+}
+
+/* A lista herda `width: 1fr` do textual e ficava com a largura do formulario
+   inteiro para opcoes de tres letras (ETF, FII, BDR). Em `auto` ela mede o texto;
+   o minimo cobre a barra de rolagem quando o tipo tem muitas opcoes. */
+.field-row Select > SelectOverlay {
+    width: auto;
+    min-width: 12;
 }
 
 .field-input.-invalid {

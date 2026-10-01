@@ -19,6 +19,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Input
 
 from bogle.tui.errors import HANDLED, message_for
+from bogle.tui.navigation import ARROW_FOCUS
 from bogle.tui.screens.modals import ConfirmModal
 from bogle.tui.widgets.form import Field
 
@@ -37,6 +38,9 @@ class WriteScreen[T](Screen[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back", "Voltar"),
         Binding("ctrl+s", "submit", "Gravar"),
+        # Um formulario e uma fila de controles: as setas andam nela como no
+        # menu e nos dialogos, sem tirar do campo de texto o que e dele.
+        *ARROW_FOCUS,
     ]
 
     def __init__(self) -> None:

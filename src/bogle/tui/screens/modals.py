@@ -6,6 +6,10 @@ same day — going back to Home after each entry would be busywork.
 
 Titles and bodies are rendered as plain text (``markup=False``): they quote user
 data — a ticker, a provider's error message — which must never be read as markup.
+
+Every dialog here is a row of buttons, so the arrows walk it: ``tab`` alone is
+the kind of thing that has to be guessed, and a two-button question is exactly
+where the hand reaches for a direction.
 """
 
 from __future__ import annotations
@@ -18,11 +22,26 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label
 
-NEW_ENTRY = "new"
-GO_HOME = "home"
+from bogle.tui.navigation import ARROW_FOCUS
+
+# Prefixados com "dialog-": um id nao tem escopo em CSS, e um botao chamado
+# "home" herdava as regras de `#home` (o scroll da tela inicial) — que e padding
+# e centralizacao, e deixavam este botao mais alto e mais largo que o vizinho.
+NEW_ENTRY = "dialog-new"
+GO_HOME = "dialog-home"
 
 
-class ConfirmModal(ModalScreen[bool]):
+class ButtonRowModal[T](ModalScreen[T]):
+    """A dialog whose choices are a row of buttons, walkable with the arrows.
+
+    The same :data:`~bogle.tui.navigation.ARROW_FOCUS` the forms use — a dialog
+    and a form are the same problem from the keyboard's point of view.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = list(ARROW_FOCUS)
+
+
+class ConfirmModal(ButtonRowModal[bool]):
     """Yes/no over a summary of what is about to happen."""
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancelar")]
@@ -52,7 +71,7 @@ class ConfirmModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class EditModal(ModalScreen[str | None]):
+class EditModal(ButtonRowModal[str | None]):
     """One value, editable in place: ``Enter`` confirms, ``Esc`` cancels.
 
     Hands back the raw string, never a parsed value: whoever opened it is the one
@@ -97,7 +116,7 @@ class EditModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class NextStepModal(ModalScreen[str]):
+class NextStepModal(ButtonRowModal[str]):
     """After recording: another entry of the same kind, or back to Home."""
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "home", "Voltar a Home")]
