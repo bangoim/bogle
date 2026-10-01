@@ -16,6 +16,13 @@ get_price(...)`` stays uniform across every type.
 Quotes are cached on disk with a short TTL (5 min) so repeated runs within a
 window do not re-hit the quote APIs; BCB/Tesouro already cache internally.
 
+Daily closes (variable income and IBOV) are kept in the database when a
+:class:`PriceStore` is given (issue #82): Yahoo loads the long history, brapi
+is the source of truth for everything since the last load (at least the last 30
+sessions, up to the 3 months its free plan serves), once a day, and every other
+read of the day comes from the table. Without a store the history is fetched on
+every call, as before.
+
 Clients are accepted as structural protocols so tests inject fakes without a
 network.
 """
@@ -24,13 +31,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol
 
+from bogle.analytics.business_days import previous_business_day
 from bogle.data.cache import DiskCache
 from bogle.data.fixed_income import accumulated_ipca_factor, accumulated_rate_factor, present_value
-from bogle.data.models import HistPoint, Quote, SeriesPoint, TesouroQuote
+from bogle.data.models import HistPoint, Quote, SeriesPoint, StoredClose, StoredSpan, TesouroQuote
 
 if TYPE_CHECKING:
     # Imported lazily at call time to avoid an import cycle (analytics.twr imports
@@ -58,6 +66,17 @@ _INDEX_SYMBOLS = {"IBOV": "^BVSP", "IBOVESPA": "^BVSP", "IFIX": "IFIX", "SMLL": 
 # names fall back to the ticker rule (``.SA``) and fail with a friendly error.
 _YAHOO_INDEX_SYMBOLS = {"IBOV": "^BVSP", "IBOVESPA": "^BVSP"}
 
+_REVALIDATED_SESSIONS = 30
+"""The fewest recent sessions the day's load re-downloads from brapi."""
+_BRAPI_WINDOW_RANGE = "3mo"
+"""brapi's range for the day's load: the widest its free plan serves."""
+_BRAPI_REACH = timedelta(days=90)
+"""How far back that range safely reaches. An absence longer than this leaves a
+hole brapi cannot fill, and Yahoo fills the older part of it."""
+_REACH_PAD = timedelta(days=7)
+"""How far before the date a series has to reach the fetch starts: the bar "on
+or before" a weekend or a holiday is a few days earlier."""
+
 
 class QuoteSource(Protocol):
     def get_quote(self, symbol: str) -> Quote: ...
@@ -78,8 +97,24 @@ class TesouroSource(Protocol):
     def get_quote(self, title: str) -> TesouroQuote: ...
 
 
-class BrapiLike(QuoteSource, IndexSource, Protocol):
-    """brapi exposes both quote and index-quote lookups."""
+class BrapiLike(HistorySource, IndexSource, Protocol):
+    """brapi exposes quotes, index quotes and (a few months of) history."""
+
+
+class PriceStore(Protocol):
+    """Where daily closes are kept between runs (see :mod:`bogle.repositories.price_history`)."""
+
+    def span(self, symbol: str) -> StoredSpan | None: ...
+    def closes(self, symbol: str, start: date, end: date) -> list[StoredClose]: ...
+    def save(
+        self,
+        symbol: str,
+        closes: Sequence[StoredClose],
+        *,
+        loaded_on: date,
+        replace: bool = ...,
+        confirm: tuple[date, date] | None = ...,
+    ) -> None: ...
 
 
 class SeriesSource(Protocol):
@@ -108,6 +143,37 @@ def _latest_on_or_before(points: Sequence[SeriesPoint], on: date) -> Decimal | N
         if point.date <= on and (best is None or point.date > best.date):
             best = point
     return best.value if best is not None else None
+
+
+def _window_start(today: date) -> date:
+    """First of the last :data:`_REVALIDATED_SESSIONS` sessions before ``today``."""
+    day = previous_business_day(today)
+    for _ in range(_REVALIDATED_SESSIONS - 1):
+        day = previous_business_day(day)
+    return day
+
+
+def _stored(history: Sequence[HistPoint], source: str, *, start: date, before: date) -> list[StoredClose]:
+    """The bars of ``history`` worth keeping: in ``[start, before)``, as stored closes.
+
+    ``before`` is today: during the session both providers answer with a partial
+    bar for it, and a close that is not a close yet must never reach the table.
+    """
+    return [
+        StoredClose(date=_as_date(point.date), close=point.close, source=source)
+        for point in history
+        if start <= _as_date(point.date) < before
+    ]
+
+
+def _as_hist_point(row: StoredClose) -> HistPoint:
+    """A stored close in the shape the valuators read.
+
+    Only the close is kept, so open/high/low repeat it and the volume is zero:
+    nothing downstream of the dispatcher reads them.
+    """
+    moment = datetime(row.date.year, row.date.month, row.date.day, tzinfo=UTC)
+    return HistPoint(date=moment, open=row.close, high=row.close, low=row.close, close=row.close, volume=0)
 
 
 def _close_on_or_before(history: Sequence[HistPoint], on: date) -> Decimal | None:
@@ -179,6 +245,7 @@ class PriceDispatcher:
         quote_cache: DiskCache | None = None,
         quote_ttl: float = _QUOTE_TTL,
         ignore_cached_quotes: bool = False,
+        price_store: PriceStore | None = None,
         clock: Callable[[], date] | None = None,
     ) -> None:
         self._brapi = brapi
@@ -191,6 +258,7 @@ class PriceDispatcher:
         # ao vivo, cujo unico proposito e ver a cotacao de agora. As telas
         # seguintes voltam a aproveitar os 5 minutos.
         self._ignore_cached_quotes = ignore_cached_quotes
+        self._store = price_store
         self._today = clock if clock is not None else date.today
 
     # --- prices ---------------------------------------------------------
@@ -350,13 +418,21 @@ class PriceDispatcher:
     def _index_history(self, key: str, start: date, end: date) -> list[HistPoint]:
         # Pad the fetch a week back so "close on or before start" has a bar even
         # when the window opens on a weekend/holiday.
+        padded = start - timedelta(days=7)
         symbol = _YAHOO_INDEX_SYMBOLS.get(key, _yahoo_symbol(key))
-        try:
-            history = self._yfinance.get_history(
-                symbol, start=(start - timedelta(days=7)).isoformat(), end=(end + timedelta(days=1)).isoformat()
+        if self._store is not None and key in _YAHOO_INDEX_SYMBOLS:
+            # So o IBOV vai para o banco: os outros indices nao tem historico
+            # gratuito, e o que cai no `.SA` aqui e engano de quem chamou.
+            history, _ = self._stored_history(
+                symbol, yahoo_symbol=symbol, brapi_symbol=_INDEX_SYMBOLS[key], start=padded, end=end, reach=start
             )
-        except MarketDataError:
-            history = []
+        else:
+            try:
+                history = self._yfinance.get_history(
+                    symbol, start=padded.isoformat(), end=(end + timedelta(days=1)).isoformat()
+                )
+            except MarketDataError:
+                history = []
         if not history:
             raise MarketDataError(f"Sem historico gratuito para '{key}' (simbolo {symbol}).", provider="yfinance")
         return history
@@ -368,7 +444,9 @@ class PriceDispatcher:
         history). Used to report how fresh a chart/table really is, since the
         window end may be forward-filled from an older close.
         """
-        history, _ = self._variable_income_history(ticker, start, end)
+        # So a ponta interessa aqui: com o banco, um ticker listado depois de
+        # `start` nao precisa ir ao provedor buscar um comeco que nao existe.
+        history, _ = self._variable_income_history(ticker, start, end, reach=end)
         return _as_date(history[-1].date) if history else None
 
     def latest_index_date(self, index: str, start: date, end: date) -> date | None:
@@ -407,7 +485,13 @@ class PriceDispatcher:
         ).valuator
 
     def build_historical_pricing(
-        self, asset: Asset, *, unit_principal: Decimal, start: date, end: date, covering: date | None = None
+        self,
+        asset: Asset,
+        *,
+        unit_principal: Decimal,
+        start: date,
+        end: date,
+        covering: date | None = None,
     ) -> HistoricalPricing:
         """A valuator ``(holdings, on_date) -> Decimal`` for the TWR engine, or None.
 
@@ -435,9 +519,31 @@ class PriceDispatcher:
         return HistoricalPricing(None)
 
     def _variable_income_history(
-        self, ticker: str, start: date, end: date, *, covering: date | None = None
+        self, ticker: str, start: date, end: date, *, covering: date | None = None, reach: date | None = None
     ) -> tuple[list[HistPoint], date | None]:
-        """Historical closes for ``[start, end]``, best-effort, and the series' start.
+        """Historical closes for ``[start, end]``, and the series' start when it is known short.
+
+        From the database when there is a store (see :meth:`_stored_history`;
+        ``reach`` is how far back it has to go, ``covering`` by default), straight
+        from the provider otherwise (:meth:`_fetch_history`).
+        """
+        symbol = _yahoo_symbol(ticker)
+        if self._store is not None:
+            return self._stored_history(
+                ticker,
+                yahoo_symbol=symbol,
+                brapi_symbol=ticker,
+                start=start,
+                end=end,
+                reach=reach or covering or start,
+                covering=covering,
+            )
+        return self._fetch_history(symbol, start, end, covering=covering)
+
+    def _fetch_history(
+        self, symbol: str, start: date, end: date, *, covering: date | None = None
+    ) -> tuple[list[HistPoint], date | None]:
+        """Historical closes for ``[start, end]`` from Yahoo, best-effort, and the series' start.
 
         Long history via yfinance (.SA for B3); brapi's free plan only covers ~3
         months. Yahoo sometimes answers a dated range with just its last weeks —
@@ -454,7 +560,6 @@ class PriceDispatcher:
         request that fails outright returns ``None`` instead, which keeps the
         ticker in the "worth trying again" bucket.
         """
-        symbol = _yahoo_symbol(ticker)
         history = self._history_or_empty(symbol, start=start, end=end)
         if covering is None or _reaches(history, covering):
             return history, None
@@ -465,6 +570,102 @@ class PriceDispatcher:
         # provider that only answers dated ranges): the series' real start stays
         # unknown, so it is not reported as definitive.
         return (widest or history), (_as_date(widest[0].date) if widest else None)
+
+    # --- persisted history (issue #82) -----------------------------------
+
+    def _stored_history(
+        self,
+        name: str,
+        *,
+        yahoo_symbol: str,
+        brapi_symbol: str,
+        start: date,
+        end: date,
+        reach: date,
+        covering: date | None = None,
+    ) -> tuple[list[HistPoint], date | None]:
+        """``[start, end]`` out of the database, topped up from the providers first.
+
+        Two reasons to go to a provider, and only these two:
+
+        - **The table does not reach ``reach``** (nothing stored yet, or a report
+          asking further back than anyone did). That is data never seen, so it is
+          fetched whenever it is missing, from Yahoo, which carries the long
+          history. A series the provider really does not have that far back is
+          asked again on every call that needs it, as it always was.
+        - **No load today yet**: the once-a-day load of :meth:`_daily_load`.
+
+        Everything else is a read. The series' start is reported (as the old
+        path did) only when the whole series was asked for in this call and the
+        table still falls short of ``covering`` after the day's load.
+        """
+        store = self._store
+        assert store is not None  # so chamado com banco
+        today = self._today()
+        span = store.span(name)
+        series_start: date | None = None
+        if span is None or span.first > reach:
+            lower = reach - _REACH_PAD
+            upper = span.first - timedelta(days=1) if span is not None else today - timedelta(days=1)
+            if lower <= upper:
+                fetched, series_start = self._fetch_history(yahoo_symbol, lower, upper, covering=covering)
+                store.save(name, _stored(fetched, "yfinance", start=lower, before=today), loaded_on=today)
+        if span is None or span.loaded_on < today:
+            self._daily_load(
+                name,
+                yahoo_symbol=yahoo_symbol,
+                brapi_symbol=brapi_symbol,
+                last=span.last if span is not None else None,
+                today=today,
+            )
+        history = [_as_hist_point(row) for row in store.closes(name, start, end)]
+        if covering is None or _reaches(history, covering) or not history:
+            return history, None
+        return history, (_as_date(history[0].date) if series_start is not None else None)
+
+    def _daily_load(self, name: str, *, yahoo_symbol: str, brapi_symbol: str, last: date | None, today: date) -> None:
+        """The first load of the day: brapi, from the last stored session to D-1.
+
+        brapi is the source of truth here. The load starts after the last session
+        in the table, but never later than the last 30 sessions, which are
+        re-downloaded every day: what brapi has goes in, a stored close it
+        disagrees with is corrected to its value, and every row of the range is
+        stamped as loaded today, the mark that spares the rest of the day's
+        screens. It is one request either way (the free plan's ``3mo``). An
+        absence of 90 days or more starts before what that range reaches; the
+        older part of the hole is long history, and comes from Yahoo.
+
+        With brapi down (or answering nothing for the range) Yahoo covers the
+        sessions missing from it, without correcting anything. With both down the
+        range is neither written nor stamped, so the next screen tries again; the
+        table still has everything loaded before. (The one exception is a long
+        absence whose older part Yahoo filled a moment earlier in this same load:
+        those rows carry today's date, and the day counts as loaded. Yahoo
+        answering and then failing within the same load is not worth a flag of
+        its own.)
+        """
+        store = self._store
+        assert store is not None
+        yesterday = today - timedelta(days=1)
+        window_start = _window_start(today)
+        load_from = window_start if last is None or last >= window_start else last + timedelta(days=1)
+        brapi_floor = today - _BRAPI_REACH
+        if load_from < brapi_floor:
+            old = self._history_or_empty(yahoo_symbol, start=load_from, end=brapi_floor - timedelta(days=1))
+            store.save(name, _stored(old, "yfinance", start=load_from, before=brapi_floor), loaded_on=today)
+            load_from = brapi_floor
+        try:
+            recent = self._brapi.get_history(brapi_symbol, range_=_BRAPI_WINDOW_RANGE)
+        except MarketDataError:
+            recent = []
+        window = _stored(recent, "brapi", start=load_from, before=today)
+        if window:
+            store.save(name, window, loaded_on=today, replace=True, confirm=(load_from, yesterday))
+            return
+        fallback = self._history_or_empty(yahoo_symbol, start=load_from, end=yesterday)
+        window = _stored(fallback, "yfinance", start=load_from, before=today)
+        if window:
+            store.save(name, window, loaded_on=today, confirm=(load_from, yesterday))
 
     def _history_or_empty(self, symbol: str, *, start: date | None = None, end: date | None = None) -> list[HistPoint]:
         try:

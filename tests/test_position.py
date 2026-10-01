@@ -48,6 +48,10 @@ class FakeBrapi:
             raise QuoteNotFoundError(index, provider="fake")
         return Quote(symbol=index, requested_symbol=index, price=value, currency="BRL", time=_DT)
 
+    def get_history(self, symbol: str, **_kwargs: Any) -> list[HistPoint]:
+        # Sem banco (`price_store`), o historico da brapi nunca e pedido.
+        raise QuoteNotFoundError(symbol, provider="fake")
+
 
 class FakeYF:
     def __init__(self, quotes: dict[str, Decimal] | None = None, history: dict[str, list[HistPoint]] | None = None):

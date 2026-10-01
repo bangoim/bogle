@@ -82,6 +82,9 @@ class _Unused:
     def get_index_quote(self, *_args: Any, **_kwargs: Any) -> Any:
         raise QuoteNotFoundError("unused", provider="fake")
 
+    def get_history(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise QuoteNotFoundError("unused", provider="fake")
+
 
 def make_dispatcher(tmp_path: Any, *, yfinance: Any = None, bcb: FakeBcb | None = None) -> PriceDispatcher:
     return PriceDispatcher(

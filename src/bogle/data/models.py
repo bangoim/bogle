@@ -54,6 +54,29 @@ class HistPoint:
 
 
 @dataclass(frozen=True, slots=True)
+class StoredClose:
+    """One session's close as the database keeps it (issue #82).
+
+    ``date`` is the session (a plain date, unlike :class:`HistPoint`); ``source``
+    is the provider that wrote the value (``"yfinance"`` or ``"brapi"``).
+    """
+
+    date: date
+    close: Decimal
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class StoredSpan:
+    """What the database holds for one symbol: first and last session, and the
+    day of the last load that wrote or confirmed any of its rows."""
+
+    first: date
+    last: date
+    loaded_on: date
+
+
+@dataclass(frozen=True, slots=True)
 class SeriesPoint:
     """One observation of a macro time series (CDI, IPCA, SELIC, ...).
 
