@@ -16,7 +16,7 @@ from bogle.domain.errors import ValidationError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.format import exact, rate
 from bogle.repositories.transactions import TransactionRepository
-from bogle.sales import resolve_sale_shares
+from bogle.sales import remove_transaction, resolve_sale_shares
 
 
 class IncomeType(StrEnum):
@@ -68,7 +68,9 @@ def buy(
 def sell(
     ticker: str = typer.Argument(..., help="Ticker do ativo."),
     shares: str | None = typer.Option(None, "--shares", "-s", help="Quantidade vendida. Omita com --all."),
-    sell_all: bool = typer.Option(False, "--all", help="Vende a posicao inteira, sem precisar saber a quantidade."),
+    sell_all: bool = typer.Option(
+        False, "--all", help="Vende a posicao inteira na data da venda, sem precisar saber a quantidade."
+    ),
     price: str = typer.Option(..., "--price", "-p", help="Preco unitario de venda."),
     fees: str = typer.Option("0", "--fees", help="Taxas/corretagem da operacao."),
     tax_withheld: str = typer.Option("0", "--tax-withheld", help="IR retido na fonte (dedo-duro de 0,005% em vendas)."),
@@ -95,7 +97,7 @@ def sell(
         # voltar atras — uma venda gravada e reportada como falha seria registrada
         # de novo.
         with conn.transaction():
-            quantity = resolve_sale_shares(conn, ticker, shares_dec)
+            quantity = resolve_sale_shares(conn, ticker, shares_dec, when=when)
             tx = TransactionRepository(conn).add_sale(
                 ticker, when, shares=quantity, unit_price=price_dec, fees=fees_dec, tax_withheld=tax_dec
             )
@@ -203,7 +205,7 @@ def remove(
 ) -> None:
     conn = get_connection()
     try:
-        TransactionRepository(conn).delete(transaction_id)
+        remove_transaction(conn, transaction_id)
     finally:
         conn.close()
     typer.echo(f"transacao {transaction_id} removida.")

@@ -92,7 +92,8 @@ class TestBuy:
 
 class TestSell:
     def test_success_with_tax_withheld(self, trepo: TransactionRepository, petr4: None) -> None:
-        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
+        # A compra antes da venda: a posicao que conta e a da data dela.
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30", "--date", "2026-01-05").returncode == 0
         result = run_cli(
             "sell",
             "PETR4",
@@ -163,7 +164,15 @@ class TestSellCeiling:
     def test_selling_a_ticker_never_bought_is_refused(self, petr4: None) -> None:
         result = run_cli("sell", "PETR4", "-s", "1", "-p", "35")
         assert result.returncode == 1
-        assert "Nao ha posicao aberta em 'PETR4'" in result.stderr
+        assert "nao ha posicao aberta em 'PETR4'" in result.stderr
+
+    def test_a_sale_dated_before_the_purchase_is_refused(self, trepo: TransactionRepository, petr4: None) -> None:
+        # A posicao de hoje cobre, a da data nao: o que conta e a da data.
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30", "--date", "2026-03-10").returncode == 0
+        result = run_cli("sell", "PETR4", "-s", "40", "-p", "35", "--date", "2026-03-02")
+        assert result.returncode == 1
+        assert "Em 2026-03-02 nao ha posicao aberta em 'PETR4'" in result.stderr
+        assert [t.transaction_type for t in trepo.list("PETR4")] == [TransactionType.BUY]
 
 
 class TestSellAll:
@@ -190,12 +199,20 @@ class TestSellAll:
         sales = [t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL]
         assert sorted(t.shares for t in sales) == [Decimal("40"), Decimal("60")]
 
+    def test_with_a_date_it_is_the_position_of_that_day(self, trepo: TransactionRepository, petr4: None) -> None:
+        assert run_cli("buy", "PETR4", "-s", "100", "-p", "30", "--date", "2026-01-05").returncode == 0
+        assert run_cli("buy", "PETR4", "-s", "50", "-p", "31", "--date", "2026-04-01").returncode == 0
+        result = run_cli("sell", "PETR4", "--all", "-p", "35", "--date", "2026-02-05")
+        assert result.returncode == 0, result.stderr
+        sale = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL)
+        assert sale.shares == Decimal("100")  # a posicao de fevereiro, nao as 150 de hoje
+
     def test_it_refuses_a_position_that_is_already_closed(self, petr4: None) -> None:
         assert run_cli("buy", "PETR4", "-s", "10", "-p", "30").returncode == 0
         assert run_cli("sell", "PETR4", "--all", "-p", "35").returncode == 0
         result = run_cli("sell", "PETR4", "--all", "-p", "35")
         assert result.returncode == 1
-        assert "Nao ha posicao aberta em 'PETR4'" in result.stderr
+        assert "nao ha posicao aberta em 'PETR4'" in result.stderr
 
     def test_shares_and_all_together_are_refused(self, trepo: TransactionRepository, petr4: None) -> None:
         assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
@@ -306,6 +323,16 @@ class TestRemove:
         assert result.returncode == 0
         assert f"transacao {tx_id} removida" in result.stdout
         assert trepo.list("PETR4") == []
+
+    def test_a_purchase_a_sale_depends_on_is_refused(self, trepo: TransactionRepository, petr4: None) -> None:
+        assert run_cli("buy", "PETR4", "-s", "10", "-p", "30", "--date", "2026-01-05").returncode == 0
+        assert run_cli("sell", "PETR4", "-s", "4", "-p", "35", "--date", "2026-02-05").returncode == 0
+        purchase = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.BUY)
+        result = run_cli("transaction", "remove", str(purchase.id))
+        assert result.returncode == 1
+        assert "deixaria a venda de 'PETR4' em 2026-02-05 sem cotas" in result.stderr
+        assert "Traceback" not in result.stderr
+        assert len(trepo.list("PETR4")) == 2
 
     def test_missing_is_friendly(self) -> None:
         result = run_cli("transaction", "remove", "999999")

@@ -73,7 +73,11 @@ the shortfall is a fact about the series, and :func:`series_starts_at` says so."
 
 INCONSISTENT_LEDGER = "historico de transacoes inconsistente (venda maior que a posicao na data)"
 """The cost-basis replay refused the ticker (issue #85): nothing to fetch, the
-ledger itself needs fixing. ``bogle profit`` names the sale."""
+ledger itself needs fixing. ``bogle profit`` names the sale.
+
+The app no longer writes such a ledger (see :mod:`bogle.sales`): this is for
+rows that came from somewhere else, kept so they cost the ticker and not the
+whole screen."""
 
 RETRIABLE = frozenset({NOTHING_RETURNED, SHORT_SERIES})
 """The reasons worth trying again — the provider's, not the portfolio's."""

@@ -49,7 +49,7 @@ from bogle.reports.snapshot import PortfolioSnapshot, compute_snapshot
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
 from bogle.repositories.transactions import TransactionRepository
-from bogle.sales import resolve_sale_shares
+from bogle.sales import remove_transaction, resolve_sale_shares
 from bogle.settings import (
     DECIMAL_SEPARATOR,
     DEFAULT_COMPARE_INDICES,
@@ -202,9 +202,10 @@ def load_transactions() -> list[Transaction]:
 
 
 def delete_transaction(transaction_id: int) -> None:
+    """Remove a ledger row, refused when a sale depends on it (see :mod:`bogle.sales`)."""
     conn = get_connection()
     try:
-        TransactionRepository(conn).delete(transaction_id)
+        remove_transaction(conn, transaction_id)
     finally:
         conn.close()
 
@@ -251,7 +252,7 @@ def record_sell(
     conn = get_connection()
     try:
         with conn.transaction():
-            quantity = resolve_sale_shares(conn, ticker, shares)
+            quantity = resolve_sale_shares(conn, ticker, shares, when=when)
             transaction = TransactionRepository(conn).add_sale(
                 ticker, when, shares=quantity, unit_price=unit_price, fees=fees, tax_withheld=tax_withheld
             )

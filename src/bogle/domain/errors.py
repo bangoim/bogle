@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from bogle import format as fmt
@@ -42,24 +43,73 @@ class AssetHasTransactionsError(BogleError):
 
 
 class InsufficientSharesError(BogleError):
-    """A sale asking for more shares than the position has.
+    """A sale asking for more shares than the position had at the close of its day.
 
     Raised above the repository, never by it: the ledger writes what it is told
     and the ``holdings`` view answers an oversold ticker by hiding the position
     (issue #9). See :mod:`bogle.sales` for why the refusal lives one layer up.
 
+    ``free`` and ``covers`` are for a sale dated in the past that fits its own
+    day but would take shares a later sale already sold (see
+    :func:`~bogle.domain.ledger.sellable_on`): the message names that later sale,
+    since the day's position alone would make the refusal look wrong.
+
     The quantities go through :mod:`bogle.format`, so they are masked with every
     other amount while the privacy mode is on — a message is not a way around it.
     """
 
-    def __init__(self, ticker: str, held: Decimal, requested: Decimal) -> None:
+    def __init__(
+        self,
+        ticker: str,
+        held: Decimal,
+        requested: Decimal,
+        *,
+        on: date,
+        free: Decimal | None = None,
+        covers: date | None = None,
+    ) -> None:
         self.ticker = ticker
         self.held = held
         self.requested = requested
+        self.on = on
+        self.free = held if free is None else free
+        self.covers = covers
+        day = on.isoformat()
+        if held <= 0:
+            message = f"Em {day} nao ha posicao aberta em '{ticker}' para vender."
+        elif covers is None:
+            message = (
+                f"Em {day} a posicao de '{ticker}' tem {fmt.exact(held)} cotas, e a venda pede {fmt.exact(requested)}."
+            )
+        elif self.free <= 0:
+            message = (
+                f"Em {day} a posicao de '{ticker}' tem {fmt.exact(held)} cotas, "
+                f"mas todas cobrem a venda de {covers.isoformat()}."
+            )
+        else:
+            message = (
+                f"Em {day} a posicao de '{ticker}' tem {fmt.exact(held)} cotas, mas so {fmt.exact(self.free)} "
+                f"estao livres: as outras cobrem a venda de {covers.isoformat()}. "
+                f"A venda pede {fmt.exact(requested)}."
+            )
+        super().__init__(message)
+
+
+class UncoveredSaleError(BogleError):
+    """Removing a purchase would leave a later sale selling shares that were not held.
+
+    The other half of :class:`InsufficientSharesError`: a sale is checked when
+    it is written, and it has to stay covered when the history under it changes.
+    """
+
+    def __init__(self, transaction_id: int, ticker: str, on: date, missing: Decimal) -> None:
+        self.transaction_id = transaction_id
+        self.ticker = ticker
+        self.on = on
+        self.missing = missing
         super().__init__(
-            f"Nao ha posicao aberta em '{ticker}' para vender."
-            if held <= 0
-            else f"Posicao de '{ticker}' tem {fmt.exact(held)} cotas, e a venda pede {fmt.exact(requested)}."
+            f"Remover a transacao {transaction_id} deixaria a venda de '{ticker}' em {on.isoformat()} "
+            f"sem cotas: faltariam {fmt.exact(missing)}. Remova a venda antes."
         )
 
 

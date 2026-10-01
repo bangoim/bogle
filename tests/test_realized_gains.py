@@ -76,6 +76,17 @@ class TestReplay:
         states, _ = replay_cost_basis(history)
         assert states["X"].average_cost == Decimal("30")
 
+    def test_a_day_is_read_at_its_close(self) -> None:
+        # Venda registrada antes da compra do mesmo dia: a mesma leitura do fim do
+        # dia com que o app aceita a venda, senao o replay recusaria o que foi
+        # aceito.
+        sale = sell("5", "12", "2026-01-05")
+        purchase = buy("10", "10", "2026-01-05")
+        assert sale.id < purchase.id
+        states, [realized] = replay_cost_basis([sale, purchase])
+        assert states["X"].remaining_shares == Decimal("5")
+        assert realized.cost_basis == Decimal("50")
+
     def test_oversell_is_loud(self) -> None:
         with pytest.raises(ValidationError, match="sem quantidade suficiente"):
             replay_cost_basis([buy("5", "10", "2026-01-05"), sell("10", "10", "2026-02-01")])

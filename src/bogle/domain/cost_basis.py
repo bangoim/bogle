@@ -69,7 +69,16 @@ class TickerCostBasis:
 
 
 def _sort_key(txn: Transaction) -> tuple:
-    return (txn.date, txn.id)
+    """Day by day, and inside a day the purchases before the sales.
+
+    The same reading of a day the ledger is held to (see
+    :mod:`bogle.domain.ledger`): a sale is covered by what was held at the close
+    of its day, so a purchase and a sale of the same date are netted whatever
+    order they were registered in. Ordering by registration instead would refuse
+    a day the app accepted.
+    """
+    day = txn.date.date() if isinstance(txn.date, datetime) else txn.date
+    return (day, txn.transaction_type is not TransactionType.BUY, txn.id)
 
 
 def replay_cost_basis(

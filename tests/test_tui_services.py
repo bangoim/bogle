@@ -24,6 +24,7 @@ from bogle.domain.errors import (
     AssetNotFoundError,
     InsufficientSharesError,
     TransactionNotFoundError,
+    UncoveredSaleError,
     UnknownSettingError,
     ValidationError,
     WeightSumExceededError,
@@ -164,6 +165,22 @@ class TestRecordTrades:
             )
         assert [t.transaction_type for t in services.load_transactions()] == [TransactionType.BUY]
 
+    def test_a_sale_dated_before_the_purchase_writes_nothing(self, seeded: None) -> None:
+        # A posicao que conta e a da data da venda, e nao a de hoje.
+        services.record_buy(
+            ticker="PETR4", when=WHEN, shares=Decimal("100"), unit_price=Decimal("30"), fees=Decimal("0")
+        )
+        with pytest.raises(InsufficientSharesError, match="nao ha posicao aberta"):
+            services.record_sell(
+                ticker="PETR4",
+                when=datetime(2025, 12, 1, 12, tzinfo=UTC),
+                shares=Decimal("10"),
+                unit_price=Decimal("35"),
+                fees=Decimal("0"),
+                tax_withheld=Decimal("0"),
+            )
+        assert [t.transaction_type for t in services.load_transactions()] == [TransactionType.BUY]
+
     def test_unknown_ticker_is_a_domain_error(self, conn: psycopg.Connection[DictRow]) -> None:
         with pytest.raises(AssetNotFoundError):
             services.record_buy(
@@ -245,6 +262,22 @@ class TestLedger:
         )
         services.delete_transaction(transaction.id)
         assert services.load_transactions() == []
+
+    def test_deleting_a_purchase_a_sale_depends_on_is_refused(self, seeded: None) -> None:
+        purchase = services.record_buy(
+            ticker="PETR4", when=WHEN, shares=Decimal("10"), unit_price=Decimal("30"), fees=Decimal("0")
+        )
+        services.record_sell(
+            ticker="PETR4",
+            when=WHEN,
+            shares=Decimal("4"),
+            unit_price=Decimal("35"),
+            fees=Decimal("0"),
+            tax_withheld=Decimal("0"),
+        )
+        with pytest.raises(UncoveredSaleError):
+            services.delete_transaction(purchase.id)
+        assert len(services.load_transactions()) == 2
 
     def test_deleting_a_missing_row_is_a_domain_error(self, conn: psycopg.Connection[DictRow]) -> None:
         with pytest.raises(TransactionNotFoundError):
