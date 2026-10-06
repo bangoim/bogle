@@ -38,8 +38,8 @@ class TestStatus:
     def test_without_evaluation_recorded(self) -> None:
         result = run_cli("status")
         assert result.returncode == 0
-        assert "Ciclo de avaliacao: 12 meses" in result.stdout
-        assert "Nenhuma avaliacao registrada" in result.stdout
+        assert "Ciclo de avaliação: 12 meses" in result.stdout
+        assert "Nenhuma avaliação registrada" in result.stdout
 
     def test_upcoming_evaluation(self) -> None:
         from datetime import date
@@ -48,14 +48,14 @@ class TestStatus:
         run_cli("config", "set", "rebalance_period_months", "6")
         result = run_cli("status")
         assert result.returncode == 0
-        assert "Ciclo de avaliacao: 6 meses" in result.stdout
-        assert "Proxima avaliacao em" in result.stdout
+        assert "Ciclo de avaliação: 6 meses" in result.stdout
+        assert "Próxima avaliação em" in result.stdout
 
     def test_overdue_evaluation(self) -> None:
         run_cli("config", "set", "last_rebalance_date", "2020-01-01")
         result = run_cli("status")
         assert result.returncode == 0
-        assert "Avaliacao vencida ha" in result.stdout
+        assert "Avaliação vencida há" in result.stdout
         assert "bogle suggest" in result.stdout
 
 
@@ -89,5 +89,5 @@ class TestCycleWarning:
     def test_database_down_stays_silent_and_friendly(self) -> None:
         result = run_cli("list", database_url="postgresql://localhost:1/bogle_test")
         assert result.returncode == 1
-        assert "nao foi possivel conectar" in result.stderr
+        assert "não foi possível conectar" in result.stderr
         assert "Traceback" not in result.stderr

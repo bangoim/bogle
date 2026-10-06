@@ -19,6 +19,7 @@ from bogle.format import (
     DASH,
     MASK,
     amounts_hidden,
+    attention,
     configure,
     exact,
     exact_or_none,
@@ -196,6 +197,19 @@ class TestShortfall:
 
     def test_missing_cash_is_red(self) -> None:
         assert shortfall(Decimal("-2.14")) == "[red]-2.14[/red]"
+
+
+class TestAttention:
+    def test_one_header_and_a_numbered_line_per_warning(self) -> None:
+        assert attention(["Sem cotação para MUND11", "Compra em NB1011 fixada pelo usuário"]) == (
+            "[yellow]Atenção:[/yellow]\n1. Sem cotação para MUND11\n2. Compra em NB1011 fixada pelo usuário"
+        )
+
+    def test_nothing_to_say_is_empty(self) -> None:
+        assert attention([]) == ""
+
+    def test_a_warning_is_never_read_as_markup(self) -> None:
+        assert attention(["[bold]X"]) == "[yellow]Atenção:[/yellow]\n1. \\[bold]X"
 
 
 class TestHiddenAmounts:

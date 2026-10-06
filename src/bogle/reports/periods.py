@@ -29,7 +29,7 @@ def add_months(day: date, months: int) -> date:
 def parse_period(value: str, *, allowed: tuple[str, ...] = ALL_PERIODS) -> str:
     period = value.strip().lower()
     if period not in allowed:
-        raise ValidationError(f"--period invalido: {value!r}. Valores aceitos: {', '.join(allowed)}.")
+        raise ValidationError(f"--period inválido: {value!r}. Valores aceitos: {', '.join(allowed)}.")
     return period
 
 

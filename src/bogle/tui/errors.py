@@ -19,10 +19,10 @@ from psycopg import errors as pg_errors
 from bogle.domain.errors import BogleError
 
 DATABASE_HINT = (
-    "nao foi possivel conectar ao banco de dados. Verifique BOGLE_DATABASE_URL e se o PostgreSQL esta rodando."
+    "não foi possível conectar ao banco de dados. Verifique BOGLE_DATABASE_URL e se o PostgreSQL está rodando."
 )
 MIGRATIONS_HINT = (
-    "o banco existe mas nao tem o schema do bogle. Aplique as migracoes "
+    "o banco existe mas não tem o schema do bogle. Aplique as migrações "
     "(python -c 'from bogle.db import run_migrations; run_migrations()')."
 )
 

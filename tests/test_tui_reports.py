@@ -54,7 +54,7 @@ class TestSubmenu:
         assert [(item.key, item.id, item.label) for item in MENU_ITEMS] == [
             ("1", "returns", "Rentabilidade"),
             ("2", "compare", "Comparar"),
-            ("3", "history", "Historico"),
+            ("3", "history", "Histórico"),
             ("4", "profit", "Lucro"),
             ("5", "income", "Proventos"),
         ]
@@ -191,13 +191,13 @@ class TestFailures:
         # compute_compare recusa uma carteira sem serie de precos; na CLI isso e
         # um erro na saida, aqui e uma nota na tela.
         def boom(**_: Any) -> Any:
-            raise ValidationError("Nenhuma posicao com historico de precos para comparar.")
+            raise ValidationError("Nenhuma posição com histórico de preços para comparar.")
 
         monkeypatch.setattr(services, "load_compare", boom)
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, CompareScreen())
-            assert screen.note == "Nenhuma posicao com historico de precos para comparar."
+            assert screen.note == "Nenhuma posição com histórico de preços para comparar."
 
     @pytest.mark.asyncio
     async def test_a_failure_leaves_nothing_to_redraw(self, monkeypatch: pytest.MonkeyPatch) -> None:

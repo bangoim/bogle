@@ -177,8 +177,10 @@ HomeScreen.-wide #menu {
     height: 1;
 }
 
+/* 24: o rotulo mais longo ("Disponível para aporte", 22) e duas colunas de
+   folga, para ele nao encostar no valor digitado. */
 .field-label {
-    width: 22;
+    width: 24;
     color: $text-muted;
 }
 
@@ -497,4 +499,16 @@ DataTable:ansi > .datatable--header {
     background: transparent;
     color: ansi_default;
     text-style: bold underline;
+}
+
+/* O cabecalho nao reage ao mouse: ele nao e selecionavel, e a tarja colorida
+   sob o ponteiro parecia um clique pendente. O textual soma o hover das linhas
+   e o do cabecalho por cima do fundo dele; aqui o do cabecalho devolve esse
+   fundo, com o mesmo tint do foco. */
+DataTable > .datatable--header-hover {
+    background: $panel;
+}
+DataTable:focus > .datatable--header-hover {
+    background: $panel;
+    background-tint: $foreground 5%;
 }

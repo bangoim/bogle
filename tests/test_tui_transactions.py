@@ -76,7 +76,7 @@ class TestListing:
                 "Tipo",
                 "Ticker",
                 "Qtd",
-                "Preco",
+                "Preço",
                 "Valor",
                 "Fees",
                 "IR",
@@ -98,7 +98,7 @@ class TestListing:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_ledger(pilot)
-            assert screen.note == "3 transacoes"
+            assert screen.note == "3 transações"
 
     @pytest.mark.asyncio
     async def test_empty_ledger_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,7 +108,7 @@ class TestListing:
         async with app.run_test() as pilot:
             screen = await open_ledger(pilot)
             assert screen.query_one(DataTable).row_count == 0
-            assert screen.note == "Nenhuma transacao registrada."
+            assert screen.note == "Nenhuma transação registrada."
 
     @pytest.mark.asyncio
     async def test_r_reloads(self, ledger: LedgerSpy) -> None:
@@ -176,7 +176,7 @@ class TestFilter:
             await pilot.press("a", "u", "v")
             await pilot.pause()
             assert [row[3] for row in rows(screen)] == ["AUVP11", "AUVP11"]
-            assert screen.note == "2 de 3 transacoes (filtro 'AUV')"
+            assert screen.note == "2 de 3 transações (filtro 'AUV')"
 
     @pytest.mark.asyncio
     async def test_filter_text_is_not_read_as_markup(self, ledger: LedgerSpy) -> None:
@@ -187,7 +187,7 @@ class TestFilter:
             screen = await open_ledger(pilot)
             screen.query_one("#filter", Input).value = "[/]"
             await pilot.pause()
-            assert screen.note == "Nenhuma transacao para '[/]'."
+            assert screen.note == "Nenhuma transação para '[/]'."
 
     @pytest.mark.asyncio
     async def test_filter_with_no_match(self, ledger: LedgerSpy) -> None:
@@ -197,7 +197,7 @@ class TestFilter:
             screen.query_one("#filter", Input).value = "ZZZ"
             await pilot.pause()
             assert rows(screen) == []
-            assert screen.note == "Nenhuma transacao para 'ZZZ'."
+            assert screen.note == "Nenhuma transação para 'ZZZ'."
 
 
 class TestRemoval:
@@ -211,7 +211,7 @@ class TestRemoval:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, ConfirmModal)
-            assert modal.dialog_title == "Remover a transacao 2?"
+            assert modal.dialog_title == "Remover a transação 2?"
             assert modal.body == "DIVIDEND PETR4 em 2026-05-15, valor 45.50"
             await pilot.press("enter")
             await settle(pilot)
@@ -243,7 +243,7 @@ class TestRemoval:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, ConfirmModal)
-            assert modal.dialog_title == "Remover a transacao 3?"
+            assert modal.dialog_title == "Remover a transação 3?"
 
     @pytest.mark.asyncio
     async def test_nothing_selected_is_a_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -257,7 +257,7 @@ class TestRemoval:
             await pilot.press("d")
             await settle(pilot)
             assert not isinstance(app.screen, ConfirmModal)
-            assert toasts.severity_of("Nenhuma transacao selecionada") == "warning"
+            assert toasts.severity_of("Nenhuma transação selecionada") == "warning"
 
     @pytest.mark.asyncio
     async def test_a_failed_reload_is_not_undone_by_the_privacy_toggle(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,7 +285,7 @@ class TestRemoval:
             await pilot.press("h")
             await pilot.pause()
             assert rows(screen) == []
-            assert "nao encontrada" in screen.note
+            assert "não encontrada" in screen.note
 
     @pytest.mark.asyncio
     async def test_failed_removal_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -302,7 +302,7 @@ class TestRemoval:
             await settle(pilot)
             await pilot.press("enter")
             await settle(pilot)
-            assert toasts.severity_of("Transacao 1 nao encontrada") == "error"
+            assert toasts.severity_of("Transação 1 não encontrada") == "error"
             # A falha e da remocao, nao da carga: as linhas continuam na tela.
             screen = app.screen
             assert isinstance(screen, TransactionsScreen)

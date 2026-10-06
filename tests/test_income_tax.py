@@ -110,7 +110,7 @@ class TestSaleVariableIncome:
         assert tax == Decimal("107.7")
 
     def test_fixed_income_asset_raises(self) -> None:
-        with pytest.raises(ValidationError, match="renda variavel"):
+        with pytest.raises(ValidationError, match="renda variável"):
             income_tax_on_sale(asset(AssetType.CDB), sell("1", "1000"), Decimal("900"), Decimal("0"))
 
     def test_result_is_decimal(self) -> None:

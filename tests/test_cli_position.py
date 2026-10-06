@@ -110,8 +110,8 @@ class TestTableRender:
         out = buffer.getvalue()
         assert "PETR4" in out
         assert "Total investido" in out
-        assert "Fonte(s) de preco: brapi" in out
-        assert "Cotacao mais recente" in out
+        assert "Fonte(s): brapi" in out
+        assert "Cotação: " in out
 
     def test_renders_month_profit_income_and_excluded_note(self) -> None:
         buffer = io.StringIO()
@@ -124,18 +124,18 @@ class TestTableRender:
             excluded_reasons={"TESOURO SELIC 2029": NO_SOURCE},
         )
         out = buffer.getvalue()
-        assert "Lucro do mes" in out
+        assert "Lucro do mês" in out
         assert "+1,420.15" in out
         assert "Proventos (12m)" in out
         assert "+85.00" in out
-        assert f"lucro do mes nao considera TESOURO SELIC 2029 ({NO_SOURCE})." in out
+        assert f"lucro do mês não considera TESOURO SELIC 2029 ({NO_SOURCE})." in out
 
 
 class TestEndToEnd:
     def test_empty_portfolio(self) -> None:
         result = run_cli("position", "--no-prices")
         assert result.returncode == 0
-        assert "Nenhuma posicao ativa" in result.stdout
+        assert "Nenhuma posição ativa" in result.stdout
 
     def test_no_prices_json(self) -> None:
         assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0

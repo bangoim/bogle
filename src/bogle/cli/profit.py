@@ -21,7 +21,7 @@ _CONSOLE = Console()
 
 _INCOME_LABELS = (
     (TransactionType.DIVIDEND, "Dividendos"),
-    (TransactionType.JCP, "JCP (liquido)"),
+    (TransactionType.JCP, "JCP (líquido)"),
     (TransactionType.RENDIMENTO, "FII rendimentos"),
     (TransactionType.INTEREST, "Renda fixa juros"),
 )
@@ -31,26 +31,26 @@ def _render(report: ProfitReport, period: str, console: Console) -> None:
     console.print(f"[bold]Lucro da carteira (desde {report.since.isoformat()})[/bold]")
     console.print(f"  Ganho de capital:      {signed(report.capital_total, percent=False)}")
     console.print(f"    Realizado (vendas):  {signed(report.realized, percent=False)}")
-    console.print(f"    Nao realizado:       {signed(report.unrealized, percent=False)}")
+    console.print(f"    Não realizado:       {signed(report.unrealized, percent=False)}")
     console.print()
-    income_window = " (ultimos 12 meses)" if period == "12m" else ""
+    income_window = " (últimos 12 meses)" if period == "12m" else ""
     console.print(f"  Proventos recebidos:{income_window}   {signed(report.income_total, percent=False)}")
     for kind, label in _INCOME_LABELS:
         console.print(f"    {label:<19}{signed(report.income_by_type[kind], percent=False)}")
     console.print()
     if period == "12m":
-        console.print("  (Lucro total omitido: ganho de capital e desde o inicio; proventos, 12 meses.)")
+        console.print("  (Lucro total omitido: ganho de capital é desde o início; proventos, 12 meses.)")
     else:
         console.print(f"  Lucro total:           {signed(report.total, percent=False)}")
     if report.unpriced:
         console.print(
-            f"[yellow]Nota:[/yellow] ganho nao realizado nao considera {', '.join(report.unpriced)} (sem preco atual)."
+            f"[yellow]Nota:[/yellow] ganho não realizado não considera {', '.join(report.unpriced)} (sem preço atual)."
         )
 
 
 def profit(
     period: str = typer.Option(
-        "all", "--period", help="Janela dos proventos: all (default) ou 12m. Ganho de capital e sempre total."
+        "all", "--period", help="Janela dos proventos: all (default) ou 12m. Ganho de capital é sempre total."
     ),
 ) -> None:
     parsed = parse_period(period, allowed=("all", "12m"))

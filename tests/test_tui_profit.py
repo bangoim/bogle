@@ -29,10 +29,10 @@ class TestPanel:
             assert "Lucro da carteira desde 2024-03-01" in screen.panel
             assert "Ganho de capital        +516.20" in screen.panel
             assert "  Realizado (vendas)    +120.50" in screen.panel
-            assert "  Nao realizado         +395.70" in screen.panel
+            assert "  Não realizado         +395.70" in screen.panel
             assert "Proventos recebidos     +144.90" in screen.panel
             assert "  Dividendos            +45.50" in screen.panel
-            assert "  JCP (liquido)         +17.00" in screen.panel
+            assert "  JCP (líquido)         +17.00" in screen.panel
             assert "  FII rendimentos       +82.40" in screen.panel
             assert "  Renda fixa juros      +0.00" in screen.panel
             assert "Lucro total             +661.10" in screen.panel
@@ -43,7 +43,7 @@ class TestPanel:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ProfitScreen())
-            assert "ganho nao realizado nao considera CDB-XP-2027" in screen.note
+            assert "ganho não realizado não considera CDB-XP-2027" in screen.note
 
     @pytest.mark.asyncio
     async def test_a_loss_keeps_its_sign(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,7 +89,7 @@ class TestIncomeWindow:
             # Somar ganho desde o inicio com proventos de 12 meses seria somar
             # duas janelas: o total sai, e a linha diz por que.
             assert "+661.10" not in screen.panel
-            assert "Lucro total omitido: ganho de capital e desde o inicio" in screen.panel
+            assert "Lucro total omitido: ganho de capital é desde o início" in screen.panel
 
 
 class TestHiddenAmounts:

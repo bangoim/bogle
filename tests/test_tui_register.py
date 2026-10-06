@@ -125,7 +125,7 @@ class TestValidation:
             await pilot.press("tab")  # do ticker para a quantidade
             await pilot.press("a", "b", "c")
             await pilot.pause()
-            assert error_of(screen, "shares") == "Quantidade deve ser um numero decimal, recebido 'abc'."
+            assert error_of(screen, "shares") == "Quantidade deve ser um número decimal, recebido 'abc'."
 
     @pytest.mark.asyncio
     async def test_typing_markup_does_not_break_the_error_line(self) -> None:
@@ -138,7 +138,7 @@ class TestValidation:
             await pilot.press(*"[/i]")
             await pilot.pause()
             assert app.is_running
-            assert error_of(screen, "shares") == "Quantidade deve ser um numero decimal, recebido '[/i]'."
+            assert error_of(screen, "shares") == "Quantidade deve ser um número decimal, recebido '[/i]'."
 
     @pytest.mark.asyncio
     async def test_submitting_an_incomplete_form_writes_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,9 +151,9 @@ class TestValidation:
             await settle(pilot)
             assert spy.calls == []
             assert isinstance(app.screen, TradeFormScreen)  # nem chegou no modal
-            assert error_of(screen, "ticker") == "Ticker e obrigatorio."
-            assert error_of(screen, "shares") == "Quantidade e obrigatorio."
-            assert error_of(screen, "price") == "Preco unitario e obrigatorio."
+            assert error_of(screen, "ticker") == "Ticker é obrigatório."
+            assert error_of(screen, "shares") == "Quantidade é obrigatória."
+            assert error_of(screen, "price") == "Preço unitário é obrigatório."
 
     @pytest.mark.asyncio
     async def test_zero_quantity_is_rejected_before_the_repository(self) -> None:
@@ -166,14 +166,16 @@ class TestValidation:
             assert error_of(screen, "shares") == "Quantidade deve ser maior que zero, recebido 0."
 
     @pytest.mark.asyncio
-    async def test_negative_fees_are_rejected(self) -> None:
+    async def test_a_money_field_takes_no_sign(self) -> None:
+        # Taxa negativa nao existe, e a mascara de centavos nem deixa o sinal
+        # entrar: o "-" e ignorado e o 1 vira o ultimo centavo.
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
-            fill(screen, ticker="PETR4", shares="1", price="30", fees="-1")
-            await pilot.press("ctrl+s")
-            await settle(pilot)
-            assert error_of(screen, "fees") == "Taxas nao pode ser negativo, recebido -1."
+            screen.field("fees").input.focus()
+            await pilot.press("-", "1")
+            assert screen.field("fees").input.value == "0.01"
+            assert screen.field("fees").value == "0.01"
 
     @pytest.mark.asyncio
     async def test_unknown_ticker_is_caught_from_the_registered_list(self) -> None:
@@ -184,7 +186,7 @@ class TestValidation:
             await pilot.press("ctrl+s")
             await settle(pilot)
             assert "NOPE" in error_of(screen, "ticker")
-            assert "nao encontrado" in error_of(screen, "ticker")
+            assert "não encontrado" in error_of(screen, "ticker")
 
     @pytest.mark.asyncio
     async def test_either_separator_marks_the_cents(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,15 +212,17 @@ class TestValidation:
 
     @pytest.mark.asyncio
     async def test_a_thousands_separator_is_refused_with_what_to_type(self) -> None:
+        # Na quantidade, que e digitada livre (os valores em reais vao pela
+        # mascara de centavos, onde separador nenhum e digitado).
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_form(pilot, TradeFormScreen(kind=TransactionType.BUY))
-            fill(screen, ticker="PETR4", shares="1", price="1.234,50")
+            fill(screen, ticker="PETR4", shares="1.234,5", price="30")
             await pilot.press("ctrl+s")
             await settle(pilot)
             assert isinstance(app.screen, TradeFormScreen)  # nao abriu o modal
-            assert "milhar vai sem separador" in error_of(screen, "price")
-            assert "escreva 1000 ou 1000,00" in error_of(screen, "price")
+            assert "milhar vai sem separador" in error_of(screen, "shares")
+            assert "escreva 1000 ou 1000,00" in error_of(screen, "shares")
 
     @pytest.mark.asyncio
     async def test_bad_date_format_is_rejected(self) -> None:
@@ -309,7 +313,7 @@ class TestBuyFlow:
             assert isinstance(app.screen, TradeFormScreen)
             assert screen.field("ticker").value == ""
             assert screen.field("shares").value == ""
-            assert screen.field("fees").value == "0"  # volta ao default, nao vazio
+            assert screen.field("fees").value == "0.00"  # volta ao default, nao vazio
 
     @pytest.mark.asyncio
     async def test_back_to_home_pops_every_screen(self) -> None:
@@ -347,7 +351,7 @@ class TestBuyFlow:
             await settle(pilot)
             assert isinstance(app.screen, TradeFormScreen)
             assert screen.field("shares").value == "3"  # nada perdido
-            assert toasts.severity_of("nao encontrado") == "error"
+            assert toasts.severity_of("não encontrado") == "error"
 
 
 class TestSellPicker:
@@ -358,7 +362,7 @@ class TestSellPicker:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SellPickerScreen())
-            assert table_columns(screen) == ["Ticker", "Tipo", "Qtd", "Preco medio", "Cotacao", "Montante"]
+            assert table_columns(screen) == ["Ticker", "Tipo", "Qtd", "Preço médio", "Cotação", "Montante"]
             assert [row[0] for row in table_rows(screen)] == ["PETR4", "CDB-XP-2027"]
 
     @pytest.mark.asyncio
@@ -380,7 +384,7 @@ class TestSellPicker:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SellPickerScreen())
-            assert "Nenhuma posicao aberta" in screen.note
+            assert "Nenhuma posição aberta" in screen.note
             await pilot.press("enter")
             await settle(pilot)
             assert app.screen is screen  # nao abriu formulario nenhum
@@ -732,7 +736,7 @@ class TestIncomeFlow:
             await settle(pilot)
 
             assert spy.calls == []
-            assert error_of(screen, "tax") == "IR retido e obrigatorio para JCP (15% retido na fonte)."
+            assert error_of(screen, "tax") == "IR retido é obrigatório para JCP (15% retido na fonte)."
 
             fill(screen, tax="30")
             await pilot.press("ctrl+s")
@@ -756,7 +760,7 @@ class TestIncomeFlow:
             tax = screen.field("tax")
             assert not tax.enabled
             assert tax.value == ""  # limpo, para nao gravar o que nao se aplica
-            assert "nao se aplica" in tax.input.placeholder
+            assert "não se aplica" in tax.input.placeholder
 
             fill(screen, ticker="MXRF11", amount="80")
             await pilot.press("ctrl+s")
@@ -810,7 +814,7 @@ class TestIncomeFlow:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, ConfirmModal)
-            assert modal.body == ("JCP: PETR4 em 2026-05-15\nValor bruto: 200.00\nIR retido: 30.00\nLiquido: 170.00")
+            assert modal.body == ("JCP: PETR4 em 2026-05-15\nValor bruto: 200.00\nIR retido: 30.00\nLíquido: 170.00")
 
     @pytest.mark.asyncio
     async def test_validation_error_from_the_repository_becomes_a_toast(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -902,7 +906,7 @@ class TestKeyboard:
             release.set()
             await settle(pilot)
             assert len(calls) == 1
-            assert toasts.severity_of("gravando o lancamento") == "warning"
+            assert toasts.severity_of("gravando o lançamento") == "warning"
 
     @pytest.mark.asyncio
     async def test_escape_waits_while_the_entry_is_being_written(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -930,7 +934,7 @@ class TestKeyboard:
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, TradeFormScreen)  # nao saiu
-            assert toasts.severity_of("gravando o lancamento") == "warning"
+            assert toasts.severity_of("gravando o lançamento") == "warning"
 
             release.set()
             await settle(pilot)

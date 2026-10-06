@@ -59,19 +59,19 @@ from bogle.repositories.transactions import TransactionRepository
 _ZERO = Decimal("0")
 _HISTORY_PAD = timedelta(days=7)  # bar "on or before start" even on weekends/holidays
 
-NO_SOURCE = "sem fonte de historico gratuita"
+NO_SOURCE = "sem fonte de histórico gratuita"
 """TESOURO: nothing is wired, and nothing the user does changes it (see #17)."""
 
-NOTHING_RETURNED = "o provedor nao devolveu historico"
+NOTHING_RETURNED = "o provedor não devolveu histórico"
 """The fetch came back empty (unknown symbol, provider down, network)."""
 
-SHORT_SERIES = "a serie do provedor veio curta demais para o periodo da posicao"
+SHORT_SERIES = "a série do provedor veio curta demais para o período da posição"
 """Yahoo sometimes answers with just the last weeks; asking again often fixes it.
 
 Only used when the provider's *whole* series could not be read — with it in hand
 the shortfall is a fact about the series, and :func:`series_starts_at` says so."""
 
-INCONSISTENT_LEDGER = "historico de transacoes inconsistente (venda maior que a posicao na data)"
+INCONSISTENT_LEDGER = "histórico de transações inconsistente (venda maior que a posição na data)"
 """The cost-basis replay refused the ticker (issue #85): nothing to fetch, the
 ledger itself needs fixing. ``bogle profit`` names the sale.
 
@@ -92,8 +92,8 @@ def series_starts_at(series_start: date, position_start: date) -> str:
     exactly what it did before this reason existed.
     """
     return (
-        f"o provedor so tem historico desde {series_start.isoformat()}"
-        f", e a posicao comeca em {position_start.isoformat()}"
+        f"o provedor só tem histórico desde {series_start.isoformat()}"
+        f", e a posição começa em {position_start.isoformat()}"
     )
 
 

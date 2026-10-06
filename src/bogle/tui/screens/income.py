@@ -24,12 +24,12 @@ from bogle.tui.screens.data import PeriodScreen
 
 _ZERO = Decimal("0")
 
-_MONTH_COLUMNS = ("Mes", "Dividendos", "JCP (liq)", "FII rend.", "Juros RF", "Total")
+_MONTH_COLUMNS = ("Mês", "Dividendos", "JCP (liq)", "FII rend.", "Juros RF", "Total")
 _TICKER_COLUMNS = ("Ticker", "Tipo", "Total")
 _MONTH_FIELDS = ("dividend", "jcp", "rendimento", "interest", "total")
 
-_EMPTY = "Nenhum provento no periodo."
-_LEGEND = "JCP liquido do IR retido na fonte; os outros tipos, valor bruto."
+_EMPTY = "Nenhum provento no período."
+_LEGEND = "JCP líquido do IR retido na fonte; os outros tipos, valor bruto."
 
 
 class IncomeScreen(PeriodScreen[services.IncomeReport]):
@@ -47,7 +47,7 @@ class IncomeScreen(PeriodScreen[services.IncomeReport]):
 
     @override
     def subtitle(self) -> str:
-        return f"proventos - {self.period} {'por ticker' if self.by_ticker else 'por mes'}"
+        return f"proventos - {self.period} {'por ticker' if self.by_ticker else 'por mês'}"
 
     @override
     def compose(self) -> ComposeResult:
@@ -130,5 +130,5 @@ def _note_for(report: services.IncomeReport, *, by_ticker: bool) -> str:
     if not rows:
         return f"[yellow]{_EMPTY}[/yellow]"
     # `all` nao tem data de inicio: a janela e a carteira inteira.
-    since = f"De {report.start.isoformat()}" if report.start is not None else "Do inicio"
-    return f"[dim]{since} ate {report.end.isoformat()}. {_LEGEND}[/dim]"
+    since = f"De {report.start.isoformat()}" if report.start is not None else "Do início"
+    return f"[dim]{since} até {report.end.isoformat()}. {_LEGEND}[/dim]"

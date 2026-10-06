@@ -130,7 +130,7 @@ class TestPeriods:
 
     def test_parse_period_validates(self) -> None:
         assert parse_period(" 12M ") == "12m"
-        with pytest.raises(ValidationError, match="--period invalido"):
+        with pytest.raises(ValidationError, match="--period inválido"):
             parse_period("3m")
         with pytest.raises(ValidationError, match="12m, all"):
             parse_period("ytd", allowed=("12m", "all"))

@@ -219,7 +219,7 @@ class TesouroClient:
             if latest is None or base_date > latest:
                 latest = base_date
         if latest is None:
-            raise MarketDataError("CSV do Tesouro sem linhas validas.", provider=_PROVIDER)
+            raise MarketDataError("CSV do Tesouro sem linhas válidas.", provider=_PROVIDER)
 
         snapshot: list[dict[str, Any]] = []
         for base_date, row in parsed:

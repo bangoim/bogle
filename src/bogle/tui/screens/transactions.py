@@ -26,12 +26,12 @@ from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.modals import ConfirmModal
 
-_COLUMNS = ("ID", "Data", "Tipo", "Ticker", "Qtd", "Preco", "Valor", "Fees", "IR")
+_COLUMNS = ("ID", "Data", "Tipo", "Ticker", "Qtd", "Preço", "Valor", "Fees", "IR")
 _TRADES = (TransactionType.BUY, TransactionType.SELL)
 
 
 class TransactionsScreen(Screen[None]):
-    SUB_TITLE = "transacoes"
+    SUB_TITLE = "transações"
     # A tabela nasce com o foco: enquanto um Input tem foco, o textual desativa
     # os atalhos de uma letra (d/r/f) porque o campo consome as teclas.
     AUTO_FOCUS = "#ledger"
@@ -82,14 +82,14 @@ class TransactionsScreen(Screen[None]):
     def action_remove(self) -> None:
         transaction = self.selected
         if transaction is None:
-            self.notify("Nenhuma transacao selecionada.", severity="warning")
+            self.notify("Nenhuma transação selecionada.", severity="warning")
             return
         body = (
             f"{transaction.transaction_type} {transaction.ticker} em {transaction.date:%Y-%m-%d}, "
             f"valor {fmt.money(transaction.total_investment)}"
         )
         self.app.push_screen(
-            ConfirmModal(f"Remover a transacao {transaction.id}?", body, confirm_label="Remover"),
+            ConfirmModal(f"Remover a transação {transaction.id}?", body, confirm_label="Remover"),
             lambda confirmed: self._on_confirmed(transaction.id, confirmed),
         )
 
@@ -165,12 +165,12 @@ class TransactionsScreen(Screen[None]):
 
     def _summary(self, needle: str) -> str:
         if not self.transactions:
-            return "[yellow]Nenhuma transacao registrada.[/yellow]"
+            return "[yellow]Nenhuma transação registrada.[/yellow]"
         if not self.shown:
-            return f"[yellow]Nenhuma transacao para '{escape(needle)}'.[/yellow]"
+            return f"[yellow]Nenhuma transação para '{escape(needle)}'.[/yellow]"
         if needle:
-            return f"[dim]{len(self.shown)} de {len(self.transactions)} transacoes (filtro '{escape(needle)}')[/dim]"
-        return f"[dim]{len(self.transactions)} transacoes[/dim]"
+            return f"[dim]{len(self.shown)} de {len(self.transactions)} transações (filtro '{escape(needle)}')[/dim]"
+        return f"[dim]{len(self.transactions)} transações[/dim]"
 
     def _show_note(self, markup: str) -> None:
         rendered = Text.from_markup(markup)
@@ -200,5 +200,5 @@ class TransactionsScreen(Screen[None]):
         self._load()
 
     def _deleted(self, transaction_id: int) -> None:
-        self.notify(f"transacao {transaction_id} removida.", markup=False)
+        self.notify(f"transação {transaction_id} removida.", markup=False)
         self._load()

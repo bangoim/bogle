@@ -94,7 +94,7 @@ class TestComputeReturns:
         assert "IFIX" in report.index_errors
 
     def test_no_transactions_is_friendly(self, conn: psycopg.Connection[DictRow], tmp_path: object) -> None:
-        with pytest.raises(ValidationError, match="Nenhuma transacao"):
+        with pytest.raises(ValidationError, match="Nenhuma transação"):
             compute_returns(conn, make_dispatcher(tmp_path), today=TODAY)
 
 
@@ -133,12 +133,12 @@ class TestCliRendering:
         result = runner.invoke(app, ["return", "--vs", "cdi"])
         assert result.exit_code == 0, result.output
         assert "Rentabilidade da carteira" in result.stdout
-        assert "+47.30%" in result.stdout
+        assert "+47,30%" in result.stdout
         assert "vs CDI:" in result.stdout
-        assert "+17.50 p.p." in result.stdout  # outperform
-        assert "-3.10 p.p." in result.stdout  # underperform
+        assert "+17,50 p.p." in result.stdout  # outperform
+        assert "-3,10 p.p." in result.stdout  # underperform
         note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
-        assert f"TWR nao considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
+        assert f"TWR não considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
 
     def test_the_difference_follows_the_configured_separator(
         self, runner: CliRunner, conn: psycopg.Connection[DictRow]
@@ -155,7 +155,7 @@ class TestCliRendering:
     def test_invalid_period_is_friendly(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["return", "--period", "3m"])
         assert result.exit_code != 0
-        assert "--period invalido" in str(result.output) + str(result.exception)
+        assert "--period inválido" in str(result.output) + str(result.exception)
 
     def test_vs_default_reads_setting(
         self, runner: CliRunner, conn: psycopg.Connection[DictRow], monkeypatch: pytest.MonkeyPatch

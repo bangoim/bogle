@@ -151,7 +151,7 @@ class PeriodScreen[R](DataScreen[R]):
     SUBJECT: ClassVar[str] = ""
     """Name of the report in the subtitle, before the window."""
 
-    BINDINGS: ClassVar[list[BindingType]] = [Binding("t", "cycle_period", "Periodo")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("t", "cycle_period", "Período")]
 
     def __init__(self) -> None:
         super().__init__()

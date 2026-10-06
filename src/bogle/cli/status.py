@@ -19,15 +19,15 @@ def status() -> None:
     finally:
         conn.close()
 
-    typer.echo(f"Ciclo de avaliacao: {period} meses.")
+    typer.echo(f"Ciclo de avaliação: {period} meses.")
     if last is None:
-        typer.echo("Nenhuma avaliacao registrada ainda. Rode 'bogle suggest' para registrar a primeira.")
+        typer.echo("Nenhuma avaliação registrada ainda. Rode 'bogle suggest' para registrar a primeira.")
         return
 
     next_eval = next_evaluation_date(last, period)
     days = (next_eval - date.today()).days
-    typer.echo(f"Ultima avaliacao: {last.isoformat()}.")
+    typer.echo(f"Última avaliação: {last.isoformat()}.")
     if days > 0:
-        typer.echo(f"Proxima avaliacao em {days} dia(s) ({next_eval.isoformat()}).")
+        typer.echo(f"Próxima avaliação em {days} dia(s) ({next_eval.isoformat()}).")
     else:
-        typer.echo(f"Avaliacao vencida ha {-days} dia(s) (desde {next_eval.isoformat()}). Rode 'bogle suggest'.")
+        typer.echo(f"Avaliação vencida há {-days} dia(s) (desde {next_eval.isoformat()}). Rode 'bogle suggest'.")

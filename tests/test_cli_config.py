@@ -53,7 +53,7 @@ class TestGetSet:
     def test_unknown_key_is_friendly(self) -> None:
         result = run_cli("config", "get", "typo_key")
         assert result.returncode == 1
-        assert "nao reconhecida" in result.stderr
+        assert "não reconhecida" in result.stderr
         assert "rebalance_period_months" in result.stderr
 
 
@@ -77,10 +77,10 @@ class TestUnsetList:
 class TestDecimalSeparator:
     """The setting reaches the rendering of every command (issues #73/#74)."""
 
-    def test_default_is_the_canonical_dot(self) -> None:
+    def test_default_is_the_brazilian_comma(self) -> None:
         result = run_cli("config", "get", "decimal_separator")
         assert result.returncode == 0
-        assert result.stdout.strip() == "."
+        assert result.stdout.strip() == ","
 
     def test_only_dot_and_comma_are_accepted(self) -> None:
         result = run_cli("config", "set", "decimal_separator", ";")
@@ -91,12 +91,12 @@ class TestDecimalSeparator:
         assert run_cli("add", "PETR4", "-w", "0.4").returncode == 0
         assert run_cli("buy", "PETR4", "-s", "100", "-p", "30.50", "--date", "2026-01-15").returncode == 0
 
+        comma = run_cli("transactions")
+        assert "3.050" in comma.stdout  # o padrao: milhar com ponto, decimal com virgula
+
+        assert run_cli("config", "set", "decimal_separator", ".").returncode == 0
         dot = run_cli("transactions")
         assert "3,050" in dot.stdout  # milhar com virgula, decimal com ponto
-
-        assert run_cli("config", "set", "decimal_separator", ",").returncode == 0
-        comma = run_cli("transactions")
-        assert "3.050" in comma.stdout  # milhar com ponto
 
     def test_input_takes_either_separator_for_the_cents(self) -> None:
         # A entrada nao depende da configuracao: os dois separadores marcam
@@ -134,7 +134,7 @@ class TestHideValues:
     def test_only_booleans_are_accepted(self) -> None:
         result = run_cli("config", "set", "hide_values", "talvez")
         assert result.returncode == 1
-        assert "nao e um booleano" in result.stderr
+        assert "não é um booleano" in result.stderr
 
     def test_a_command_output_is_not_masked(self) -> None:
         # A configuracao vale para a interface interativa: mascarar a saida de
@@ -144,7 +144,7 @@ class TestHideValues:
         assert run_cli("config", "set", "hide_values", "true").returncode == 0
         result = run_cli("position", "--no-prices")
         assert result.returncode == 0
-        assert "3,050.00" in result.stdout
+        assert "3.050,00" in result.stdout
         assert "\u2022" not in result.stdout
 
 
@@ -162,5 +162,5 @@ class TestTheme:
     def test_rejects_an_unknown_theme_and_lists_the_options(self) -> None:
         result = run_cli("config", "set", "theme", "banana")
         assert result.returncode == 1
-        assert "nao existe" in result.stderr
+        assert "não existe" in result.stderr
         assert "gruvbox" in result.stderr  # a lista das opcoes

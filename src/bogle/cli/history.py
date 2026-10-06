@@ -19,14 +19,14 @@ from bogle.reports.valuation import with_reasons
 _CONSOLE = Console()
 
 _PERIODS = ("12m", "2y", "5y", "10y", "all")
-_GRANULARITY_LABEL = {"daily": "diaria", "weekly": "semanal", "monthly": "mensal"}
+_GRANULARITY_LABEL = {"daily": "diária", "weekly": "semanal", "monthly": "mensal"}
 
 
 def _render_table(report: HistoryReport, period: str, console: Console) -> None:
     granularity = _GRANULARITY_LABEL[report.granularity]
-    table = Table(title=f"Evolucao do patrimonio ({period}, {granularity})", title_style="bold")
+    table = Table(title=f"Evolução do patrimônio ({period}, {granularity})", title_style="bold")
     table.add_column("Data", style="cyan", no_wrap=True)
-    for header in ("Patrimonio", "Variacao", "Variacao %"):
+    for header in ("Patrimônio", "Variação", "Variação %"):
         table.add_column(header, justify="right")
     for point, delta, fraction in report.steps():
         table.add_row(
@@ -40,21 +40,21 @@ def _render_table(report: HistoryReport, period: str, console: Console) -> None:
 
 def _render_chart(report: HistoryReport) -> None:
     labels = [point.date.isoformat() for point in report.points]
-    series = [("Patrimonio", [float(point.value) for point in report.points])]
-    render_line_chart("Evolucao do patrimonio", labels, series)
+    series = [("Patrimônio", [float(point.value) for point in report.points])]
+    render_line_chart("Evolução do patrimônio", labels, series)
 
 
 def _export_chart(report: HistoryReport, path: str) -> None:
     dates = [point.date for point in report.points]
-    series = [("Patrimonio", [float(point.value) for point in report.points])]
-    export_line_chart_html("Evolucao do patrimonio", dates, series, path, y_title="R$")
+    series = [("Patrimônio", [float(point.value) for point in report.points])]
+    export_line_chart_html("Evolução do patrimônio", dates, series, path, y_title="R$")
 
 
 def history(
     period: str = typer.Option("12m", "--period", help=f"Janela: {', '.join(_PERIODS)}."),
-    no_chart: bool = typer.Option(False, "--no-chart", help="So a tabela, sem o grafico de linha (terminal)."),
+    no_chart: bool = typer.Option(False, "--no-chart", help="Só a tabela, sem o gráfico de linha (terminal)."),
     output: str | None = typer.Option(
-        None, "--output", help="Salva um grafico HTML interativo (plotly) no caminho dado."
+        None, "--output", help="Salva um gráfico HTML interativo (plotly) no caminho dado."
     ),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Abrir o HTML gerado no navegador."),
 ) -> None:
@@ -69,12 +69,12 @@ def history(
     _render_table(report, parsed, _CONSOLE)
     if output is not None:
         _export_chart(report, output)
-        typer.echo(f"grafico salvo em {output}")
+        typer.echo(f"gráfico salvo em {output}")
         if open_browser:
             open_in_browser(output)
     elif not no_chart:
         _render_chart(report)
     if report.excluded:
         _CONSOLE.print(
-            f"[yellow]Nota:[/yellow] patrimonio nao considera {with_reasons(report.excluded, report.excluded_reasons)}."
+            f"[yellow]Nota:[/yellow] patrimônio não considera {with_reasons(report.excluded, report.excluded_reasons)}."
         )

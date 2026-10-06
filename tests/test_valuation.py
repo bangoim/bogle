@@ -123,13 +123,13 @@ class TestIndexReturn:
 
     def test_index_without_history_is_friendly(self, tmp_path: Any) -> None:
         dispatcher = make_dispatcher(tmp_path)
-        with pytest.raises(MarketDataError, match="Sem historico gratuito para 'IFIX'"):
+        with pytest.raises(MarketDataError, match="Sem histórico gratuito para 'IFIX'"):
             dispatcher.get_index_return("IFIX", date(2026, 1, 5), date(2026, 7, 20))
 
     def test_history_starting_after_window_is_friendly(self, tmp_path: Any) -> None:
         yf = FakeYfinance({"^BVSP": [bar("2026-06-01", "100000")]})
         dispatcher = make_dispatcher(tmp_path, yfinance=yf)
-        with pytest.raises(MarketDataError, match="no inicio do periodo"):
+        with pytest.raises(MarketDataError, match="no início do período"):
             dispatcher.get_index_return("IBOV", date(2026, 1, 5), date(2026, 7, 20))
 
     def test_empty_bcb_series(self, tmp_path: Any) -> None:

@@ -25,7 +25,7 @@ from bogle.tui import cells, services
 from bogle.tui.screens.data import DataScreen
 from bogle.tui.widgets.indices import IndicesInput
 
-_LABELS = {"total": "Total", "12m": "12 meses", "1m": "Ultimo mes"}
+_LABELS = {"total": "Total", "12m": "12 meses", "1m": "Último mês"}
 
 _TWR_LEGEND = "TWR: exclui o efeito de aportes e retiradas e considera proventos."
 
@@ -37,7 +37,7 @@ class ReturnsScreen(DataScreen[ReturnsReport]):
     AUTO_FOCUS = "#periods"
     LOADING = "#periods"
     NOTE = "#returns-note"
-    BINDINGS: ClassVar[list[BindingType]] = [Binding("i", "focus_indices", "Indices")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("i", "focus_indices", "Índices")]
 
     def __init__(self) -> None:
         super().__init__()
@@ -89,7 +89,7 @@ class ReturnsScreen(DataScreen[ReturnsReport]):
         # Rotulos como Text, e nao str: o textual leria markup numa string, e o
         # nome do indice vem do que o usuario digitou — "[/]" derrubaria a app.
         table.add_columns(
-            Text("Periodo"),
+            Text("Período"),
             Text("Janela"),
             Text("Carteira (TWR)"),
             *chain.from_iterable((Text(index), Text(f"vs {index}")) for index in indices),
@@ -123,7 +123,7 @@ def _note_for(report: ReturnsReport) -> str:
     lines = [f"[dim]{_TWR_LEGEND}[/dim]"]
     if report.excluded:
         excluded = escape(with_reasons(report.excluded, report.excluded_reasons))
-        lines.append(f"[yellow]Nota:[/yellow] TWR nao considera {excluded}.")
+        lines.append(f"[yellow]Nota:[/yellow] TWR não considera {excluded}.")
     lines.extend(
         f"[yellow]Nota:[/yellow] {escape(index)}: {escape(message)}" for index, message in report.index_errors.items()
     )

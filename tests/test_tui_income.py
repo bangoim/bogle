@@ -52,7 +52,7 @@ class TestByMonth:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, IncomeScreen())
-            assert table_columns(screen) == ["Mes", "Dividendos", "JCP (liq)", "FII rend.", "Juros RF", "Total"]
+            assert table_columns(screen) == ["Mês", "Dividendos", "JCP (liq)", "FII rend.", "Juros RF", "Total"]
             assert table_rows(screen)[0] == ["2026-07", "45.50", "17.00", "82.40", "0.00", "144.90"]
 
     @pytest.mark.asyncio
@@ -68,8 +68,8 @@ class TestByMonth:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, IncomeScreen())
             assert spy.periods == ["12m"]
-            assert screen.sub_title == "proventos - 12m por mes"
-            assert "De 2025-09-01 ate 2026-08-12" in screen.note
+            assert screen.sub_title == "proventos - 12m por mês"
+            assert "De 2025-09-01 até 2026-08-12" in screen.note
 
     @pytest.mark.asyncio
     async def test_the_since_inception_window_has_no_start_date(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,7 +79,7 @@ class TestByMonth:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, IncomeScreen())
-            assert "Do inicio ate 2026-08-12" in screen.note
+            assert "Do início até 2026-08-12" in screen.note
 
 
 class TestByTicker:
@@ -109,7 +109,7 @@ class TestByTicker:
             await pilot.pause()
             await pilot.press("g")
             await pilot.pause()
-            assert table_columns(screen)[0] == "Mes"
+            assert table_columns(screen)[0] == "Mês"
 
     @pytest.mark.asyncio
     async def test_the_grouping_survives_a_window_change(self, spy: IncomeSpy) -> None:
@@ -133,11 +133,11 @@ class TestEmpty:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, IncomeScreen())
             assert table_rows(screen) == []
-            assert screen.note == "Nenhum provento no periodo."
+            assert screen.note == "Nenhum provento no período."
             await pilot.press("g")
             await pilot.pause()
             assert table_rows(screen) == []
-            assert screen.note == "Nenhum provento no periodo."
+            assert screen.note == "Nenhum provento no período."
 
 
 class TestHiddenAmounts:

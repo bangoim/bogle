@@ -15,7 +15,7 @@ from textual.widgets import DataTable, Input
 from bogle.domain.assets import AssetType
 from bogle.domain.errors import MissingPriceError, ValidationError
 from bogle.format import MASK
-from bogle.rebalancing import FEE_BASIS, AporteSuggestion, TickerSuggestion, UnquotedTarget
+from bogle.rebalancing import AporteSuggestion, TickerSuggestion, UnquotedTarget
 from bogle.tui import services
 from bogle.tui.screens.modals import EditModal
 from bogle.tui.screens.suggest import SuggestScreen
@@ -50,9 +50,10 @@ class SuggestSpy:
         if self.error is not None:
             raise self.error
         self.amounts.append(amount)
-        # Copia: a tela reaproveita o mesmo dict de precos entre as cargas.
-        self.calls.append({**kwargs, "prices": dict(kwargs.get("prices") or {})})
-        return self.build(amount=amount, prices=kwargs.get("prices"))
+        # Copia: a tela reaproveita os mesmos dicts entre as cargas.
+        informed = {key: dict(kwargs.get(key) or {}) for key in ("prices", "quantities", "values")}
+        self.calls.append({**kwargs, **informed})
+        return self.build(amount=amount, **informed)
 
     @property
     def last(self) -> dict[str, Any]:
@@ -90,13 +91,14 @@ class TestAmount:
             assert app.focused is screen.query_one("#amount", Field).input
 
     @pytest.mark.asyncio
-    async def test_enter_asks_for_the_split_and_shows_the_amount_in_the_header(self, spy: SuggestSpy) -> None:
+    async def test_enter_asks_for_the_split_and_keeps_the_amount_out_of_the_header(self, spy: SuggestSpy) -> None:
+        # O valor ja esta no campo, logo abaixo: no cabecalho so repetiria.
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert spy.amounts == [Decimal("1500")]
-            assert screen.sub_title == "aporte - 1,500.00"
+            assert screen.sub_title == "aporte"
 
     @pytest.mark.asyncio
     async def test_an_invalid_amount_never_reaches_the_service(self, spy: SuggestSpy) -> None:
@@ -105,7 +107,9 @@ class TestAmount:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "0")
             assert spy.amounts == []
-            assert screen.query_one("#amount", Field).error == "Valor do aporte deve ser maior que zero, recebido 0."
+            assert (
+                screen.query_one("#amount", Field).error == "Valor disponível deve ser maior que zero, recebido 0.00."
+            )
 
     @pytest.mark.asyncio
     async def test_r_recalculates_the_same_amount(self, spy: SuggestSpy) -> None:
@@ -128,14 +132,14 @@ class TestSplit:
             await ask(pilot, screen, "1500")
             assert table_columns(screen) == [
                 "Ticker",
-                "Preco",
-                "Valor sugerido",
-                "Qtde papeis",
-                "Custo efetivo",
-                "Peso atual",
+                "Preço",
+                "Valor",
+                "Qtde",
+                "Custo",
                 "Target",
-                "Peso apos",
-                "Drift apos",
+                "Peso atual",
+                "Peso após",
+                "Drift após",
             ]
             assert table_rows(screen)[0] == [
                 "AUVP11",
@@ -143,8 +147,8 @@ class TestSplit:
                 "1,010.00",
                 "8",
                 "1,010.00",
-                "26.10%",
                 "30.00%",
+                "26.10%",
                 "28.40%",
                 "-1.60%",
             ]
@@ -164,73 +168,64 @@ class TestSplit:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
-            assert "Total alocado 1,499.50" in screen.totals
+            assert "Alocado 1,499.50" in screen.totals
             assert "Taxa B3 (est.) 0.30" in screen.totals
-            assert "Total com taxa 1,499.80" in screen.totals
-            assert "Aporte 1,500.00" in screen.totals
+            assert "Custo 1,499.80" in screen.totals
             assert "Sobra (caixa) 0.20" in screen.totals
 
     @pytest.mark.asyncio
-    async def test_the_note_says_where_the_fee_comes_from(self, spy: SuggestSpy) -> None:
-        # Uma taxa estimada sem dizer sobre o que e com que aliquota parece a da nota.
+    async def test_the_totals_leave_the_amount_to_the_field(self, spy: SuggestSpy) -> None:
+        # O aporte e o que voce tem para aplicar, e ja esta no campo e no
+        # subtitulo; nos totais ele so repetiria um numero.
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
-            assert FEE_BASIS in screen.note
+            assert "Aporte" not in screen.totals
 
     @pytest.mark.asyncio
-    async def test_no_fee_no_fee_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # So renda fixa no aporte: a linha de taxa ficaria explicando um zero.
+    async def test_the_totals_fit_in_one_line_when_there_is_room(self, spy: SuggestSpy) -> None:
+        # Em 80 colunas os quatro pares nao cabem e a quebra cai entre dois deles;
+        # com espaco, a sobra fica na mesma linha do que as compras custam.
+        app = make_app()
+        async with app.run_test(size=(140, 40)) as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            assert screen.totals.splitlines()[0] == (
+                "Alocado 1,499.50   Taxa B3 (est.) 0.30   Custo 1,499.80   Sobra (caixa) 0.20"
+            )
+            totals = screen.query_one("#suggest-totals")
+            assert totals.size.height == 2  # os pares numa linha, a procedencia na outra
+
+    @pytest.mark.asyncio
+    async def test_the_warnings_share_one_numbered_attention(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        warnings = ["Preços de MUND11, NB1011 definidos pelo usuário", "Compra em NB1011 fixada pelo usuário"]
         monkeypatch.setattr(
-            services,
-            "load_suggestion",
-            lambda amount, **_: make_suggestion(amount=amount, estimated_fees=Decimal("0")),
+            services, "load_suggestion", lambda amount, **_: make_suggestion(amount=amount, warnings=warnings)
         )
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
-            assert "Taxa B3 (est.) 0.00" in screen.totals
-            assert FEE_BASIS not in screen.note
+            assert screen.note == (
+                "Atenção:\n1. Preços de MUND11, NB1011 definidos pelo usuário\n2. Compra em NB1011 fixada pelo usuário"
+            )
+            # Acima dos totais: os avisos dizem como ler os numeros de baixo.
+            note, totals = screen.query_one("#suggest-note"), screen.query_one("#suggest-totals")
+            assert note.region.y < totals.region.y
 
     @pytest.mark.asyncio
-    async def test_warnings_from_the_engine_are_shown(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        warning = "Aporte em renda fixa privada (CDB-XP-2027) cria um novo contrato"
-        monkeypatch.setattr(
-            services, "load_suggestion", lambda amount, **_: make_suggestion(amount=amount, warnings=[warning])
-        )
+    async def test_without_warnings_there_is_no_note(self, spy: SuggestSpy) -> None:
+        # A legenda das teclas esta no rodape, a taxa e marcada como estimada no
+        # proprio rotulo, e o registro do ciclo acontece sem ser anunciado.
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
-            assert warning in screen.note
-
-    @pytest.mark.asyncio
-    async def test_the_note_says_the_cycle_was_evaluated(self, spy: SuggestSpy) -> None:
-        # Sugerir aporte e a avaliacao do ciclo (issue #24), como no comando.
-        app = make_app()
-        async with app.run_test() as pilot:
-            screen = await open_screen(pilot, SuggestScreen())
-            await ask(pilot, screen, "1500")
-            assert "conta como avaliacao do ciclo" in screen.note
+            assert screen.note == ""
 
 
 class TestHiddenAmounts:
-    @pytest.mark.asyncio
-    async def test_h_also_takes_the_amount_out_of_the_header(self, spy: SuggestSpy) -> None:
-        # O subtitulo carrega o valor do aporte: mascarar a tabela e deixa-lo no
-        # cabecalho esconderia o aporte no lugar menos visivel da tela.
-        app = make_app()
-        async with app.run_test() as pilot:
-            screen = await open_screen(pilot, SuggestScreen())
-            await ask(pilot, screen, "1500")
-            assert screen.sub_title == "aporte - 1,500.00"
-            screen.query_one(DataTable).focus()
-            await pilot.press("h")
-            await pilot.pause()
-            assert screen.sub_title == f"aporte - {MASK}"
-
     @pytest.mark.asyncio
     async def test_h_masks_the_amounts_but_keeps_the_weights(self, spy: SuggestSpy) -> None:
         app = make_app()
@@ -248,12 +243,12 @@ class TestHiddenAmounts:
                 MASK,
                 MASK,
                 MASK,
-                "26.10%",
                 "30.00%",
+                "26.10%",
                 "28.40%",
                 "-1.60%",
             ]
-            assert f"Total alocado {MASK}" in screen.totals
+            assert f"Alocado {MASK}" in screen.totals
             assert f"Taxa B3 (est.) {MASK}" in screen.totals
             assert f"Sobra (caixa) {MASK}" in screen.totals
 
@@ -271,21 +266,21 @@ class TestFailures:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert isinstance(app.screen, SuggestScreen)
-            assert "Sem preco atual para: CDB01" in screen.note
-            assert toasts.severity_of("Sem preco atual") == "error"
+            assert "Sem preço atual para: CDB01" in screen.note
+            assert toasts.severity_of("Sem preço atual") == "error"
 
     @pytest.mark.asyncio
     async def test_an_empty_portfolio_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             services,
             "load_suggestion",
-            SuggestSpy(error=ValidationError("Nenhuma posicao ativa para sugerir aporte.")),
+            SuggestSpy(error=ValidationError("Nenhuma posição ativa para sugerir aporte.")),
         )
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
-            assert screen.note == "Nenhuma posicao ativa para sugerir aporte."
+            assert screen.note == "Nenhuma posição ativa para sugerir aporte."
             assert table_rows(screen) == []
 
 
@@ -304,7 +299,7 @@ class TestManualPrice:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.dialog_title == "Preco de AUVP11"
+            assert modal.dialog_title == "Preço de AUVP11"
             assert "126.25" in modal.body
             assert "14:07" in modal.body
             assert modal.typed == ""  # nenhum preco informado ainda
@@ -352,7 +347,7 @@ class TestManualPrice:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.typed == "100"  # reabre com o que foi informado
+            assert modal.typed == "100.00"  # reabre com o que foi informado
             modal.query_one(Input).value = ""
             await pilot.press("enter")
             await settle(pilot)
@@ -387,7 +382,7 @@ class TestManualPrice:
             await ask(pilot, screen, "1500")
             await pilot.press("p")
             await settle(pilot)
-            app.screen.query_one(Input).value = "-3"
+            await pilot.press("0")  # 0,00: a mascara nao deixa digitar sinal, mas zero passa
             await pilot.press("enter")
             await settle(pilot)
             assert screen.prices == {}
@@ -408,11 +403,11 @@ class TestManualPrice:
             await pilot.press("p")
             await settle(pilot)
             assert isinstance(app.screen, SuggestScreen)  # nenhum modal abriu
-            assert toasts.severity_of("nao tem preco a definir") == "warning"
+            assert toasts.severity_of("não tem preço a definir") == "warning"
 
     @pytest.mark.asyncio
     async def test_the_engine_warning_reaches_the_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        warning = "Preco informado por voce em AUVP11: as cotas e o custo efetivo assumem que a ordem executa"
+        warning = "Preço de AUVP11 definido pelo usuário"
         monkeypatch.setattr(
             services, "load_suggestion", lambda amount, **_: make_suggestion(amount=amount, warnings=[warning])
         )
@@ -421,14 +416,6 @@ class TestManualPrice:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert warning in screen.note
-
-    @pytest.mark.asyncio
-    async def test_the_legend_explains_the_key(self, spy: SuggestSpy) -> None:
-        app = make_app()
-        async with app.run_test() as pilot:
-            screen = await open_screen(pilot, SuggestScreen())
-            await ask(pilot, screen, "1500")
-            assert "p define o preco de um ticker" in screen.note
 
 
 def unquoted_suggestion(
@@ -477,12 +464,12 @@ class TestUnquotedTarget:
             await ask(pilot, screen, "1500")
             assert table_rows(screen)[-1] == [
                 "MUND11",
-                "sem cotacao",
+                "sem cotação",
                 "-",
                 "-",
                 "-",
-                "0.00%",
                 "60.00%",
+                "0.00%",
                 "0.00%",
                 "-60.00%",
             ]
@@ -499,8 +486,8 @@ class TestUnquotedTarget:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.dialog_title == "Preco de MUND11"
-            assert "Sem cotacao do provedor" in modal.body
+            assert modal.dialog_title == "Preço de MUND11"
+            assert "Sem cotação do provedor" in modal.body
             assert modal.typed == ""
 
     @pytest.mark.asyncio
@@ -521,7 +508,26 @@ class TestUnquotedTarget:
             mund = next(row for row in rows if row[0] == "MUND11")
             assert mund[1] == "100.00 *"
             assert mund[3] == "9"  # 900 / 100
-            assert all(row[1] != "sem cotacao" for row in rows)
+            assert all(row[1] != "sem cotação" for row in rows)
+
+    @pytest.mark.asyncio
+    async def test_the_cursor_follows_the_ticker_when_the_rows_move(self, spy: SuggestSpy) -> None:
+        # Com o preco o MUND11 sobe para o topo; o cursor ficar na linha 2 poria a
+        # proxima tecla num ticker que voce nao escolheu.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            table = screen.query_one(DataTable)
+            table.move_cursor(row=2)
+            await pilot.pause()
+            await pilot.press("p")
+            await settle(pilot)
+            app.screen.query_one(Input).value = "100"
+            await pilot.press("enter")
+            await settle(pilot)
+            assert table_rows(screen)[0][0] == "MUND11"
+            assert table.cursor_row == 0
 
     @pytest.mark.asyncio
     async def test_once_priced_the_modal_says_empty_leaves_it_out(self, spy: SuggestSpy) -> None:
@@ -539,9 +545,9 @@ class TestUnquotedTarget:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.typed == "100"
+            assert modal.typed == "100.00"
             assert "Em branco fica fora dele" in modal.body
-            assert "volta a usar a cotacao" not in modal.body
+            assert "volta a usar a cotação" not in modal.body
 
     @pytest.mark.asyncio
     async def test_fixed_income_without_a_quote_is_not_fixed_by_a_price(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -562,7 +568,175 @@ class TestUnquotedTarget:
             await pilot.press("p")
             await settle(pilot)
             assert isinstance(app.screen, SuggestScreen)  # nenhum modal abriu
-            assert toasts.severity_of("nao se aplica") == "warning"
+            assert toasts.severity_of("não se aplica") == "warning"
+
+
+class TestPinnedPurchase:
+    """'q' fixa a compra de um ticker e o resto do aporte vai para os outros."""
+
+    @pytest.mark.asyncio
+    async def test_q_asks_for_whole_shares_on_variable_income(self, spy: SuggestSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            await pilot.press("q")
+            await settle(pilot)
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            assert modal.dialog_title == "Quantidade de AUVP11"
+            assert "Cotas inteiras" in modal.body
+            assert modal.typed == ""
+
+    @pytest.mark.asyncio
+    async def test_a_quantity_reaches_the_engine_and_marks_the_row(self, spy: SuggestSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            await pilot.press("q")
+            await settle(pilot)
+            app.screen.query_one(Input).value = "5"
+            await pilot.press("enter")
+            await settle(pilot)
+            assert spy.last["quantities"] == {"AUVP11": Decimal("5")}
+            assert spy.last["refresh"] is False  # mudou a compra, nao a cotacao
+            row = table_rows(screen)[0]
+            assert row[3] == "5 *"
+            assert row[4] == "631.25"  # 5 x 126.25
+
+    @pytest.mark.asyncio
+    async def test_zero_is_a_quantity(self, spy: SuggestSpy) -> None:
+        # Zero e como se tira o ticker deste aporte — nao um campo vazio.
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            await pilot.press("q")
+            await settle(pilot)
+            app.screen.query_one(Input).value = "0"
+            await pilot.press("enter")
+            await settle(pilot)
+            assert spy.last["quantities"] == {"AUVP11": Decimal("0")}
+
+    @pytest.mark.asyncio
+    async def test_fixed_income_is_pinned_by_value(self, spy: SuggestSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            screen.query_one(DataTable).move_cursor(row=1)  # CDB-XP-2027
+            await pilot.pause()
+            await pilot.press("q")
+            await settle(pilot)
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            assert modal.dialog_title == "Valor de CDB-XP-2027"
+            modal.query_one(Input).value = "300,50"
+            await pilot.press("enter")
+            await settle(pilot)
+            assert spy.last["values"] == {"CDB-XP-2027": Decimal("300.50")}
+            assert spy.last["quantities"] == {}
+            row = table_rows(screen)[1]
+            assert row[3] == "-"
+            assert row[4] == "300.50 *"
+
+    @pytest.mark.asyncio
+    async def test_an_empty_value_goes_back_to_the_suggestion(self, spy: SuggestSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            screen.quantities["AUVP11"] = Decimal("5")
+            screen.fetch()
+            await settle(pilot)
+            await pilot.press("q")
+            await settle(pilot)
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            assert modal.typed == "5"  # reabre com o que foi fixado
+            modal.query_one(Input).value = ""
+            await pilot.press("enter")
+            await settle(pilot)
+            assert spy.last["quantities"] == {}
+            assert table_rows(screen)[0][3] == "8"
+
+    @pytest.mark.asyncio
+    async def test_escape_leaves_the_purchase_alone(self, spy: SuggestSpy) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            await pilot.press("q")
+            await settle(pilot)
+            app.screen.query_one(Input).value = "5"
+            await pilot.press("escape")
+            await settle(pilot)
+            assert screen.quantities == {}
+            assert len(spy.calls) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("typed", "message"), [("1,5", "número inteiro de cotas"), ("-2", "zero ou mais")])
+    async def test_a_quantity_that_is_not_whole_shares_is_refused_without_losing_the_table(
+        self, spy: SuggestSpy, monkeypatch: pytest.MonkeyPatch, typed: str, message: str
+    ) -> None:
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, SuggestScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            await pilot.press("q")
+            await settle(pilot)
+            app.screen.query_one(Input).value = typed
+            await pilot.press("enter")
+            await settle(pilot)
+            assert screen.quantities == {}
+            assert len(spy.calls) == 1
+            assert table_rows(screen)[0][3] == "8"
+            assert toasts.severity_of(message) == "error"
+
+    @pytest.mark.asyncio
+    async def test_the_engine_warning_reaches_the_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        warning = "Compra em AUVP11 fixada pelo usuário"
+        monkeypatch.setattr(
+            services, "load_suggestion", lambda amount, **_: make_suggestion(amount=amount, warnings=[warning])
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            assert warning in screen.note
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("target", "message"),
+        [
+            (UnquotedTarget("MUND11", AssetType.ETF, Decimal("0.6"), Decimal("0")), "informe o preço (p)"),
+            (
+                UnquotedTarget("TESOURO-IPCA-2035", AssetType.TESOURO, Decimal("0.2"), Decimal("0")),
+                "confira o ticker no cadastro",
+            ),
+        ],
+    )
+    async def test_an_unquoted_target_is_not_pinned(
+        self, monkeypatch: pytest.MonkeyPatch, target: UnquotedTarget, message: str
+    ) -> None:
+        monkeypatch.setattr(
+            services, "load_suggestion", lambda amount, **_: make_suggestion(amount=amount, unquoted=[target])
+        )
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, SuggestScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, SuggestScreen())
+            await ask(pilot, screen, "1500")
+            screen.query_one(DataTable).move_cursor(row=2)
+            await pilot.pause()
+            await pilot.press("q")
+            await settle(pilot)
+            assert isinstance(app.screen, SuggestScreen)  # nenhum modal abriu
+            assert toasts.severity_of(message) == "warning"
 
 
 class TestProvenance:
@@ -574,8 +748,8 @@ class TestProvenance:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
-            assert "Fonte(s) de preco brapi, calculado" in screen.totals
-            assert "Cotacao mais recente 2026-08-11 14:07" in screen.totals
+            assert "Fonte(s) brapi, calculado" in screen.totals
+            assert "Cotação 2026-08-11 14:07" in screen.totals
 
 
 class TestFreshQuotes:

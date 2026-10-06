@@ -183,7 +183,7 @@ class TestGuards:
 
     def test_missing_price_for_held_ticker_raises(self) -> None:
         txns = [buy("AAA", D(2025, 12, 1), "10")]
-        with pytest.raises(ValueError, match="Sem preco"):
+        with pytest.raises(ValueError, match="Sem preço"):
             compute_twr(txns, {"AAA": []}, D(2026, 1, 1), D(2026, 1, 31))
 
 

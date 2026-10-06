@@ -14,8 +14,8 @@ from textual.binding import Binding, BindingType
 ARROW_FOCUS: list[BindingType] = [
     Binding("left", "app.focus_previous", "Anterior", show=False),
     Binding("up", "app.focus_previous", "Anterior", show=False),
-    Binding("right", "app.focus_next", "Proximo", show=False),
-    Binding("down", "app.focus_next", "Proximo", show=False),
+    Binding("right", "app.focus_next", "Próximo", show=False),
+    Binding("down", "app.focus_next", "Próximo", show=False),
 ]
 """Arrows walking the controls of a dialog or a form, on top of ``tab``.
 

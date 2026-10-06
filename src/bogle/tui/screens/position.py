@@ -33,8 +33,8 @@ _COLUMNS = (
     "Ticker",
     "Tipo",
     "Qtd",
-    "Preco medio",
-    "Cotacao",
+    "Preço médio",
+    "Cotação",
     "Montante",
     "Peso",
     "Target",
@@ -44,16 +44,16 @@ _COLUMNS = (
     "TWR",
 )
 
-_EMPTY = "Nenhuma posicao ativa."
+_EMPTY = "Nenhuma posição ativa."
 
 
 class PositionScreen(Screen[None]):
-    SUB_TITLE = "posicao"
+    SUB_TITLE = "posição"
     AUTO_FOCUS = "#positions"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Voltar"),
         Binding("r", "reload", "Atualizar"),
-        Binding("p", "toggle_prices", "Precos"),
+        Binding("p", "toggle_prices", "Preços"),
     ]
 
     def __init__(self, *, with_prices: bool = True) -> None:
@@ -101,7 +101,7 @@ class PositionScreen(Screen[None]):
 
     def _load(self, *, refresh: bool = False) -> None:
         # O modo fica no subtitulo (o cabecalho e mais visivel que um rodape).
-        self.sub_title = "posicao - precos ao vivo" if self.with_prices else "posicao - sem precos"
+        self.sub_title = "posição - preços ao vivo" if self.with_prices else "posição - sem preços"
         self.query_one(DataTable).loading = True
         self._fetch(self.with_prices, refresh)
 
@@ -174,17 +174,17 @@ def _totals_markup(snapshot: PortfolioSnapshot) -> str:
     pnl_percent = fmt.signed(summary.total_pnl_percent, percent=True) if priced else fmt.DASH
     lines = [
         f"[dim]Total investido[/dim] {fmt.money(summary.total_invested)}"
-        f"   [dim]Patrimonio total[/dim] {value}"
-        f"   [dim]Variacao[/dim] {pnl} ({pnl_percent})",
-        f"[dim]Lucro do mes[/dim] {fmt.signed(snapshot.month_profit, percent=False)}"
+        f"   [dim]Patrimônio total[/dim] {value}"
+        f"   [dim]Variação[/dim] {pnl} ({pnl_percent})",
+        f"[dim]Lucro do mês[/dim] {fmt.signed(snapshot.month_profit, percent=False)}"
         f"   [dim]Proventos (12m)[/dim] {fmt.signed(snapshot.income_12m, percent=False)}",
     ]
     origin = price_provenance((p.price_source, p.as_of) for p in summary.positions)
     provenance = []
     if origin.sources:
-        provenance.append(f"[dim]Fonte(s) de preco[/dim] {', '.join(origin.sources)}")
+        provenance.append(f"[dim]Fonte(s)[/dim] {', '.join(origin.sources)}")
     if origin.latest is not None:
-        provenance.append(f"[dim]Cotacao mais recente[/dim] {origin.latest:%Y-%m-%d %H:%M}")
+        provenance.append(f"[dim]Cotação[/dim] {origin.latest:%Y-%m-%d %H:%M}")
     if provenance:
         lines.append("   ".join(provenance))
     return "\n".join(lines)
@@ -195,5 +195,5 @@ def _note_for(snapshot: PortfolioSnapshot) -> str:
         return f"[yellow]{_EMPTY}[/yellow]"
     if snapshot.excluded:
         excluded = escape(with_reasons(snapshot.excluded, snapshot.excluded_reasons))
-        return f"[yellow]Nota:[/yellow] lucro do mes nao considera {excluded}."
+        return f"[yellow]Nota:[/yellow] lucro do mês não considera {excluded}."
     return ""

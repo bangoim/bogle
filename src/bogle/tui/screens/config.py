@@ -30,7 +30,7 @@ from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import DataScreen
 from bogle.tui.screens.modals import EditModal
 
-_COLUMNS = ("Chave", "Valor", "Tipo", "Atualizado em", "Descricao")
+_COLUMNS = ("Chave", "Valor", "Tipo", "Atualizado em", "Descrição")
 
 _LEGEND = "e edita, d volta ao default. Tema, separador decimal e privacidade valem na hora."
 
@@ -100,7 +100,7 @@ class ConfigScreen(DataScreen[list[SettingEntry]]):
         if entry is None:
             return
         if entry.is_default:
-            self.notify(f"{entry.key} ja esta no default.", markup=False)
+            self.notify(f"{entry.key} já está no default.", markup=False)
             return
         self._reset(entry.key)
 
@@ -166,7 +166,7 @@ class ConfigScreen(DataScreen[list[SettingEntry]]):
 
 def _placeholder(entry: SettingEntry) -> str:
     if entry.type_name == "list[str]":
-        return "separados por virgula (ex: CDI,IBOV)"
+        return "separados por vírgula (ex: CDI,IBOV)"
     if entry.type_name == "date":
         return "YYYY-MM-DD"
     if entry.type_name == "bool":

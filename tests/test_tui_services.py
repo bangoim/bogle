@@ -17,7 +17,6 @@ import pytest
 from psycopg import errors as pg_errors
 from psycopg.rows import DictRow
 
-from bogle import format as fmt
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import (
     AssetHasTransactionsError,
@@ -170,7 +169,7 @@ class TestRecordTrades:
         services.record_buy(
             ticker="PETR4", when=WHEN, shares=Decimal("100"), unit_price=Decimal("30"), fees=Decimal("0")
         )
-        with pytest.raises(InsufficientSharesError, match="nao ha posicao aberta"):
+        with pytest.raises(InsufficientSharesError, match="não há posição aberta"):
             services.record_sell(
                 ticker="PETR4",
                 when=datetime(2025, 12, 1, 12, tzinfo=UTC),
@@ -235,7 +234,7 @@ class TestRecordIncome:
         assert transaction.tax_withheld == Decimal("0")
 
     def test_a_trade_type_is_rejected(self, seeded: None) -> None:
-        with pytest.raises(ValueError, match="tipo de provento invalido"):
+        with pytest.raises(ValueError, match="tipo de provento inválido"):
             services.record_income(ticker="PETR4", income_type=TransactionType.BUY, when=WHEN, amount=Decimal("10"))
 
 
@@ -309,7 +308,7 @@ class TestPreferences:
 
     def test_defaults_when_nothing_was_configured(self, conn: psycopg.Connection[DictRow]) -> None:
         preferences = services.load_preferences()
-        assert preferences.decimal_separator == fmt.CANONICAL_DECIMAL
+        assert preferences.decimal_separator == ","  # padrao brasileiro
         assert preferences.hide_amounts is False
         assert preferences.theme == DEFAULT_THEME
 
@@ -456,12 +455,12 @@ class TestAssets:
         self, conn: psycopg.Connection[DictRow]
     ) -> None:
         # Mesma validacao de dominio do `bogle add`: nada e escrito.
-        with pytest.raises(ValidationError, match="nao se aplica"):
+        with pytest.raises(ValidationError, match="não se aplica"):
             services.add_asset(ticker="PETR4", target_weight=Decimal("0.2"), asset_type=AssetType.STOCK, issuer="XP")
         assert services.list_assets() == []
 
     def test_missing_fixed_income_fields_are_refused(self, conn: psycopg.Connection[DictRow]) -> None:
-        with pytest.raises(ValidationError, match="--rate e obrigatorio"):
+        with pytest.raises(ValidationError, match="--rate é obrigatório"):
             services.add_asset(ticker="TESOURO-IPCA-2035", target_weight=Decimal("0.2"), asset_type=AssetType.TESOURO)
 
     def test_the_weight_sum_guard_still_applies(self, seeded: None) -> None:
@@ -624,8 +623,8 @@ class TestSettingsAccess:
             services.save_setting("nao_existe", "1")
 
     def test_resetting_returns_the_default_that_came_back(self, conn: psycopg.Connection[DictRow]) -> None:
-        services.save_setting(DECIMAL_SEPARATOR, ",")
-        assert services.reset_setting(DECIMAL_SEPARATOR) == "."
+        services.save_setting(DECIMAL_SEPARATOR, ".")
+        assert services.reset_setting(DECIMAL_SEPARATOR) == ","
         entries = {entry.key: entry for entry in services.load_settings()}
         assert entries[DECIMAL_SEPARATOR].is_default is True
 
@@ -673,6 +672,14 @@ class TestSuggestion:
         item = suggestion.items[0]
         assert item.price == Decimal("30")
         assert item.is_manual_price
+
+    def test_the_pinned_purchases_reach_the_engine(self, priced: None) -> None:
+        suggestion = services.load_suggestion(
+            Decimal("320"), quantities={"PETR4": Decimal("3")}, today=date(2026, 3, 20)
+        )
+        item = suggestion.items[0]
+        assert item.quantity == Decimal("3")
+        assert item.is_pinned
 
     def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(self, priced: None) -> None:
         # O caminho do 'r' da tela: sem isso a cotacao vem do cache de 5 minutos e

@@ -36,16 +36,16 @@ def parse_decimal(value: str, option: str) -> Decimal:
     canonical = fmt.to_canonical(value)
     if canonical is None:
         raise ValidationError(
-            f"{option}: use um unico separador, para os centavos — milhar vai sem separador. "
-            f"Recebido {value!r}; escreva 1000 ou 1000,00 (o ponto tambem vale)."
+            f"{option}: use um único separador, para os centavos — milhar vai sem separador. "
+            f"Recebido {value!r}; escreva 1000 ou 1000,00 (o ponto também vale)."
         )
     try:
         parsed = Decimal(canonical)
     except InvalidOperation:
-        raise ValidationError(f"{option} deve ser um numero decimal, recebido {value!r}.") from None
+        raise ValidationError(f"{option} deve ser um número decimal, recebido {value!r}.") from None
     # NaN/Infinity parseiam como Decimal mas estouram em comparacoes e no banco.
     if not parsed.is_finite():
-        raise ValidationError(f"{option} deve ser um numero decimal, recebido {value!r}.")
+        raise ValidationError(f"{option} deve ser um número decimal, recebido {value!r}.")
     return parsed
 
 
@@ -76,25 +76,26 @@ def parse_rate(value: str, option: str) -> Decimal:
     return rate
 
 
-def parse_price_overrides(values: Sequence[str], option: str) -> dict[str, Decimal]:
-    """Parse repeated ``TICKER=PRECO`` options into ``{ticker: price}``.
+def parse_ticker_values(values: Sequence[str], option: str, *, unit: str, example: str) -> dict[str, Decimal]:
+    """Parse repeated ``TICKER=NUMERO`` options into ``{ticker: number}``.
 
-    The syntax only exists in the command (the interface asks per row), but the
-    number goes through :func:`parse_decimal` all the same, so ``114,86`` and
-    ``114.86`` mean the same thing in both. Whether the ticker is in the portfolio
-    and whether the price makes sense for its type is checked by
-    :func:`~bogle.rebalancing.suggest_allocation`, which has the positions.
+    ``unit`` names the number in the error (``PRECO``, ``QTDE``...) and
+    ``example`` shows a valid pair. The syntax only exists in the command (the
+    interface asks per row), but the number goes through :func:`parse_decimal` all
+    the same, so ``114,86`` and ``114.86`` mean the same thing in both. Whether the
+    ticker is in the portfolio and whether the number makes sense for its type is
+    checked by :func:`~bogle.rebalancing.suggest_allocation`, which has the positions.
     """
-    prices: dict[str, Decimal] = {}
+    parsed: dict[str, Decimal] = {}
     for raw in values:
-        ticker, separator, price = raw.partition("=")
+        ticker, separator, number = raw.partition("=")
         if not separator or not ticker.strip():
-            raise ValidationError(f"{option} espera TICKER=PRECO (ex: VWRA11=114,86), recebido {raw!r}.")
+            raise ValidationError(f"{option} espera TICKER={unit} (ex: {example}), recebido {raw!r}.")
         name = ticker.strip().upper()
-        if name in prices:
-            raise ValidationError(f"{option} repetido para {name}: informe um preco so por ticker.")
-        prices[name] = parse_decimal(price.strip(), f"{option} {name}")
-    return prices
+        if name in parsed:
+            raise ValidationError(f"{option} repetido para {name}: informe um só por ticker.")
+        parsed[name] = parse_decimal(number.strip(), f"{option} {name}")
+    return parsed
 
 
 def parse_date(value: str, option: str) -> datetime:

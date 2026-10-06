@@ -84,7 +84,7 @@ class BogleApp(App[None]):
         # So acontece se um tema sair do textual entre duas sessoes: `config set`
         # valida o nome contra a lista da versao instalada.
         self.notify(
-            f"tema '{theme}' nao existe nesta versao; usando {self.theme}.",
+            f"tema '{theme}' não existe nesta versão; usando {self.theme}.",
             severity="warning",
             markup=False,
         )
@@ -114,7 +114,7 @@ class BogleApp(App[None]):
         hidden = not fmt.amounts_hidden()
         fmt.hide_amounts(hidden)
         self.redraw_amounts()
-        self.notify("Valores ocultos." if hidden else "Valores visiveis.", timeout=3)
+        self.notify("Valores ocultos." if hidden else "Valores visíveis.", timeout=3)
         self._remember_hidden(hidden)
 
     def redraw_amounts(self) -> None:
@@ -176,7 +176,7 @@ class BogleApp(App[None]):
         # A preferencia vale nesta sessao; so nao vai valer na proxima.
         self.call_from_thread(
             self.notify,
-            f"a preferencia vale nesta sessao, mas nao foi salva: {reason}",
+            f"a preferência vale nesta sessão, mas não foi salva: {reason}",
             severity="warning",
             timeout=8,
             markup=False,

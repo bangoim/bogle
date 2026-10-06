@@ -56,7 +56,7 @@ _INDEXERS = tuple(indexer for indexer in Indexer if indexer is not Indexer.PREFI
 
 _EMPTY = "Nenhum ativo cadastrado. Use 'a' para adicionar o primeiro."
 _CLOSED_HEADING = "Encerrados"
-_WEIGHT_HINT = "fracao decimal: 0.4 = 40%"
+_WEIGHT_HINT = "fração decimal: 0.4 = 40%"
 _RATE_HINT = "1.10 = 110% do CDI; 0.065 = IPCA + 6,5%"
 
 
@@ -118,7 +118,7 @@ class AssetsScreen(DataScreen[AssetRoster]):
             ConfirmModal(
                 f"Remover o ativo {asset.ticker}?",
                 f"{asset.asset_type}, peso {fmt.pct(asset.target_weight)}."
-                "\nSo funciona enquanto o ativo nao tem transacoes.",
+                "\nSó funciona enquanto o ativo não tem transações.",
                 confirm_label="Remover",
             ),
             lambda confirmed: self._on_confirmed(asset.ticker, confirmed),
@@ -223,11 +223,14 @@ class AssetFormScreen(WriteScreen[Asset]):
                 "Taxa",
                 id="rate",
                 placeholder=_RATE_HINT,
-                validators=[DecimalField("Taxa", parse=parse_rate)],
+                validators=[DecimalField("Taxa", parse=parse_rate, feminine=True)],
             )
-            yield ControlRow("Liquidez diaria", Checkbox(id="daily-liquidity", compact=True), id="liquidity-row")
+            yield ControlRow("Liquidez diária", Checkbox(id="daily-liquidity", compact=True), id="liquidity-row")
             yield Field(
-                "Data de compra", id="purchase-date", placeholder="YYYY-MM-DD", validators=[DateField("Data de compra")]
+                "Data de compra",
+                id="purchase-date",
+                placeholder="YYYY-MM-DD",
+                validators=[DateField("Data de compra", feminine=True)],
             )
             yield Field(
                 "Vencimento", id="maturity-date", placeholder="YYYY-MM-DD", validators=[DateField("Vencimento")]
@@ -280,13 +283,13 @@ class AssetFormScreen(WriteScreen[Asset]):
         self.query_one("#liquidity-row").display = private
 
         self._applies("issuer", private, [TextField("Emissor")])
-        self._applies("rate", fixed, [DecimalField("Taxa", parse=parse_rate)], placeholder=_RATE_HINT)
-        self._applies("purchase-date", fixed, [DateField("Data de compra")], placeholder="YYYY-MM-DD")
+        self._applies("rate", fixed, [DecimalField("Taxa", parse=parse_rate, feminine=True)], placeholder=_RATE_HINT)
+        self._applies("purchase-date", fixed, [DateField("Data de compra", feminine=True)], placeholder="YYYY-MM-DD")
         self._applies(
             "maturity-date",
             fixed,
             [DateField("Vencimento", allow_blank=not maturity_required)],
-            placeholder="YYYY-MM-DD" if maturity_required else "opcional (liquidez diaria)",
+            placeholder="YYYY-MM-DD" if maturity_required else "opcional (liquidez diária)",
         )
 
     def _applies(self, field_id: str, applicable: bool, validators: list[Validator], *, placeholder: str = "") -> None:
@@ -336,7 +339,7 @@ class AssetFormScreen(WriteScreen[Asset]):
             lines[-1] += f", vencimento {maturity:%Y-%m-%d}" if maturity is not None else ", sem vencimento"
         if "issuer" in entry:
             liquidity = "com" if entry["daily_liquidity"] else "sem"
-            lines.append(f"Emissor {entry['issuer']}, {liquidity} liquidez diaria")
+            lines.append(f"Emissor {entry['issuer']}, {liquidity} liquidez diária")
         return "\n".join(lines)
 
     @override
@@ -357,7 +360,7 @@ class AssetUpdateScreen(WriteScreen[Asset]):
     """Change the target weight and/or the type, as ``bogle update`` does."""
 
     AUTO_FOCUS = "#weight Input"
-    CONFIRM_TITLE = "Confirmar alteracao"
+    CONFIRM_TITLE = "Confirmar alteração"
     CONFIRM_LABEL = "Atualizar"
     WRITING_MESSAGE = "atualizando o ativo; um instante."
 
@@ -403,8 +406,8 @@ class AssetUpdateScreen(WriteScreen[Asset]):
         if not self.switchable:
             self.query_one("#update-note", Static).update(
                 Text.from_markup(
-                    f"[dim]{self.asset.asset_type} e renda fixa: trocar o tipo deixaria metadados orfaos, "
-                    "entao so o peso muda aqui.[/dim]"
+                    f"[dim]{self.asset.asset_type} é renda fixa: trocar o tipo deixaria metadados órfãos, "
+                    "então só o peso muda aqui.[/dim]"
                 )
             )
 
@@ -422,7 +425,7 @@ class AssetUpdateScreen(WriteScreen[Asset]):
         changed_type = kind is not self.asset.asset_type
         if not changed_weight and not changed_type:
             # Mesma recusa do `bogle update` sem nenhuma flag, so mais cedo.
-            self.notify("Nada para atualizar: peso e tipo estao como estavam.", severity="warning")
+            self.notify("Nada para atualizar: peso e tipo estão como estavam.", severity="warning")
             return None
         entry: Entry = {"ticker": self.asset.ticker}
         if changed_weight:
@@ -494,7 +497,7 @@ def _indexer_of(asset: Asset) -> str:
 def _liquidity_of(asset: Asset) -> str:
     if asset.daily_liquidity is None:
         return fmt.DASH
-    return "diaria" if asset.daily_liquidity else "no vencimento"
+    return "diária" if asset.daily_liquidity else "no vencimento"
 
 
 def _date_of(value: datetime | None) -> str:
@@ -508,7 +511,7 @@ def _note_for(roster: AssetRoster) -> str:
     subject = _subject_of(roster)
     gap = weight_sum_notice(total)
     if gap is None:
-        return f"[dim]{subject}. Soma dos pesos: {fmt.pct(total)} (o maximo e 100.00%).[/dim]"
+        return f"[dim]{subject}. Soma dos pesos: {fmt.pct(total)} (o máximo é 100.00%).[/dim]"
     # Amarelo, e nao dim: a soma incompleta e a unica coisa na tela que diz que
     # uma parte da carteira nao tem alvo — e ela nao aparece em lugar nenhum.
     return f"[yellow]{subject}. Soma dos pesos: {fmt.pct(total)} — {gap}.[/yellow]"
@@ -520,4 +523,4 @@ def _subject_of(roster: AssetRoster) -> str:
     if not closed:
         return "1 ativo" if in_plan == 1 else f"{in_plan} ativos"
     plan = {0: "Nenhum ativo no plano", 1: "1 ativo no plano"}.get(in_plan, f"{in_plan} ativos no plano")
-    return f"{plan} e {closed} {'encerrado' if closed == 1 else 'encerrados'} (sem posicao e sem target)"
+    return f"{plan} e {closed} {'encerrado' if closed == 1 else 'encerrados'} (sem posição e sem target)"

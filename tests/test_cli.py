@@ -57,7 +57,7 @@ def test_add_duplicate_raises_with_exit_1() -> None:
     assert run_cli("add", "VTI", "-w", "0.5").returncode == 0
     result = run_cli("add", "VTI", "-w", "0.3")
     assert result.returncode == 1
-    assert "ja existe" in result.stderr
+    assert "já existe" in result.stderr
 
 
 def test_update_success() -> None:
@@ -102,7 +102,7 @@ def test_list_without_closed_assets_has_no_section() -> None:
 def test_update_not_found() -> None:
     result = run_cli("update", "XYZ", "-w", "0.1")
     assert result.returncode == 1
-    assert "nao encontrado" in result.stderr
+    assert "não encontrado" in result.stderr
 
 
 def test_update_type_variable_to_variable() -> None:
@@ -152,7 +152,7 @@ def test_validation_weight_out_of_range() -> None:
 def test_validation_weight_not_decimal() -> None:
     result = run_cli("add", "ABC", "-w", "foo")
     assert result.returncode == 1
-    assert "deve ser um numero decimal" in result.stderr
+    assert "deve ser um número decimal" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +278,7 @@ def test_add_explicit_no_prefixed_requires_indexer() -> None:
         "--daily-liquidity",
     )
     assert result.returncode == 1
-    assert "--indexer e obrigatorio para CDB pos-fixado" in result.stderr
+    assert "--indexer é obrigatório para CDB pós-fixado" in result.stderr
 
 
 def test_add_type_and_indexer_are_case_insensitive() -> None:
@@ -312,7 +312,7 @@ def test_add_missing_fields_listed_all_at_once() -> None:
 def test_add_irrelevant_field_for_type_raises() -> None:
     result = run_cli("add", "VTI", "--weight", "0.1", "--issuer", "Vanguard")
     assert result.returncode == 1
-    assert "--issuer nao se aplica ao tipo STOCK" in result.stderr
+    assert "--issuer não se aplica ao tipo STOCK" in result.stderr
 
 
 def test_add_invalid_date_format() -> None:
@@ -355,8 +355,8 @@ def test_add_parse_error_does_not_hide_missing_fields() -> None:
         "--daily-liquidity",
     )
     assert result.returncode == 1
-    assert "--rate deve ser um numero decimal" in result.stderr
-    assert "--issuer e obrigatorio para CDB" in result.stderr
+    assert "--rate deve ser um número decimal" in result.stderr
+    assert "--issuer é obrigatório para CDB" in result.stderr
 
 
 def test_add_rate_overflow_is_friendly() -> None:

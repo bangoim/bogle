@@ -34,7 +34,7 @@ class IndicesInput(Horizontal):
 
     @override
     def compose(self) -> ComposeResult:
-        yield Label("Indices", classes="field-label")
+        yield Label("Índices", classes="field-label")
         yield Input(placeholder="ex: IBOV,CDI (Enter aplica)", compact=True, classes="field-input")
 
     @property

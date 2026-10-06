@@ -333,7 +333,7 @@ class TestPlanErrors:
     @respx.mock
     def test_feature_not_available_403(self) -> None:
         respx.get(QUOTE_URL).mock(
-            return_value=Response(403, json=api_error("FEATURE_NOT_AVAILABLE", "nao disponivel no plano"))
+            return_value=Response(403, json=api_error("FEATURE_NOT_AVAILABLE", "não disponível no plano"))
         )
         with client() as c, pytest.raises(MarketDataError) as exc_info:
             c.get_quote("PETR4")

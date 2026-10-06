@@ -118,7 +118,7 @@ class AssetRepository:
             raise AssetAlreadyExistsError(ticker) from None
         except pg_errors.CheckViolation as exc:
             raise ValidationError(
-                f"Combinacao invalida de campos para o tipo {asset_type.value} (constraint {exc.diag.constraint_name})."
+                f"Combinação inválida de campos para o tipo {asset_type.value} (constraint {exc.diag.constraint_name})."
             ) from None
         return Asset(
             ticker=ticker,

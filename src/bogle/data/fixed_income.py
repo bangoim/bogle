@@ -71,10 +71,10 @@ def present_value(
     if indexer is Indexer.IPCA_PLUS:
         ipca_factor = _ipca_factor(ipca, purchase_date, on_date)
         return principal * ipca_factor * _power_factor(rate, purchase_date, on_date)
-    raise ValueError(f"indexer nao suportado para valor presente: {indexer!r}")
+    raise ValueError(f"indexer não suportado para valor presente: {indexer!r}")
 
 
-def accumulated_rate_factor(series: Sequence[SeriesPoint], start: date, end: date, *, name: str = "indice") -> Decimal:
+def accumulated_rate_factor(series: Sequence[SeriesPoint], start: date, end: date, *, name: str = "índice") -> Decimal:
     """Compound ``(1 + value)`` over the series in ``[start, end)`` — the growth
     factor of a daily-rate index (CDI/SELIC) at 100%. Shared with the reports
     epic (#67) so index accumulation is never reimplemented."""
@@ -90,7 +90,7 @@ def accumulated_ipca_factor(series: Sequence[SeriesPoint], start: date, end: dat
 def _accumulate(series: Sequence[SeriesPoint], start: date, end: date, *, multiplier: Decimal, name: str) -> Decimal:
     """Compound ``(1 + multiplier * value)`` over series points in ``[start, end)``."""
     if not series:
-        raise ValueError(f"serie {name} vazia; impossivel valorar de {start} a {end}.")
+        raise ValueError(f"série {name} vazia; impossível valorar de {start} a {end}.")
     factor = _ONE
     for point in series:
         if start <= point.date < end:
@@ -121,7 +121,7 @@ def _months_in_range(start: date, end: date) -> list[tuple[int, int]]:
 
 def _ipca_factor(ipca: Sequence[SeriesPoint], start: date, end: date) -> Decimal:
     if not ipca:
-        raise ValueError(f"serie IPCA vazia; impossivel valorar de {start} a {end}.")
+        raise ValueError(f"série IPCA vazia; impossível valorar de {start} a {end}.")
     by_month = {(point.date.year, point.date.month): point.value for point in ipca}
     projection = max(ipca, key=lambda point: point.date).value  # latest published, used as fallback
     factor = _ONE

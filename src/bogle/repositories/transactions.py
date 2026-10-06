@@ -199,9 +199,9 @@ class TransactionRepository:
         if not unit_price.is_finite() or unit_price <= 0:
             errors.append(f"unit_price deve ser maior que zero, recebido {unit_price}.")
         if not fees.is_finite() or fees < 0:
-            errors.append(f"fees nao pode ser negativo, recebido {fees}.")
+            errors.append(f"fees não pode ser negativo, recebido {fees}.")
         if not tax_withheld.is_finite() or tax_withheld < 0:
-            errors.append(f"tax_withheld nao pode ser negativo, recebido {tax_withheld}.")
+            errors.append(f"tax_withheld não pode ser negativo, recebido {tax_withheld}.")
         if errors:
             raise ValidationError("\n".join(errors))
 
@@ -217,7 +217,7 @@ class TransactionRepository:
         if not amount.is_finite() or amount <= 0:
             errors.append(f"amount deve ser maior que zero, recebido {amount}.")
         if not tax_withheld.is_finite() or tax_withheld < 0:
-            errors.append(f"tax_withheld nao pode ser negativo, recebido {tax_withheld}.")
+            errors.append(f"tax_withheld não pode ser negativo, recebido {tax_withheld}.")
         if errors:
             raise ValidationError("\n".join(errors))
         return self._insert(
@@ -274,13 +274,13 @@ class TransactionRepository:
             raise AssetNotFoundError(ticker) from None
         except pg_errors.CheckViolation as exc:
             raise ValidationError(
-                f"Valores invalidos para transacao {transaction_type.value} (constraint {exc.diag.constraint_name})."
+                f"Valores inválidos para transação {transaction_type.value} (constraint {exc.diag.constraint_name})."
             ) from None
         except pg_errors.NumericValueOutOfRange:
             # Cobre tambem o overflow do produto shares * unit_price, que
             # nenhuma validacao por campo consegue prever.
             raise ValidationError(
-                f"Valores excedem a precisao suportada pelo banco para transacao {transaction_type.value}."
+                f"Valores excedem a precisão suportada pelo banco para transação {transaction_type.value}."
             ) from None
         assert row is not None  # INSERT ... RETURNING sempre devolve uma linha
         return _row_to_transaction(row)

@@ -29,9 +29,9 @@ class TestPanel:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, StatusScreen())
-            assert "Ciclo de avaliacao 12 meses" in screen.panel
-            assert "Ultima avaliacao   2026-02-10" in screen.panel
-            assert "Proxima avaliacao  2027-02-10 (em 182 dia(s))" in screen.panel
+            assert "Ciclo de avaliação 12 meses" in screen.panel
+            assert "Última avaliação   2026-02-10" in screen.panel
+            assert "Próxima avaliação  2027-02-10 (em 182 dia(s))" in screen.panel
 
     @pytest.mark.asyncio
     async def test_an_overdue_cycle_says_for_how_long(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,8 +39,8 @@ class TestPanel:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, StatusScreen())
-            assert "Avaliacao vencida  desde 2026-02-10 (ha 183 dia(s))" in screen.panel
-            assert "Uma sugestao de aporte conta como avaliacao" in screen.note
+            assert "Avaliação vencida  desde 2026-02-10 (há 183 dia(s))" in screen.panel
+            assert "Uma sugestão de aporte conta como avaliação" in screen.note
 
     @pytest.mark.asyncio
     async def test_never_evaluated_points_at_the_aporte_screen(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -48,8 +48,8 @@ class TestPanel:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, StatusScreen())
-            assert screen.panel == "Ciclo de avaliacao 12 meses"
-            assert "Nenhuma avaliacao registrada ainda" in screen.note
+            assert screen.panel == "Ciclo de avaliação 12 meses"
+            assert "Nenhuma avaliação registrada ainda" in screen.note
             assert "tela de Aporte" in screen.note
 
     @pytest.mark.asyncio
@@ -58,7 +58,7 @@ class TestPanel:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, StatusScreen())
-            assert "Ciclo de avaliacao 6 meses" in screen.panel
+            assert "Ciclo de avaliação 6 meses" in screen.panel
 
 
 class TestFailures:
@@ -77,5 +77,5 @@ class TestFailures:
             screen = await open_screen(pilot, StatusScreen())
             assert isinstance(app.screen, StatusScreen)
             assert screen.panel == ""
-            assert "nao foi possivel conectar ao banco" in screen.note
+            assert "não foi possível conectar ao banco" in screen.note
             assert toasts.severity_of("banco de dados") == "error"

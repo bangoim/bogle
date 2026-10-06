@@ -84,10 +84,10 @@ def _render(
     excluded_reasons: Mapping[str, str] | None = None,
     has_prices: bool = True,
 ) -> None:
-    table = Table(title="Posicao", title_style="bold")
+    table = Table(title="Posição", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Tipo", no_wrap=True)
-    for header in ("Qtd", "Preco medio", "Cotacao", "Montante", "Peso", "Target", "Drift", "PnL R$", "PnL %", "TWR"):
+    for header in ("Qtd", "Preço médio", "Cotação", "Montante", "Peso", "Target", "Drift", "PnL R$", "PnL %", "TWR"):
         table.add_column(header, justify="right")
     for p in summary.positions:
         table.add_row(
@@ -112,24 +112,24 @@ def _render(
     value = money(summary.total_value) if has_prices else DASH
     pnl = signed(summary.total_pnl, percent=False) if has_prices else DASH
     pnl_percent = signed(summary.total_pnl_percent, percent=True) if has_prices else DASH
-    console.print(f"Patrimonio total: {value}")
-    console.print(f"Variacao: {pnl} ({pnl_percent})")
-    console.print(f"Lucro do mes: {signed(month_profit, percent=False)}")
+    console.print(f"Patrimônio total: {value}")
+    console.print(f"Variação: {pnl} ({pnl_percent})")
+    console.print(f"Lucro do mês: {signed(month_profit, percent=False)}")
     console.print(f"Proventos (12m): {signed(income_12m, percent=False)}")
     origin = price_provenance((p.price_source, p.as_of) for p in summary.positions)
     if origin.sources:
-        console.print(f"Fonte(s) de preco: {', '.join(origin.sources)}")
+        console.print(f"Fonte(s): {', '.join(origin.sources)}")
     if origin.latest is not None:
-        console.print(f"Cotacao mais recente: {origin.latest:%Y-%m-%d %H:%M}")
+        console.print(f"Cotação: {origin.latest:%Y-%m-%d %H:%M}")
     if excluded:
         console.print(
-            f"[yellow]Nota:[/yellow] lucro do mes nao considera {with_reasons(excluded, excluded_reasons or {})}."
+            f"[yellow]Nota:[/yellow] lucro do mês não considera {with_reasons(excluded, excluded_reasons or {})}."
         )
 
 
 def position(
-    no_prices: bool = typer.Option(False, "--no-prices", help="Usa so dados da base, sem bater nas APIs."),
-    as_json: bool = typer.Option(False, "--json", help="Saida em JSON para scripts."),
+    no_prices: bool = typer.Option(False, "--no-prices", help="Usa só dados da base, sem bater nas APIs."),
+    as_json: bool = typer.Option(False, "--json", help="Saída em JSON para scripts."),
 ) -> None:
     conn = get_connection()
     try:
@@ -149,7 +149,7 @@ def position(
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
         return
     if not snapshot.summary.positions:
-        typer.echo("Nenhuma posicao ativa.")
+        typer.echo("Nenhuma posição ativa.")
         return
     _render(
         snapshot.summary,

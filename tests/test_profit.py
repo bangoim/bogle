@@ -91,7 +91,7 @@ class TestComputeProfit:
         assert report.unpriced == ["CDB01"]
 
     def test_no_transactions_is_friendly(self) -> None:
-        with pytest.raises(ValidationError, match="Nenhuma transacao"):
+        with pytest.raises(ValidationError, match="Nenhuma transação"):
             compute_profit(make_portfolio(), [], income_start=None, income_end=TODAY)
 
 
@@ -121,16 +121,16 @@ class TestCli:
         result = runner.invoke(app, ["profit"])
         assert result.exit_code == 0, result.output
         assert "Lucro da carteira (desde 2026-01-05)" in result.stdout
-        assert "+150.00" in result.stdout  # ganho de capital
-        assert "+50.00" in result.stdout  # realizado
-        assert "+100.00" in result.stdout  # nao realizado
-        assert "JCP (liquido)" in result.stdout
-        assert "+85.00" in result.stdout
+        assert "+150,00" in result.stdout  # ganho de capital
+        assert "+50,00" in result.stdout  # realizado
+        assert "+100,00" in result.stdout  # nao realizado
+        assert "JCP (líquido)" in result.stdout
+        assert "+85,00" in result.stdout
         assert "Lucro total" in result.stdout
-        assert "+235.00" in result.stdout
+        assert "+235,00" in result.stdout
 
     def test_12m_period_omits_grand_total(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["profit", "--period", "12m"])
         assert result.exit_code == 0, result.output
-        assert "ultimos 12 meses" in result.stdout
+        assert "últimos 12 meses" in result.stdout
         assert "Lucro total omitido" in result.stdout

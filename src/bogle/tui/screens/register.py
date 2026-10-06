@@ -63,11 +63,11 @@ def _position_line(position: Position) -> Text:
     parser over.
     """
     fields = [
-        ("Posicao", f"{fmt.exact(position.quantity)} cotas"),
-        ("Preco medio", fmt.money(position.average_price)),
+        ("Posição", f"{fmt.exact(position.quantity)} cotas"),
+        ("Preço médio", fmt.money(position.average_price)),
     ]
     if position.price is not None:
-        fields.append(("Cotacao", fmt.money(position.price)))
+        fields.append(("Cotação", fmt.money(position.price)))
     parts: list[str | tuple[str, str]] = []
     for label, value in fields:
         if parts:
@@ -85,11 +85,11 @@ def _today() -> str:
     return datetime.now(tz=ZoneInfo(DEFAULT_TIMEZONE)).date().isoformat()
 
 
-_PICKER_COLUMNS = ("Ticker", "Tipo", "Qtd", "Preco medio", "Cotacao", "Montante")
+_PICKER_COLUMNS = ("Ticker", "Tipo", "Qtd", "Preço médio", "Cotação", "Montante")
 
-_PICKER_LEGEND = "enter (ou s) abre a venda da posicao selecionada."
+_PICKER_LEGEND = "enter (ou s) abre a venda da posição selecionada."
 
-_NO_POSITIONS = "[yellow]Nenhuma posicao aberta: so ha o que vender depois de uma compra.[/yellow]"
+_NO_POSITIONS = "[yellow]Nenhuma posição aberta: só há o que vender depois de uma compra.[/yellow]"
 
 _INCOME_LABELS = {
     TransactionType.DIVIDEND: "Dividendo",
@@ -102,11 +102,11 @@ _INCOME_LABELS = {
 # abaixo, e uma lambda so procura o nome quando o item e escolhido.
 _ENTRIES: Entries = (
     (
-        MenuItem("1", "buy", "Compra", "quantidade, preco, taxas e data"),
+        MenuItem("1", "buy", "Compra", "quantidade, preço, taxas e data"),
         lambda: TradeFormScreen(kind=TransactionType.BUY),
     ),
     (
-        MenuItem("2", "sell", "Venda", "posicao aberta, inteira ou em parte"),
+        MenuItem("2", "sell", "Venda", "posição aberta, inteira ou em parte"),
         lambda: SellPickerScreen(),
     ),
     (MenuItem("3", "income", "Provento", "dividendo, JCP, rendimento ou juros"), lambda: IncomeFormScreen()),
@@ -150,7 +150,7 @@ class SellPickerScreen(DataScreen[list[Position]]):
     the decision is made against, and it saves a trip to the Position screen.
     """
 
-    SUB_TITLE = "venda - escolher a posicao"
+    SUB_TITLE = "venda - escolher a posição"
     AUTO_FOCUS = "#sell-positions"
     LOADING = "#sell-positions"
     NOTE = "#sell-note"
@@ -225,9 +225,9 @@ class FormScreen(WriteScreen[Transaction]):
     # foi escolhido na lista), e o `query` devolve na ordem do DOM — o ticker
     # ganha onde existe, a quantidade onde ele nao existe.
     AUTO_FOCUS = "#ticker Input, #shares Input"
-    CONFIRM_TITLE = "Confirmar lancamento"
+    CONFIRM_TITLE = "Confirmar lançamento"
     CONFIRM_LABEL = "Registrar"
-    WRITING_MESSAGE = "gravando o lancamento; um instante."
+    WRITING_MESSAGE = "gravando o lançamento; um instante."
 
     def __init__(self) -> None:
         super().__init__()
@@ -239,7 +239,7 @@ class FormScreen(WriteScreen[Transaction]):
     def written(self, transaction: Transaction) -> None:
         self.recorded = transaction
         summary = (
-            f"transacao {transaction.id} registrada: "
+            f"transação {transaction.id} registrada: "
             f"{transaction.transaction_type} {transaction.ticker} em {transaction.date:%Y-%m-%d}."
         )
         self.notify(summary, title="pronto", markup=False)
@@ -292,7 +292,7 @@ class TradeFormScreen(FormScreen):
         self.kind = kind
         self.is_sale = kind is TransactionType.SELL
         if self.is_sale != (position is not None):
-            raise ValueError("a venda sai de uma posicao escolhida, e a compra nao tem posicao de partida.")
+            raise ValueError("a venda sai de uma posição escolhida, e a compra não tem posição de partida.")
         self.position = position
         """A posicao sendo vendida; ``None`` na compra."""
         self.position_line = ""
@@ -326,17 +326,19 @@ class TradeFormScreen(FormScreen):
             if self.position is not None:
                 yield ControlRow("Vender tudo", Checkbox(id="sell-all", compact=True), id="sell-all-row")
             yield Field(
-                "Preco unitario",
+                "Preço unitário",
                 id="price",
-                placeholder="preco por cota",
-                validators=[DecimalField("Preco unitario", positive=True)],
+                placeholder="preço por cota",
+                validators=[DecimalField("Preço unitário", positive=True)],
+                money=True,
             )
             yield Field(
                 "Taxas",
                 id="fees",
                 value="0",
                 placeholder="corretagem e emolumentos",
-                validators=[DecimalField("Taxas")],
+                validators=[DecimalField("Taxas", feminine=True, plural=True)],
+                money=True,
             )
             if self.is_sale:
                 yield Field(
@@ -345,13 +347,14 @@ class TradeFormScreen(FormScreen):
                     value="0",
                     placeholder="dedo-duro de 0,005%",
                     validators=[DecimalField("IR retido")],
+                    money=True,
                 )
             yield Field(
                 "Data",
                 id="date",
                 value=_today(),
                 placeholder="YYYY-MM-DD",
-                validators=[DateField("Data")],
+                validators=[DateField("Data", feminine=True)],
             )
             with Horizontal(id="form-buttons"):
                 yield Button("Registrar", id="submit", variant="primary")
@@ -361,7 +364,7 @@ class TradeFormScreen(FormScreen):
     def _shares_validator(self) -> DecimalField | HeldShares:
         """A quantidade da venda tem teto; a da compra, nao."""
         if self.position is None:
-            return DecimalField("Quantidade", positive=True)
+            return DecimalField("Quantidade", positive=True, feminine=True)
         return HeldShares(self.position.ticker, self.position.quantity)
 
     def on_mount(self) -> None:
@@ -397,7 +400,7 @@ class TradeFormScreen(FormScreen):
             "ticker": self.position.ticker if self.position is not None else self.field("ticker").value.upper(),
             "when": parse_date(self.field("date").value, "Data"),
             "shares": parse_decimal(self.field("shares").value, "Quantidade"),
-            "unit_price": parse_decimal(self.field("price").value, "Preco unitario"),
+            "unit_price": parse_decimal(self.field("price").value, "Preço unitário"),
             "fees": parse_decimal(self.field("fees").value, "Taxas"),
         }
         if self.is_sale:
@@ -509,19 +512,21 @@ class IncomeFormScreen(FormScreen):
                 id="amount",
                 placeholder="valor recebido, antes do IR",
                 validators=[DecimalField("Valor bruto", positive=True)],
+                money=True,
             )
             yield Field(
                 "IR retido na fonte",
                 id="tax",
                 placeholder="opcional",
                 validators=[DecimalField("IR retido", allow_blank=True)],
+                money=True,
             )
             yield Field(
                 "Data",
                 id="date",
                 value=_today(),
                 placeholder="YYYY-MM-DD",
-                validators=[DateField("Data")],
+                validators=[DateField("Data", feminine=True)],
             )
             with Horizontal(id="form-buttons"):
                 yield Button("Registrar", id="submit", variant="primary")
@@ -556,13 +561,13 @@ class IncomeFormScreen(FormScreen):
             DecimalField(
                 "IR retido",
                 allow_blank=not required,
-                blank_message="IR retido e obrigatorio para JCP (15% retido na fonte).",
+                blank_message="IR retido é obrigatório para JCP (15% retido na fonte).",
             )
         ]
         if income_type is TransactionType.RENDIMENTO:
-            tax.set_enabled(False, placeholder="nao se aplica a RENDIMENTO (isento para PF)")
+            tax.set_enabled(False, placeholder="não se aplica a RENDIMENTO (isento para PF)")
             return
-        tax.set_enabled(True, placeholder="obrigatorio para JCP" if required else "opcional")
+        tax.set_enabled(True, placeholder="obrigatório para JCP" if required else "opcional")
 
     @override
     def clear(self) -> None:
@@ -592,7 +597,7 @@ class IncomeFormScreen(FormScreen):
         ]
         if withheld is not None:
             lines.append(f"IR retido: {fmt.money(withheld)}")
-            lines.append(f"Liquido: {fmt.money(entry['amount'] - withheld)}")
+            lines.append(f"Líquido: {fmt.money(entry['amount'] - withheld)}")
         return "\n".join(lines)
 
     @override

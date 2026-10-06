@@ -89,7 +89,7 @@ class TestComputeCompare:
         assert report.data_as_of == date(2026, 7, 18)
 
     def test_no_transactions_is_friendly(self, conn: psycopg.Connection[DictRow], tmp_path: object) -> None:
-        with pytest.raises(ValidationError, match="Nenhuma transacao"):
+        with pytest.raises(ValidationError, match="Nenhuma transação"):
             compute_compare(conn, make_dispatcher(tmp_path), period="12m", indices=(), today=TODAY)
 
     def test_only_unvaluable_positions_is_friendly(self, conn: psycopg.Connection[DictRow], tmp_path: object) -> None:
@@ -103,7 +103,7 @@ class TestComputeCompare:
             date=datetime(2026, 6, 22, 12, tzinfo=UTC),
         )
         # O motivo de cada um, e nao um "sem historico" fixo que nao vale para todos.
-        with pytest.raises(ValidationError, match=r"Fora: TESOURO SELIC 2029 \(sem fonte de historico gratuita\)\."):
+        with pytest.raises(ValidationError, match=r"Fora: TESOURO SELIC 2029 \(sem fonte de histórico gratuita\)\."):
             compute_compare(conn, make_dispatcher(tmp_path), period="1m", indices=(), today=TODAY)
 
 
@@ -117,7 +117,7 @@ class TestCli:
                 CompareSeries("CDI", [Decimal("100"), Decimal("101")]),
             ],
             excluded=[],
-            index_errors={"IFIX": "Sem historico gratuito para 'IFIX' (simbolo IFIX.SA)."},
+            index_errors={"IFIX": "Sem histórico gratuito para 'IFIX' (símbolo IFIX.SA)."},
             data_as_of=date(2026, 7, 20),
         )
         captured: dict[str, object] = {}
@@ -135,18 +135,18 @@ class TestCli:
     def test_table_and_chart(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["compare", "--index", "cdi,ifix"])
         assert result.exit_code == 0, result.output
-        assert "+25.00%" in result.stdout
-        assert "+1.00%" in result.stdout
-        assert "Sem historico gratuito" in result.stdout
+        assert "+25,00%" in result.stdout
+        assert "+1,00%" in result.stdout
+        assert "Sem histórico gratuito" in result.stdout
         assert self.captured["indices"] == ("CDI", "IFIX")
 
     def test_table_renames_and_data_as_of(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["compare", "--no-chart"])
         assert result.exit_code == 0, result.output
-        assert "Carteira v. Indices" in result.stdout  # titulo renomeado
+        assert "Carteira v. Índices" in result.stdout  # titulo renomeado
         assert "Retorno" in result.stdout  # coluna renomeada
         assert "Retorno acumulado" not in result.stdout  # nome antigo sumiu
-        assert "Dados ate: 2026-07-20" in result.stdout  # freshness real do dado
+        assert "Dados até: 2026-07-20" in result.stdout  # freshness real do dado
 
     def test_no_chart_flag(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["compare", "--no-chart"])
@@ -162,7 +162,7 @@ class TestCli:
         out = tmp_path / "compare.html"
         result = runner.invoke(app, ["compare", "--index", "cdi", "--output", str(out), "--no-open"])
         assert result.exit_code == 0, result.output
-        assert f"grafico salvo em {out}" in result.stdout
+        assert f"gráfico salvo em {out}" in result.stdout
         assert out.exists()
         html = out.read_text(encoding="utf-8")
         assert "Carteira" in html

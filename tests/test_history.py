@@ -101,7 +101,7 @@ class TestComputeHistory:
         assert report.excluded_reasons == {"VALE3": NOTHING_RETURNED}
 
     def test_no_transactions_is_friendly(self, conn: psycopg.Connection[DictRow], tmp_path: object) -> None:
-        with pytest.raises(ValidationError, match="Nenhuma transacao"):
+        with pytest.raises(ValidationError, match="Nenhuma transação"):
             compute_history(conn, make_dispatcher(tmp_path), period="12m", today=TODAY)
 
 
@@ -125,13 +125,13 @@ class TestCli:
     def test_table_shows_delta_vs_previous_point(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["history", "--no-chart"])
         assert result.exit_code == 0, result.output
-        assert "Evolucao do patrimonio" in result.stdout
-        assert "+10.00" in result.stdout  # 200 -> 210
-        assert "+5.00%" in result.stdout
-        assert "+40.00" in result.stdout  # 210 -> 250
+        assert "Evolução do patrimônio" in result.stdout
+        assert "+10,00" in result.stdout  # 200 -> 210
+        assert "+5,00%" in result.stdout
+        assert "+40,00" in result.stdout  # 210 -> 250
         note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
-        assert f"patrimonio nao considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
-        assert "sem historico de precos no periodo" not in note
+        assert f"patrimônio não considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
+        assert "sem histórico de preços no período" not in note
 
     def test_chart_renders(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["history"])
@@ -141,9 +141,11 @@ class TestCli:
         out = tmp_path / "history.html"
         result = runner.invoke(app, ["history", "--output", str(out), "--no-open"])
         assert result.exit_code == 0, result.output
-        assert f"grafico salvo em {out}" in result.stdout
+        assert f"gráfico salvo em {out}" in result.stdout
         assert out.exists()
-        assert "Patrimonio" in out.read_text(encoding="utf-8")
+        # O plotly grava o rotulo dentro de um JSON, com o acento escapado; o
+        # navegador mostra "Patrimônio".
+        assert "Patrim\\u00f4nio" in out.read_text(encoding="utf-8")
 
     def test_invalid_period(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["history", "--period", "ytd"])

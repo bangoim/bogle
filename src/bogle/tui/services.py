@@ -23,7 +23,6 @@ from tempfile import gettempdir
 import psycopg
 
 from bogle import charts
-from bogle import format as fmt
 from bogle.closeout import ClearedTarget, clear_closed_target
 from bogle.data import default_dispatcher
 from bogle.db import get_connection, migrate_if_pending
@@ -53,6 +52,7 @@ from bogle.sales import remove_transaction, resolve_sale_shares
 from bogle.settings import (
     DECIMAL_SEPARATOR,
     DEFAULT_COMPARE_INDICES,
+    DEFAULT_DECIMAL_SEPARATOR,
     DEFAULT_THEME,
     HIDE_VALUES,
     LAST_REBALANCE_DATE,
@@ -77,7 +77,7 @@ def _today(today: date | None) -> date:
 class Preferences:
     """How the interface should open, from ``user_settings``."""
 
-    decimal_separator: str = fmt.CANONICAL_DECIMAL
+    decimal_separator: str = DEFAULT_DECIMAL_SEPARATOR
     hide_amounts: bool = False
     theme: str = DEFAULT_THEME
 
@@ -287,7 +287,7 @@ def record_income(
             return repo.add_rendimento(ticker, when, amount)
         if income_type is TransactionType.INTEREST:
             return repo.add_interest(ticker, when, amount, tax_withheld=tax)
-        raise ValueError(f"tipo de provento invalido: {income_type}")
+        raise ValueError(f"tipo de provento inválido: {income_type}")
     finally:
         conn.close()
 
@@ -534,6 +534,8 @@ def load_suggestion(
     amount: Decimal,
     *,
     prices: Mapping[str, Decimal] | None = None,
+    quantities: Mapping[str, Decimal] | None = None,
+    values: Mapping[str, Decimal] | None = None,
     refresh: bool = False,
     today: date | None = None,
 ) -> AporteSuggestion:
@@ -543,7 +545,8 @@ def load_suggestion(
     so it stamps ``last_rebalance_date`` — the same side effect ``bogle suggest``
     has, which is what makes the overdue reminder stop nagging.
 
-    ``prices`` are the prices the user intends to pay (see
+    ``prices`` are the prices the user intends to pay, and ``quantities`` /
+    ``values`` the purchases they pinned (see
     :func:`~bogle.rebalancing.suggest_allocation`); ``refresh`` skips the quote
     cache, as in :func:`load_snapshot`.
     """
@@ -553,7 +556,7 @@ def load_suggestion(
         # get_allocation_summary, e nao a posicao: um ativo com target e sem
         # compra nenhuma tambem concorre ao aporte (o mesmo que `bogle suggest`).
         summary = get_allocation_summary(conn, dispatcher)
-        suggestion = suggest_allocation(summary, amount, prices=prices)
+        suggestion = suggest_allocation(summary, amount, prices=prices, quantities=quantities, values=values)
         set_value(conn, LAST_REBALANCE_DATE, _today(today))
         return suggestion
     finally:

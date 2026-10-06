@@ -64,9 +64,9 @@ def clear_closed_target(conn: psycopg.Connection[DictRow], ticker: str) -> Clear
 def cleared_notice(cleared: ClearedTarget) -> str:
     """What both frontends tell the user about it, in one voice."""
     return (
-        f"{cleared.ticker}: a venda zerou a posicao, e o target de {pct(cleared.previous_target)} "
-        "foi removido — sem isso o proximo aporte mandaria dinheiro para um ativo "
-        "que voce nao tem mais."
+        f"{cleared.ticker}: a venda zerou a posição, e o target de {pct(cleared.previous_target)} "
+        "foi removido — sem isso o próximo aporte mandaria dinheiro para um ativo "
+        "que você não tem mais."
     )
 
 
