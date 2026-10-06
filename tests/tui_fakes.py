@@ -461,8 +461,8 @@ def make_suggestion(
             ),
         ],
         "total_allocated": Decimal("1499.50"),
-        "estimated_fees": Decimal("0.30"),  # 0.03% do AUVP11; o CDB nao paga
-        "leftover": Decimal("0.20"),
+        "estimated_fees": Decimal("0.33"),  # 0.032% do AUVP11, para cima; o CDB nao paga
+        "leftover": Decimal("0.17"),
         "warnings": [],
     }
     fields.update(overrides)

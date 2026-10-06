@@ -169,9 +169,9 @@ class TestSplit:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert "Alocado 1,499.50" in screen.totals
-            assert "Taxa B3 (est.) 0.30" in screen.totals
-            assert "Custo 1,499.80" in screen.totals
-            assert "Sobra (caixa) 0.20" in screen.totals
+            assert "Taxa B3 (est.) 0.33" in screen.totals
+            assert "Custo 1,499.83" in screen.totals
+            assert "Sobra (caixa) 0.17" in screen.totals
 
     @pytest.mark.asyncio
     async def test_the_totals_leave_the_amount_to_the_field(self, spy: SuggestSpy) -> None:
@@ -192,7 +192,7 @@ class TestSplit:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert screen.totals.splitlines()[0] == (
-                "Alocado 1,499.50   Taxa B3 (est.) 0.30   Custo 1,499.80   Sobra (caixa) 0.20"
+                "Alocado 1,499.50   Taxa B3 (est.) 0.33   Custo 1,499.83   Sobra (caixa) 0.17"
             )
             totals = screen.query_one("#suggest-totals")
             assert totals.size.height == 2  # os pares numa linha, a procedencia na outra
