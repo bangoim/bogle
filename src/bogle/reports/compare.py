@@ -66,7 +66,7 @@ class CompareReport:
 def _base_100(levels: list[Decimal]) -> list[Decimal]:
     first = levels[0]
     if first == 0:
-        raise MarketDataError("Serie com valor inicial zero; impossivel normalizar.", provider="")
+        raise MarketDataError("Série com valor inicial zero; impossível normalizar.", provider="")
     return [level / first * _HUNDRED for level in levels]
 
 
@@ -81,13 +81,13 @@ def compute_compare(
     transactions = TransactionRepository(conn).list()
     inception = first_transaction_date(transactions)
     if inception is None:
-        raise ValidationError("Nenhuma transacao registrada para comparar rentabilidade.")
+        raise ValidationError("Nenhuma transação registrada para comparar rentabilidade.")
 
     start = max(period_start(period, today=today) or inception, inception)
     valuation = build_portfolio_valuation(conn, dispatcher, start=start, end=today)
     if valuation.valuator is None or not valuation.transactions:
         raise ValidationError(
-            "Nenhuma posicao com historico de precos para comparar."
+            "Nenhuma posição com histórico de preços para comparar."
             + (f" Fora: {with_reasons(valuation.excluded, valuation.reasons)}." if valuation.excluded else "")
         )
 

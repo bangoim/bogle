@@ -65,17 +65,17 @@ def _suggestion_json(suggestion: AporteSuggestion) -> dict[str, Any]:
 
 
 def _render(suggestion: AporteSuggestion, console: Console) -> None:
-    table = Table(title="Sugestao de aporte", title_style="bold")
+    table = Table(title="Sugestão de aporte", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
     for header in (
-        "Preco",
+        "Preço",
         "Valor sugerido",
-        "Qtde papeis",
+        "Qtde papéis",
         "Custo efetivo",
         "Peso atual",
         "Target",
-        "Peso apos",
-        "Drift apos",
+        "Peso após",
+        "Drift após",
     ):
         table.add_column(header, justify="right")
     for item in suggestion.items:
@@ -111,7 +111,7 @@ def _render(suggestion: AporteSuggestion, console: Console) -> None:
     if suggestion.unquoted:
         # O motor diz o que ficou de fora; como trazer de volta e coisa da CLI.
         example = suggestion.unquoted[0].ticker
-        console.print(f"Para incluir no aporte: --price {example}=VALOR (repetivel, um por ticker).")
+        console.print(f"Para incluir no aporte: --price {example}=VALOR (repetível, um por ticker).")
 
 
 def _marked(text: str, informed: bool) -> str:
@@ -126,22 +126,22 @@ def suggest(
         [],
         "--price",
         "-p",
-        help="Preco que voce pretende pagar num ticker (ex: VWRA11=114,86). Repetivel; "
-        "muda as cotas e o custo, nao a divisao do aporte.",
+        help="Preço que você pretende pagar num ticker (ex: VWRA11=114,86). Repetível; "
+        "muda as cotas e o custo, não a divisão do aporte.",
     ),
     qty: list[str] = typer.Option(  # noqa: B008 — idem
         [],
         "--qty",
-        help="Cotas que voce vai comprar de um ticker de renda variavel (ex: VWRA11=10; 0 tira ele do "
-        "aporte). Repetivel; o resto do aporte e dividido entre os outros.",
+        help="Cotas que você vai comprar de um ticker de renda variável (ex: VWRA11=10; 0 tira ele do "
+        "aporte). Repetível; o resto do aporte é dividido entre os outros.",
     ),
     fixed_value: list[str] = typer.Option(  # noqa: B008 — idem
         [],
         "--value",
-        help="Valor que voce vai aplicar num ticker de renda fixa (ex: CDB-XP-2027=500). Repetivel; "
-        "o resto do aporte e dividido entre os outros.",
+        help="Valor que você vai aplicar num ticker de renda fixa (ex: CDB-XP-2027=500). Repetível; "
+        "o resto do aporte é dividido entre os outros.",
     ),
-    as_json: bool = typer.Option(False, "--json", help="Saida em JSON para scripts."),
+    as_json: bool = typer.Option(False, "--json", help="Saída em JSON para scripts."),
 ) -> None:
     value = parse_decimal(amount, "--amount")
     prices = parse_ticker_values(price, "--price", unit="PRECO", example="VWRA11=114,86")

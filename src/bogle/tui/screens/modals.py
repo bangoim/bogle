@@ -156,7 +156,7 @@ class ClearedTargetModal(ButtonRowModal[bool]):
 class NextStepModal(ButtonRowModal[str]):
     """After recording: another entry of the same kind, or back to Home."""
 
-    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "home", "Voltar a Home")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "home", "Voltar à Home")]
 
     def __init__(self, recorded: str) -> None:
         super().__init__()
@@ -165,12 +165,12 @@ class NextStepModal(ButtonRowModal[str]):
     @override
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label("Lancamento registrado", id="dialog-title")
+            yield Label("Lançamento registrado", id="dialog-title")
             yield Label(self.recorded, id="dialog-body", markup=False)
             yield Label("O que fazer agora?", id="dialog-question")
             with Horizontal(id="dialog-buttons"):
-                yield Button("Novo lancamento", id=NEW_ENTRY, variant="primary")
-                yield Button("Voltar a Home", id=GO_HOME)
+                yield Button("Novo lançamento", id=NEW_ENTRY, variant="primary")
+                yield Button("Voltar à Home", id=GO_HOME)
 
     def on_mount(self) -> None:
         self.query_one(f"#{NEW_ENTRY}", Button).focus()

@@ -84,15 +84,15 @@ def _pp(value: Decimal) -> str:
 
 def _reason(drift: Decimal, current: Decimal, target: Decimal, threshold: Decimal) -> str:
     if drift < -threshold:
-        return f"Peso atual {_pct(current)} esta {_pp(drift)} p.p. abaixo do target de {_pct(target)}."
+        return f"Peso atual {_pct(current)} está {_pp(drift)} p.p. abaixo do target de {_pct(target)}."
     if drift < 0:
         return (
-            f"Peso atual {_pct(current)} esta {_pp(drift)} p.p. abaixo do target de {_pct(target)}, "
-            f"dentro da tolerancia de {_pp(threshold)} p.p."
+            f"Peso atual {_pct(current)} está {_pp(drift)} p.p. abaixo do target de {_pct(target)}, "
+            f"dentro da tolerância de {_pp(threshold)} p.p."
         )
     if drift == 0:
-        return f"Peso atual {_pct(current)} esta no target."
-    return f"Peso atual {_pct(current)} esta {_pp(drift)} p.p. acima do target de {_pct(target)}; politica no-sell."
+        return f"Peso atual {_pct(current)} está no target."
+    return f"Peso atual {_pct(current)} está {_pp(drift)} p.p. acima do target de {_pct(target)}; política no-sell."
 
 
 def weight_sum_notice(total: Decimal) -> str | None:
@@ -110,7 +110,7 @@ def weight_sum_notice(total: Decimal) -> str | None:
     """
     if total >= Decimal("1"):
         return None
-    return f"faltam {_pct(Decimal('1') - total)} para 100%: o aporte nao e distribuido por inteiro"
+    return f"faltam {_pct(Decimal('1') - total)} para 100%: o aporte não é distribuído por inteiro"
 
 
 def classify_positions(positions: list[Position], threshold: Decimal = DEFAULT_THRESHOLD) -> list[TickerRecommendation]:
@@ -285,16 +285,16 @@ def _manual_prices(positions: list[Position], prices: Mapping[str, Decimal] | No
         ticker = name.upper()
         position = by_ticker.get(ticker)
         if position is None:
-            raise ValidationError(f"Preco informado para um ticker fora da carteira: {ticker}.")
+            raise ValidationError(f"Preço informado para um ticker fora da carteira: {ticker}.")
         if position.asset_type not in VARIABLE_INCOME_TYPES:
             # Renda fixa entra por valor exato: o preco nao converte nada, e
             # aceitar um so mudaria o numero mostrado na coluna.
             raise ValidationError(
-                f"Preco informado so vale para renda variavel, que compra cotas inteiras; "
-                f"{ticker} e {position.asset_type.value}."
+                f"Preço informado só vale para renda variável, que compra cotas inteiras; "
+                f"{ticker} é {position.asset_type.value}."
             )
         if price <= 0:
-            raise ValidationError(f"Preco informado para {ticker} deve ser positivo, recebido {price}.")
+            raise ValidationError(f"Preço informado para {ticker} deve ser positivo, recebido {price}.")
         resolved[ticker] = price
     return resolved
 
@@ -321,8 +321,8 @@ def _pinned_purchases(
             # Um ticker e de um tipo so, entao isto tambem recusa o mesmo ticker
             # nas duas formas.
             if (position.asset_type in VARIABLE_INCOME_TYPES) != variable:
-                kind = "renda variavel, que compra cotas inteiras" if variable else "renda fixa, que entra por valor"
-                raise ValidationError(f"{what} so vale para {kind}; {ticker} e {position.asset_type.value}.")
+                kind = "renda variável, que compra cotas inteiras" if variable else "renda fixa, que entra por valor"
+                raise ValidationError(f"{what} só vale para {kind}; {ticker} é {position.asset_type.value}.")
             check_pinned_purchase(ticker, position.asset_type, number)
             resolved[ticker] = number
     return resolved
@@ -338,7 +338,7 @@ def check_pinned_purchase(ticker: str, asset_type: AssetType, number: Decimal) -
     if asset_type in VARIABLE_INCOME_TYPES:
         if number < 0 or number != number.to_integral_value():
             raise ValidationError(
-                f"Quantidade de {ticker} deve ser um numero inteiro de cotas, zero ou mais, recebido {number}."
+                f"Quantidade de {ticker} deve ser um número inteiro de cotas, zero ou mais, recebido {number}."
             )
     elif number < 0 or number != number.quantize(_CENT):
         raise ValidationError(f"Valor de {ticker} deve ser zero ou mais, em centavos, recebido {number}.")
@@ -389,7 +389,7 @@ def suggest_allocation(
         raise ValidationError(f"--amount deve ser positivo, recebido {amount}.")
     positions = summary.positions
     if not positions:
-        raise ValidationError("Nenhuma posicao ativa para sugerir aporte.")
+        raise ValidationError("Nenhuma posição ativa para sugerir aporte.")
     # Uma posicao aberta sem cotacao distorce todos os pesos, entao aborta. Um
     # target que ainda nao virou posicao vale zero de qualquer jeito: sem preco
     # ele so perde a vez neste aporte, e a carteira segue somando certo.
@@ -410,11 +410,11 @@ def suggest_allocation(
                 # dizer o que as cotas custam, e a renda fixa sem cotacao e um
                 # cadastro a conferir, nao um numero a completar.
                 fix = (
-                    "informe o preco antes de fixar a quantidade"
+                    "informe o preço antes de fixar a quantidade"
                     if p.asset_type in VARIABLE_INCOME_TYPES
                     else "confira o ticker no cadastro do ativo"
                 )
-                raise ValidationError(f"Sem cotacao para {p.ticker}: {fix}.")
+                raise ValidationError(f"Sem cotação para {p.ticker}: {fix}.")
             unquoted.append(p)
             continue
         value = p.market_value if p.market_value is not None else Decimal("0")

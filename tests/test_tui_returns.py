@@ -58,7 +58,7 @@ class TestPanel:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ReturnsScreen())
             assert table_columns(screen) == [
-                "Periodo",
+                "Período",
                 "Janela",
                 "Carteira (TWR)",
                 "IBOV",
@@ -90,7 +90,7 @@ class TestPanel:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ReturnsScreen())
-            assert table_rows(screen)[2][:2] == ["Ultimo mes", "2026-07-12 a 2026-08-12"]
+            assert table_rows(screen)[2][:2] == ["Último mês", "2026-07-12 a 2026-08-12"]
 
     @pytest.mark.asyncio
     async def test_an_index_without_data_is_a_dash_on_both_columns(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -131,7 +131,7 @@ class TestPanel:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ReturnsScreen())
             assert table_rows(screen)[0][2] == "-"
-            assert f"TWR nao considera TESOURO-SELIC-2029 ({NO_SOURCE})." in screen.note
+            assert f"TWR não considera TESOURO-SELIC-2029 ({NO_SOURCE})." in screen.note
 
 
 class TestIndices:
@@ -178,7 +178,7 @@ class TestIndices:
             await pilot.press("enter")
             await settle(pilot)
             assert spy.calls[-1] == ()
-            assert table_columns(screen) == ["Periodo", "Janela", "Carteira (TWR)"]
+            assert table_columns(screen) == ["Período", "Janela", "Carteira (TWR)"]
 
     @pytest.mark.asyncio
     async def test_an_index_name_is_not_read_as_markup(self, spy: ReturnsSpy) -> None:
@@ -221,9 +221,9 @@ class TestNotes:
         monkeypatch.setattr(
             services,
             "load_returns",
-            lambda **_: make_returns(index_errors={"IPCA": "serie indisponivel no BCB"}),
+            lambda **_: make_returns(index_errors={"IPCA": "série indisponivel no BCB"}),
         )
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ReturnsScreen())
-            assert "IPCA: serie indisponivel no BCB" in screen.note
+            assert "IPCA: série indisponivel no BCB" in screen.note

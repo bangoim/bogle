@@ -52,12 +52,12 @@ class TestResolve:
             resolve_sale_shares(conn, "PETR4", Decimal("11"), when=SELL)
         assert excinfo.value.held == Decimal("10")
         assert excinfo.value.requested == Decimal("11")
-        assert str(excinfo.value) == "Em 2026-06-20 a posicao de 'PETR4' tem 10 cotas, e a venda pede 11."
+        assert str(excinfo.value) == "Em 2026-06-20 a posição de 'PETR4' tem 10 cotas, e a venda pede 11."
 
     def test_selling_what_was_never_bought_says_there_is_no_position(
         self, conn: psycopg.Connection[DictRow], held: None
     ) -> None:
-        with pytest.raises(InsufficientSharesError, match="nao ha posicao aberta em 'MXRF11'"):
+        with pytest.raises(InsufficientSharesError, match="não há posição aberta em 'MXRF11'"):
             resolve_sale_shares(conn, "MXRF11", Decimal("1"), when=SELL)
 
     def test_the_ticker_is_matched_case_insensitively(self, conn: psycopg.Connection[DictRow], held: None) -> None:
@@ -101,7 +101,7 @@ class TestOnTheSaleDate:
     ) -> None:
         # Hoje ha 10, mas em 02/01 ainda nao havia nada: era o furo que deixava o
         # replay do custo medio recusar o ticker depois.
-        with pytest.raises(InsufficientSharesError, match="Em 2026-01-02 nao ha posicao aberta em 'PETR4'"):
+        with pytest.raises(InsufficientSharesError, match="Em 2026-01-02 não há posição aberta em 'PETR4'"):
             resolve_sale_shares(conn, "PETR4", Decimal("5"), when=at("2026-01-02"))
         assert len(trepo.list("PETR4")) == 1
 
@@ -119,7 +119,7 @@ class TestOnTheSaleDate:
         with pytest.raises(InsufficientSharesError) as excinfo:
             resolve_sale_shares(conn, "PETR4", Decimal("5"), when=at("2026-02-05"))
         assert str(excinfo.value) == (
-            "Em 2026-02-05 a posicao de 'PETR4' tem 10 cotas, mas so 2 estao livres: "
+            "Em 2026-02-05 a posição de 'PETR4' tem 10 cotas, mas só 2 estão livres: "
             "as outras cobrem a venda de 2026-03-10. A venda pede 5."
         )
         assert excinfo.value.covers == date(2026, 3, 10)
@@ -160,7 +160,7 @@ class TestFullExit:
         self, conn: psycopg.Connection[DictRow], trepo: TransactionRepository, held: None
     ) -> None:
         trepo.add_sale("PETR4", SELL, Decimal("10"), Decimal("22"))
-        with pytest.raises(InsufficientSharesError, match="nao ha posicao aberta em 'PETR4'"):
+        with pytest.raises(InsufficientSharesError, match="não há posição aberta em 'PETR4'"):
             resolve_sale_shares(conn, "PETR4", when=SELL)
 
 
@@ -180,7 +180,7 @@ class TestRemove:
         with pytest.raises(UncoveredSaleError) as excinfo:
             remove_transaction(conn, purchase.id)
         assert str(excinfo.value) == (
-            f"Remover a transacao {purchase.id} deixaria a venda de 'PETR4' em 2026-06-20 sem cotas: "
+            f"Remover a transação {purchase.id} deixaria a venda de 'PETR4' em 2026-06-20 sem cotas: "
             "faltariam 6. Remova a venda antes."
         )
         assert len(trepo.list("PETR4")) == 2  # nada removido

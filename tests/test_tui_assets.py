@@ -175,7 +175,7 @@ class TestList:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, AssetsScreen())
             assert screen.note == (
-                "4 ativos. Soma dos pesos: 80.00% — faltam 20% para 100%: o aporte nao e distribuido por inteiro."
+                "4 ativos. Soma dos pesos: 80.00% — faltam 20% para 100%: o aporte não é distribuído por inteiro."
             )
 
     @pytest.mark.asyncio
@@ -192,7 +192,7 @@ class TestList:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, AssetsScreen())
-            assert screen.note == "2 ativos. Soma dos pesos: 100.00% (o maximo e 100.00%)."
+            assert screen.note == "2 ativos. Soma dos pesos: 100.00% (o máximo é 100.00%)."
 
     @pytest.mark.asyncio
     async def test_a_single_asset_is_said_in_the_singular(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -218,8 +218,8 @@ class TestList:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, AssetsScreen())
             assert screen.note == (
-                "2 ativos no plano e 2 encerrados (sem posicao e sem target). Soma dos pesos: 40.00% — "
-                "faltam 60% para 100%: o aporte nao e distribuido por inteiro."
+                "2 ativos no plano e 2 encerrados (sem posição e sem target). Soma dos pesos: 40.00% — "
+                "faltam 60% para 100%: o aporte não é distribuído por inteiro."
             )
 
     @pytest.mark.asyncio
@@ -326,7 +326,7 @@ class TestConditionalFields:
             screen.query_one("#asset-type", Select).value = AssetType.CDB
             await pilot.pause()
             maturity = screen.field("maturity-date")
-            assert maturity.check() == "Vencimento e obrigatoria."
+            assert maturity.check() == "Vencimento é obrigatória."
 
             screen.query_one("#daily-liquidity", Checkbox).value = True
             await pilot.pause()
@@ -663,7 +663,7 @@ class TestRemoving:
             await settle(pilot)
             await pilot.press("enter")
             await settle(pilot)
-            assert toasts.severity_of("possui transacoes vinculadas") == "error"
+            assert toasts.severity_of("possui transações vinculadas") == "error"
             assert len(table_rows(screen)) == 4
 
     @pytest.mark.asyncio

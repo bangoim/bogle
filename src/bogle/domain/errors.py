@@ -21,25 +21,25 @@ class ValidationError(BogleError):
 class AssetNotFoundError(BogleError):
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
-        super().__init__(f"Ativo '{ticker}' nao encontrado.")
+        super().__init__(f"Ativo '{ticker}' não encontrado.")
 
 
 class AssetAlreadyExistsError(BogleError):
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
-        super().__init__(f"Ativo '{ticker}' ja existe.")
+        super().__init__(f"Ativo '{ticker}' já existe.")
 
 
 class WeightSumExceededError(BogleError):
     def __init__(self, total: Decimal) -> None:
         self.total = total
-        super().__init__(f"Soma de target_weight ultrapassaria 1.0 (resultaria em {total:.4f}). Operacao revertida.")
+        super().__init__(f"Soma de target_weight ultrapassaria 1.0 (resultaria em {total:.4f}). Operação revertida.")
 
 
 class AssetHasTransactionsError(BogleError):
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
-        super().__init__(f"Ativo '{ticker}' possui transacoes vinculadas e nao pode ser removido.")
+        super().__init__(f"Ativo '{ticker}' possui transações vinculadas e não pode ser removido.")
 
 
 class InsufficientSharesError(BogleError):
@@ -76,20 +76,20 @@ class InsufficientSharesError(BogleError):
         self.covers = covers
         day = on.isoformat()
         if held <= 0:
-            message = f"Em {day} nao ha posicao aberta em '{ticker}' para vender."
+            message = f"Em {day} não há posição aberta em '{ticker}' para vender."
         elif covers is None:
             message = (
-                f"Em {day} a posicao de '{ticker}' tem {fmt.exact(held)} cotas, e a venda pede {fmt.exact(requested)}."
+                f"Em {day} a posição de '{ticker}' tem {fmt.exact(held)} cotas, e a venda pede {fmt.exact(requested)}."
             )
         elif self.free <= 0:
             message = (
-                f"Em {day} a posicao de '{ticker}' tem {fmt.exact(held)} cotas, "
+                f"Em {day} a posição de '{ticker}' tem {fmt.exact(held)} cotas, "
                 f"mas todas cobrem a venda de {covers.isoformat()}."
             )
         else:
             message = (
-                f"Em {day} a posicao de '{ticker}' tem {fmt.exact(held)} cotas, mas so {fmt.exact(self.free)} "
-                f"estao livres: as outras cobrem a venda de {covers.isoformat()}. "
+                f"Em {day} a posição de '{ticker}' tem {fmt.exact(held)} cotas, mas só {fmt.exact(self.free)} "
+                f"estão livres: as outras cobrem a venda de {covers.isoformat()}. "
                 f"A venda pede {fmt.exact(requested)}."
             )
         super().__init__(message)
@@ -108,7 +108,7 @@ class UncoveredSaleError(BogleError):
         self.on = on
         self.missing = missing
         super().__init__(
-            f"Remover a transacao {transaction_id} deixaria a venda de '{ticker}' em {on.isoformat()} "
+            f"Remover a transação {transaction_id} deixaria a venda de '{ticker}' em {on.isoformat()} "
             f"sem cotas: faltariam {fmt.exact(missing)}. Remova a venda antes."
         )
 
@@ -116,7 +116,7 @@ class UncoveredSaleError(BogleError):
 class TransactionNotFoundError(BogleError):
     def __init__(self, transaction_id: int) -> None:
         self.transaction_id = transaction_id
-        super().__init__(f"Transacao {transaction_id} nao encontrada.")
+        super().__init__(f"Transação {transaction_id} não encontrada.")
 
 
 class MissingPriceError(BogleError):
@@ -126,15 +126,15 @@ class MissingPriceError(BogleError):
     def __init__(self, tickers: list[str]) -> None:
         self.tickers = tickers
         super().__init__(
-            f"Sem preco atual para: {', '.join(tickers)}. "
-            "Rebalanceamento exige todas as posicoes precificadas; tente novamente mais tarde."
+            f"Sem preço atual para: {', '.join(tickers)}. "
+            "Rebalanceamento exige todas as posições precificadas; tente novamente mais tarde."
         )
 
 
 class UnknownSettingError(BogleError):
     def __init__(self, key: str, known_keys: list[str]) -> None:
         self.key = key
-        super().__init__(f"Configuracao '{key}' nao reconhecida. Chaves suportadas: {', '.join(known_keys)}.")
+        super().__init__(f"Configuração '{key}' não reconhecida. Chaves suportadas: {', '.join(known_keys)}.")
 
 
 class MarketDataError(BogleError):
@@ -153,7 +153,7 @@ class MarketDataError(BogleError):
 class QuoteNotFoundError(MarketDataError):
     def __init__(self, symbol: str, *, provider: str = "") -> None:
         self.symbol = symbol
-        super().__init__(f"Cotacao nao encontrada para '{symbol}'.", provider=provider)
+        super().__init__(f"Cotação não encontrada para '{symbol}'.", provider=provider)
 
 
 class RateLimitError(MarketDataError):
@@ -161,7 +161,7 @@ class RateLimitError(MarketDataError):
 
     def __init__(self, provider: str) -> None:
         super().__init__(
-            f"Limite de requisicoes excedido em {provider}. Tente novamente mais tarde.",
+            f"Limite de requisições excedido em {provider}. Tente novamente mais tarde.",
             provider=provider,
         )
 

@@ -19,7 +19,7 @@ class TestParseDecimal:
     @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "inf"])
     def test_non_finite_rejected(self, value: str) -> None:
         # NaN/Infinity parseiam como Decimal mas estouram em comparacoes e no banco.
-        with pytest.raises(ValidationError, match="--shares deve ser um numero decimal"):
+        with pytest.raises(ValidationError, match="--shares deve ser um número decimal"):
             parse_decimal(value, "--shares")
 
 
@@ -45,7 +45,7 @@ class TestParseRate:
         assert parse_rate("1.10", "--rate") == Decimal("1.10")
 
     def test_not_a_number(self) -> None:
-        with pytest.raises(ValidationError, match="--rate deve ser um numero decimal"):
+        with pytest.raises(ValidationError, match="--rate deve ser um número decimal"):
             parse_rate("abc", "--rate")
 
     @pytest.mark.parametrize("value", ["0", "-5", "10000", "100000"])

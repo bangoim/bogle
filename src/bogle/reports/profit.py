@@ -60,7 +60,7 @@ def compute_profit(
     income_end: date,
 ) -> ProfitReport:
     if not transactions:
-        raise ValidationError("Nenhuma transacao registrada para calcular o lucro.")
+        raise ValidationError("Nenhuma transação registrada para calcular o lucro.")
 
     states, sales = replay_cost_basis(transactions)
     realized = sum((sale.gain for sale in sales), _ZERO)

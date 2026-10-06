@@ -90,7 +90,7 @@ class TestValidation:
             set_setting(conn, LAST_REBALANCE_DATE, "22/07/2026")
 
     def test_unknown_key(self, conn: psycopg.Connection[DictRow]) -> None:
-        with pytest.raises(UnknownSettingError, match="nao reconhecida"):
+        with pytest.raises(UnknownSettingError, match="não reconhecida"):
             get_setting(conn, "nope")
         with pytest.raises(UnknownSettingError):
             set_setting(conn, "nope", "1")
@@ -127,7 +127,7 @@ class TestUnsetAndList:
 
 class TestFormatValue:
     def test_none(self) -> None:
-        assert format_value(None) == "(nao definido)"
+        assert format_value(None) == "(não definido)"
 
     def test_list(self) -> None:
         assert format_value(["CDI", "IBOV"]) == "CDI,IBOV"
@@ -147,12 +147,12 @@ class TestHideValues:
     def test_accepts_the_usual_spellings_of_true(self, conn: psycopg.Connection[DictRow], raw: str) -> None:
         assert set_setting(conn, HIDE_VALUES, raw) is True
 
-    @pytest.mark.parametrize("raw", ["false", "0", "nao", "no", "off"])
+    @pytest.mark.parametrize("raw", ["false", "0", "não", "no", "off"])
     def test_accepts_the_usual_spellings_of_false(self, conn: psycopg.Connection[DictRow], raw: str) -> None:
         assert set_setting(conn, HIDE_VALUES, raw) is False
 
     def test_rejects_anything_else(self, conn: psycopg.Connection[DictRow]) -> None:
-        with pytest.raises(ValidationError, match="nao e um booleano"):
+        with pytest.raises(ValidationError, match="não é um booleano"):
             set_setting(conn, HIDE_VALUES, "talvez")
 
     def test_round_trips_through_jsonb(self, conn: psycopg.Connection[DictRow]) -> None:

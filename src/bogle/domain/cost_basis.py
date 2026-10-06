@@ -105,7 +105,7 @@ def replay_cost_basis(
             if txn.ticker not in averages or txn.shares > quantity:
                 raise ValidationError(
                     f"Venda de {txn.shares} '{txn.ticker}' sem quantidade suficiente em carteira "
-                    f"(restam {quantity}). Historico de transacoes inconsistente."
+                    f"(restam {quantity}). Histórico de transações inconsistente."
                 )
             sales.append(
                 RealizedSale(
@@ -158,10 +158,10 @@ def average_cost_per_share(transactions: list[Transaction]) -> Decimal:
     if there are no purchases (the average is undefined, not 0).
     """
     if not any(t.transaction_type is TransactionType.BUY for t in transactions):
-        raise ValidationError("Sem compras registradas para calcular o custo medio.")
+        raise ValidationError("Sem compras registradas para calcular o custo médio.")
     states, _ = replay_cost_basis(transactions)
     if len(states) != 1:
-        raise ValidationError("Historico com mais de um ticker; calcule o custo medio por ticker.")
+        raise ValidationError("Histórico com mais de um ticker; calcule o custo médio por ticker.")
     return next(iter(states.values())).average_cost
 
 

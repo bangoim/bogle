@@ -23,11 +23,11 @@ from bogle.tui.screens.returns import ReturnsScreen
 from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
 
 _ENTRIES: Entries = (
-    (MenuItem("1", "returns", "Rentabilidade", "TWR total, 12m e ultimo mes"), ReturnsScreen),
-    (MenuItem("2", "compare", "Comparar", "carteira v. indices, base 100"), CompareScreen),
-    (MenuItem("3", "history", "Historico", "evolucao do patrimonio"), HistoryScreen),
+    (MenuItem("1", "returns", "Rentabilidade", "TWR total, 12m e último mês"), ReturnsScreen),
+    (MenuItem("2", "compare", "Comparar", "carteira v. índices, base 100"), CompareScreen),
+    (MenuItem("3", "history", "Histórico", "evolução do patrimônio"), HistoryScreen),
     (MenuItem("4", "profit", "Lucro", "ganho de capital + proventos"), ProfitScreen),
-    (MenuItem("5", "income", "Proventos", "por mes ou por ticker"), IncomeScreen),
+    (MenuItem("5", "income", "Proventos", "por mês ou por ticker"), IncomeScreen),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)
@@ -36,10 +36,10 @@ MENU_ITEMS = items_of(_ENTRIES)
 class ReportsScreen(MenuScreen):
     """Which report to open."""
 
-    SUB_TITLE = "relatorios"
+    SUB_TITLE = "relatórios"
     AUTO_FOCUS = "#reports-menu"
     ENTRIES = _ENTRIES
-    MENU_TITLE = "Relatorios"
+    MENU_TITLE = "Relatórios"
     MENU_FRAME = "#reports-menu"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Voltar"),

@@ -37,7 +37,7 @@ class TextField(Validator):
     @override
     def validate(self, value: str) -> ValidationResult:
         if not value.strip():
-            return self.failure(f"{self.label} e obrigatorio.")
+            return self.failure(f"{self.label} é obrigatório.")
         return self.success()
 
 
@@ -71,7 +71,7 @@ class DecimalField(Validator):
         if not text:
             if self.allow_blank:
                 return self.success()
-            return self.failure(self.blank_message or f"{self.label} e obrigatorio.")
+            return self.failure(self.blank_message or f"{self.label} é obrigatório.")
         try:
             parsed = self.parse(text, self.label)
         except ValidationError as exc:
@@ -79,7 +79,7 @@ class DecimalField(Validator):
         if self.positive and parsed <= _ZERO:
             return self.failure(f"{self.label} deve ser maior que zero, recebido {parsed}.")
         if not self.positive and parsed < _ZERO:
-            return self.failure(f"{self.label} nao pode ser negativo, recebido {parsed}.")
+            return self.failure(f"{self.label} não pode ser negativo, recebido {parsed}.")
         return self.success()
 
 
@@ -97,7 +97,7 @@ class DateField(Validator):
         if not text:
             if self.allow_blank:
                 return self.success()
-            return self.failure(f"{self.label} e obrigatoria.")
+            return self.failure(f"{self.label} é obrigatória.")
         try:
             parse_date(text, self.label)
         except ValidationError as exc:
@@ -136,7 +136,7 @@ class HeldShares(Validator):
         shares = parse_decimal(value.strip(), self.label)
         if shares > self.available:
             return self.failure(
-                f"{self.ticker} tem {fmt.exact(self.available)} cotas; marque 'Vender tudo' para zerar a posicao."
+                f"{self.ticker} tem {fmt.exact(self.available)} cotas; marque 'Vender tudo' para zerar a posição."
             )
         return self.success()
 
@@ -161,11 +161,11 @@ class KnownTicker(Validator):
     def validate(self, value: str) -> ValidationResult:
         ticker = value.strip().upper()
         if not ticker:
-            return self.failure(f"{self.label} e obrigatorio.")
+            return self.failure(f"{self.label} é obrigatório.")
         if not self.known:  # lista ainda nao carregou
             return self.success()
         if ticker not in self.known:
             # A mensagem e da interface: mandar para o `bogle add` seria mandar
             # fechar a tela para fazer o que a tela ao lado faz.
-            return self.failure(f"Ativo '{ticker}' nao encontrado. Cadastre em Ativos (6) antes de lancar.")
+            return self.failure(f"Ativo '{ticker}' não encontrado. Cadastre em Ativos (6) antes de lançar.")
         return self.success()

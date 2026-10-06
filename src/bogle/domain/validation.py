@@ -89,7 +89,7 @@ def validate_asset_metadata(
             "--maturity-date": maturity_date,
         }
         errors.extend(
-            f"{option} nao se aplica ao tipo {asset_type}." for option, value in provided.items() if value is not None
+            f"{option} não se aplica ao tipo {asset_type}." for option, value in provided.items() if value is not None
         )
         _raise_if_any(asset_type, errors)
         return AssetMetadata()
@@ -97,31 +97,31 @@ def validate_asset_metadata(
     # Fixed income (TESOURO + CDB/RDB/LCI/LCA/CAIXINHA).
     prefixed = is_prefixed if is_prefixed is not None else False
     if indexer is Indexer.PREFIXADO:
-        errors.append("para titulos prefixados use --prefixed em vez de --indexer PREFIXADO.")
+        errors.append("para títulos prefixados use --prefixed em vez de --indexer PREFIXADO.")
     elif prefixed and indexer is not None:
-        errors.append("--indexer nao deve ser informado junto com --prefixed (titulo prefixado nao tem indexador).")
+        errors.append("--indexer não deve ser informado junto com --prefixed (título prefixado não tem indexador).")
     elif not prefixed and indexer is None:
-        errors.append(f"--indexer e obrigatorio para {asset_type} pos-fixado (ou use --prefixed).")
+        errors.append(f"--indexer é obrigatório para {asset_type} pós-fixado (ou use --prefixed).")
 
     if rate is None:
-        errors.append(f"--rate e obrigatorio para {asset_type}.")
+        errors.append(f"--rate é obrigatório para {asset_type}.")
     if purchase_date is None:
-        errors.append(f"--purchase-date e obrigatorio para {asset_type}.")
+        errors.append(f"--purchase-date é obrigatório para {asset_type}.")
 
     if asset_type in PRIVATE_FIXED_INCOME_TYPES:
         if issuer is None:
-            errors.append(f"--issuer e obrigatorio para {asset_type}.")
+            errors.append(f"--issuer é obrigatório para {asset_type}.")
         if daily_liquidity is None:
-            errors.append(f"--daily-liquidity/--no-daily-liquidity e obrigatorio para {asset_type}.")
+            errors.append(f"--daily-liquidity/--no-daily-liquidity é obrigatório para {asset_type}.")
         elif daily_liquidity is False and maturity_date is None:
-            errors.append(f"--maturity-date e obrigatorio para {asset_type} sem liquidez diaria.")
+            errors.append(f"--maturity-date é obrigatório para {asset_type} sem liquidez diária.")
     else:  # TESOURO
         if issuer is not None:
-            errors.append("--issuer nao se aplica ao tipo TESOURO.")
+            errors.append("--issuer não se aplica ao tipo TESOURO.")
         if daily_liquidity is not None:
-            errors.append("--daily-liquidity/--no-daily-liquidity nao se aplica ao tipo TESOURO.")
+            errors.append("--daily-liquidity/--no-daily-liquidity não se aplica ao tipo TESOURO.")
         if maturity_date is None:
-            errors.append("--maturity-date e obrigatorio para TESOURO.")
+            errors.append("--maturity-date é obrigatório para TESOURO.")
 
     _raise_if_any(asset_type, errors)
     return AssetMetadata(
@@ -138,7 +138,7 @@ def validate_asset_metadata(
 def _raise_if_any(asset_type: AssetType, errors: list[str]) -> None:
     if errors:
         listing = "\n".join(f"  - {e}" for e in errors)
-        raise ValidationError(f"parametros invalidos para o tipo {asset_type}:\n{listing}")
+        raise ValidationError(f"parâmetros inválidos para o tipo {asset_type}:\n{listing}")
 
 
 def validate_type_change(ticker: str, current: AssetType, new: AssetType) -> None:
@@ -153,12 +153,12 @@ def validate_type_change(ticker: str, current: AssetType, new: AssetType) -> Non
     """
     if new not in VARIABLE_INCOME_TYPES:
         raise ValidationError(
-            f"nao da para trocar {ticker} para o tipo {new} (renda fixa) via update: "
+            f"não dá para trocar {ticker} para o tipo {new} (renda fixa) via update: "
             f"esse tipo exige metadados (issuer/indexer/rate/datas). "
             f"Use 'bogle remove {ticker}' e recadastre com 'bogle add'."
         )
     if current not in VARIABLE_INCOME_TYPES:
         raise ValidationError(
-            f"{ticker} e do tipo {current} (renda fixa); trocar de tipo via update deixaria "
-            f"metadados orfaos. Use 'bogle remove {ticker}' e recadastre com 'bogle add'."
+            f"{ticker} é do tipo {current} (renda fixa); trocar de tipo via update deixaria "
+            f"metadados órfãos. Use 'bogle remove {ticker}' e recadastre com 'bogle add'."
         )

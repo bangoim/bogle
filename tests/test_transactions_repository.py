@@ -60,7 +60,7 @@ class TestAddBuy:
         message = str(exc.value)
         assert "shares deve ser maior que zero" in message
         assert "unit_price deve ser maior que zero" in message
-        assert "fees nao pode ser negativo" in message
+        assert "fees não pode ser negativo" in message
 
 
 class TestAddSale:
@@ -81,7 +81,7 @@ class TestAddSale:
             trepo.add_sale("PETR4", D2, Decimal("-40"), Decimal("35"))
 
     def test_negative_tax_withheld_raises(self, trepo: TransactionRepository, petr4: None) -> None:
-        with pytest.raises(ValidationError, match="tax_withheld nao pode ser negativo"):
+        with pytest.raises(ValidationError, match="tax_withheld não pode ser negativo"):
             trepo.add_sale("PETR4", D2, Decimal("10"), Decimal("30"), tax_withheld=Decimal("-1"))
 
 
@@ -124,7 +124,7 @@ class TestIncome:
             trepo.add_dividend("PETR4", D1, amount)
 
     def test_negative_tax_raises(self, trepo: TransactionRepository, petr4: None) -> None:
-        with pytest.raises(ValidationError, match="tax_withheld nao pode ser negativo"):
+        with pytest.raises(ValidationError, match="tax_withheld não pode ser negativo"):
             trepo.add_jcp("PETR4", D1, Decimal("100"), Decimal("-1"))
 
     def test_missing_asset_raises_friendly_error(self, trepo: TransactionRepository) -> None:
@@ -220,12 +220,12 @@ class TestTransactionalBehaviour:
 class TestNumericLimits:
     def test_field_overflow_is_friendly(self, trepo: TransactionRepository, petr4: None) -> None:
         # shares NUMERIC(20, 8) suporta |valor| < 10^12.
-        with pytest.raises(ValidationError, match="excedem a precisao"):
+        with pytest.raises(ValidationError, match="excedem a precisão"):
             trepo.add_buy("PETR4", D1, Decimal("1e13"), Decimal("10"))
 
     def test_product_overflow_is_friendly(self, trepo: TransactionRepository, petr4: None) -> None:
         # Campos individualmente validos, mas o produto estoura NUMERIC(20, 4).
-        with pytest.raises(ValidationError, match="excedem a precisao"):
+        with pytest.raises(ValidationError, match="excedem a precisão"):
             trepo.add_buy("PETR4", D1, Decimal("1e11"), Decimal("1e9"))
 
     @pytest.mark.parametrize("bad", [Decimal("NaN"), Decimal("Infinity")])

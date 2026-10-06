@@ -83,7 +83,7 @@ class TestSummary:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert app.screen.query_one("#summary").border_title == "Carteira - cotacao de 12-08-2026 14:07"
+            assert app.screen.query_one("#summary").border_title == "Carteira - cotação de 12-08-2026 14:07"
 
     @pytest.mark.asyncio
     async def test_brapi_down_says_why_the_summary_is_a_close_behind(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,7 +92,7 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "sem cotacao de hoje na brapi para AUVP11, B5P211" in note
+            assert "sem cotação de hoje na brapi para AUVP11, B5P211" in note
             assert "resumo do fechamento de 2026-08-11" in note
 
     @pytest.mark.asyncio
@@ -110,7 +110,7 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "sem cotacao de hoje para B5P211 (2026-08-11)" in note
+            assert "sem cotação de hoje para B5P211 (2026-08-11)" in note
             # A nota de "resumo do fechamento" e para quando o resumo inteiro voltou a D-1.
             assert "na brapi" not in note
 
@@ -153,8 +153,8 @@ class TestSummary:
             help_modal = app.screen
             assert isinstance(help_modal, HelpModal)
             assert "TWR: exclui o efeito de aportes e retiradas" in help_modal.notes
-            assert "janela de 12m comeca na primeira transacao" in help_modal.notes
-            assert '"Cotacao de"' in help_modal.notes
+            assert "janela de 12m começa na primeira transação" in help_modal.notes
+            assert '"Cotação de"' in help_modal.notes
 
     @pytest.mark.asyncio
     async def test_empty_ledger_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,7 +164,7 @@ class TestSummary:
             await settle(pilot)
             home = app.screen
             assert isinstance(home, HomeScreen)
-            assert home.note == "Nenhuma transacao registrada ainda."
+            assert home.note == "Nenhuma transação registrada ainda."
             assert metric(home, "patrimony") == "-"
             assert metric(home, "variation") == "-"
 
@@ -183,7 +183,7 @@ class TestSummary:
             note = app.screen.note  # type: ignore[attr-defined]
             assert "TESOURO-IPCA-2035" in note
             assert NO_SOURCE in note
-            assert "fora do patrimonio, da variacao e das rentabilidades" in note
+            assert "fora do patrimônio, da variação e das rentabilidades" in note
 
     @pytest.mark.asyncio
     async def test_a_provider_hiccup_says_it_is_worth_trying_again(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -214,8 +214,8 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "fora das rentabilidades, mas dentro do patrimonio: VWRA11" in note
-            assert "fora do patrimonio" not in note
+            assert "fora das rentabilidades, mas dentro do patrimônio: VWRA11" in note
+            assert "fora do patrimônio" not in note
             assert reason in note
 
     @pytest.mark.asyncio
@@ -251,8 +251,8 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "fora do patrimonio, da variacao e das rentabilidades: TESOURO-IPCA-2035" in note
-            assert "Fora das rentabilidades, mas dentro do patrimonio: VWRA11" in note
+            assert "fora do patrimônio, da variação e das rentabilidades: TESOURO-IPCA-2035" in note
+            assert "Fora das rentabilidades, mas dentro do patrimônio: VWRA11" in note
 
     @pytest.mark.asyncio
     async def test_a_sold_ticker_is_not_said_to_be_inside_the_patrimony(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,7 +273,7 @@ class TestSummary:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "fora das rentabilidades, mas dentro do patrimonio: VWRA11 (" in note
+            assert "fora das rentabilidades, mas dentro do patrimônio: VWRA11 (" in note
             assert f"Vendidos, fora das rentabilidades: AUVP11 ({NOTHING_RETURNED})" in note
             assert "AUVP11" not in note.split("Vendidos")[0]
             assert "feche e abra o bogle" in note  # o motivo e do provedor
@@ -291,7 +291,7 @@ class TestSummary:
             assert isinstance(home, HomeScreen)
             assert "Nota: vendidos, fora das rentabilidades: AUVP11" in home.note
             # O patrimonio esta inteiro: o rotulo continua "total".
-            assert home.query_one("#patrimony", Metric).caption == "Patrimonio total"
+            assert home.query_one("#patrimony", Metric).caption == "Patrimônio total"
 
     @pytest.mark.asyncio
     async def test_a_permanent_exclusion_does_not_suggest_retrying(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -317,8 +317,8 @@ class TestSummary:
             await settle(pilot)
             home = app.screen
             assert isinstance(home, HomeScreen)
-            assert home.query_one("#patrimony", Metric).caption == "Patrimonio parcial"
-            assert home.query_one("#variation", Metric).caption == "Variacao parcial"
+            assert home.query_one("#patrimony", Metric).caption == "Patrimônio parcial"
+            assert home.query_one("#variation", Metric).caption == "Variação parcial"
 
     @pytest.mark.asyncio
     async def test_a_complete_reading_keeps_the_plain_labels(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -328,8 +328,8 @@ class TestSummary:
             await settle(pilot)
             home = app.screen
             assert isinstance(home, HomeScreen)
-            assert home.query_one("#patrimony", Metric).caption == "Patrimonio total"
-            assert home.query_one("#variation", Metric).caption == "Variacao"
+            assert home.query_one("#patrimony", Metric).caption == "Patrimônio total"
+            assert home.query_one("#variation", Metric).caption == "Variação"
 
     @pytest.mark.asyncio
     async def test_ticker_with_brackets_is_not_read_as_markup(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -372,7 +372,7 @@ class TestStalePrices:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
             assert "sem fechamento de 2026-08-11 para AUVP11 (2026-08-10), B5P211 (2026-08-10)" in note
-            assert "avaliados no ultimo fechamento disponivel" in note
+            assert "avaliados no último fechamento disponível" in note
 
     @pytest.mark.asyncio
     async def test_a_portfolio_priced_on_the_reference_day_says_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -393,8 +393,8 @@ class TestStalePrices:
             await settle(pilot)
             home = app.screen
             assert isinstance(home, HomeScreen)
-            assert "fora do patrimonio" not in home.note
-            assert home.query_one("#patrimony", Metric).caption == "Patrimonio total"
+            assert "fora do patrimônio" not in home.note
+            assert home.query_one("#patrimony", Metric).caption == "Patrimônio total"
 
     @pytest.mark.asyncio
     async def test_it_coexists_with_the_pending_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -413,7 +413,7 @@ class TestStalePrices:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
             assert note.count("Nota:") == 2
-            assert note.index("ainda nao entra") < note.index("sem fechamento")
+            assert note.index("ainda não entra") < note.index("sem fechamento")
 
     @pytest.mark.asyncio
     async def test_ticker_with_brackets_is_not_read_as_markup(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -483,7 +483,7 @@ class TestHiddenAmounts:
             await pilot.press("h")
             await settle(pilot)
             assert metric(app.screen, "patrimony") == MASK  # type: ignore[arg-type]
-            assert toasts.severity_of("nao foi salva") == "warning"
+            assert toasts.severity_of("não foi salva") == "warning"
 
     @pytest.mark.asyncio
     async def test_opens_hidden_when_the_setting_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -756,7 +756,7 @@ class TestFailures:
         async with app.run_test() as pilot:
             await settle(pilot)
             assert app.is_running
-            assert "Aplique as migracoes" in app.screen.note  # type: ignore[attr-defined]
+            assert "Aplique as migrações" in app.screen.note  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_database_down_shows_the_same_hint_as_the_cli(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -767,7 +767,7 @@ class TestFailures:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert "nao foi possivel conectar ao banco de dados" in app.screen.note  # type: ignore[attr-defined]
+            assert "não foi possível conectar ao banco de dados" in app.screen.note  # type: ignore[attr-defined]
 
 
 class TestRebalanceReminder:
@@ -806,8 +806,8 @@ class TestPendingEntries:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "2 lancamentos depois de 2026-08-11 (+3,707.23) ainda nao entram" in note
-            assert "o resumo e do fechamento desse dia" in note
+            assert "2 lançamentos depois de 2026-08-11 (+3,707.23) ainda não entram" in note
+            assert "o resumo é do fechamento desse dia" in note
 
     @pytest.mark.asyncio
     async def test_one_entry_is_said_in_the_singular(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -815,7 +815,7 @@ class TestPendingEntries:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert "1 lancamento depois de 2026-08-11 (+2,103.11) ainda nao entra" in app.screen.note  # type: ignore[attr-defined]
+            assert "1 lançamento depois de 2026-08-11 (+2,103.11) ainda não entra" in app.screen.note  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_an_entry_that_moves_no_capital_shows_no_amount(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -826,7 +826,7 @@ class TestPendingEntries:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "1 lancamento depois de 2026-08-11 ainda nao entra" in note
+            assert "1 lançamento depois de 2026-08-11 ainda não entra" in note
             assert "0.00" not in note
 
     @pytest.mark.asyncio
@@ -835,7 +835,7 @@ class TestPendingEntries:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert "ainda nao entra" not in app.screen.note  # type: ignore[attr-defined]
+            assert "ainda não entra" not in app.screen.note  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_it_coexists_with_an_exclusion(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -854,7 +854,7 @@ class TestPendingEntries:
         async with app.run_test() as pilot:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
-            assert "1 lancamento depois de" in note
+            assert "1 lançamento depois de" in note
             assert "TESOURO-IPCA-2035" in note
 
     @pytest.mark.asyncio
@@ -872,7 +872,7 @@ class TestPendingEntries:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
             assert note.count("Nota:") == 1
-            assert "nenhuma posicao avaliavel" not in note
+            assert "nenhuma posição avaliável" not in note
 
     @pytest.mark.asyncio
     async def test_an_empty_close_with_nothing_pending_keeps_its_own_note(
@@ -882,7 +882,7 @@ class TestPendingEntries:
         app = make_app()
         async with app.run_test() as pilot:
             await settle(pilot)
-            assert "nenhuma posicao avaliavel no fechamento de 2026-08-11" in app.screen.note  # type: ignore[attr-defined]
+            assert "nenhuma posição avaliável no fechamento de 2026-08-11" in app.screen.note  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_the_amount_is_masked_with_the_others(self, monkeypatch: pytest.MonkeyPatch) -> None:

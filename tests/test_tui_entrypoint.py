@@ -42,7 +42,7 @@ class TestNoArguments:
 
     def test_without_a_terminal_prints_the_help_instead(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def unexpected() -> None:
-            raise AssertionError("a TUI nao pode abrir sem terminal")
+            raise AssertionError("a TUI não pode abrir sem terminal")
 
         monkeypatch.setattr(cli_mod, "_is_interactive", lambda: False)
         monkeypatch.setattr("bogle.tui.run_tui", unexpected)
@@ -54,7 +54,7 @@ class TestNoArguments:
 
     def test_help_flag_never_opens_the_tui(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def unexpected() -> None:
-            raise AssertionError("--help nao pode abrir a TUI")
+            raise AssertionError("--help não pode abrir a TUI")
 
         monkeypatch.setattr(cli_mod, "_is_interactive", lambda: True)
         monkeypatch.setattr("bogle.tui.run_tui", unexpected)
@@ -122,7 +122,7 @@ class TestPreferences:
         # vencido virou toast na Home): o callback nao le nada nem escreve em
         # stderr antes de abrir a interface.
         def unexpected(*_args: Any, **_kwargs: Any) -> None:
-            raise AssertionError("o modo interativo nao passa pelas preferencias da CLI")
+            raise AssertionError("o modo interativo não passa pelas preferencias da CLI")
 
         monkeypatch.setattr(cli_mod, "_read_preferences", unexpected)
         monkeypatch.setattr(cli_mod, "_is_interactive", lambda: True)

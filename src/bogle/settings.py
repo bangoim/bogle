@@ -38,16 +38,16 @@ def _parse_period(raw: str) -> int:
     try:
         period = int(raw)
     except ValueError:
-        raise ValidationError(f"'{raw}' nao e um inteiro valido.") from None
+        raise ValidationError(f"'{raw}' não é um inteiro válido.") from None
     if period not in _VALID_PERIODS:
-        raise ValidationError(f"Periodo de rebalanceamento deve ser 6 ou 12 meses, recebido {period}.")
+        raise ValidationError(f"Período de rebalanceamento deve ser 6 ou 12 meses, recebido {period}.")
     return period
 
 
 def _parse_indices(raw: str) -> list[str]:
     indices = [part.strip().upper() for part in raw.split(",") if part.strip()]
     if not indices:
-        raise ValidationError("Lista de indices vazia. Informe valores separados por virgula (ex: CDI,IBOV).")
+        raise ValidationError("Lista de índices vazia. Informe valores separados por vírgula (ex: CDI,IBOV).")
     return indices
 
 
@@ -55,7 +55,7 @@ def _parse_threshold(raw: str) -> Decimal:
     try:
         threshold = Decimal(raw)
     except InvalidOperation:
-        raise ValidationError(f"'{raw}' nao e um decimal valido.") from None
+        raise ValidationError(f"'{raw}' não é um decimal válido.") from None
     if not (Decimal("0") < threshold < Decimal("1")):
         raise ValidationError(f"Threshold deve estar em (0, 1), recebido {threshold}.")
     return threshold
@@ -75,12 +75,12 @@ def _parse_theme(raw: str) -> str:
 
     theme = raw.strip()
     if theme not in BUILTIN_THEMES:
-        raise ValidationError(f"Tema '{theme}' nao existe. Opcoes: {', '.join(sorted(BUILTIN_THEMES))}.")
+        raise ValidationError(f"Tema '{theme}' não existe. Opções: {', '.join(sorted(BUILTIN_THEMES))}.")
     return theme
 
 
 _TRUE = ("true", "1", "sim", "yes", "on")
-_FALSE = ("false", "0", "nao", "no", "off")
+_FALSE = ("false", "0", "não", "nao", "no", "off")
 
 
 def _parse_bool(raw: str) -> bool:
@@ -89,14 +89,14 @@ def _parse_bool(raw: str) -> bool:
         return True
     if value in _FALSE:
         return False
-    raise ValidationError(f"'{raw}' nao e um booleano. Use {_TRUE[0]} ou {_FALSE[0]}.")
+    raise ValidationError(f"'{raw}' não é um booleano. Use {_TRUE[0]} ou {_FALSE[0]}.")
 
 
 def _parse_date(raw: str) -> date:
     try:
         return date.fromisoformat(raw)
     except ValueError:
-        raise ValidationError(f"'{raw}' nao e uma data valida (formato YYYY-MM-DD).") from None
+        raise ValidationError(f"'{raw}' não é uma data válida (formato YYYY-MM-DD).") from None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +117,7 @@ SETTINGS: dict[str, SettingSpec] = {
         SettingSpec(
             key=REBALANCE_PERIOD_MONTHS,
             type_name="int",
-            description="Ciclo de avaliacao de rebalanceamento em meses (6 ou 12).",
+            description="Ciclo de avaliação de rebalanceamento em meses (6 ou 12).",
             default=12,
             parse=_parse_period,
             to_json=int,
@@ -126,7 +126,7 @@ SETTINGS: dict[str, SettingSpec] = {
         SettingSpec(
             key=DEFAULT_COMPARE_INDICES,
             type_name="list[str]",
-            description="Indices usados por 'bogle compare' sem --index (separados por virgula).",
+            description="Índices usados por 'bogle compare' sem --index (separados por vírgula).",
             default=["IBOV", "CDI"],
             parse=_parse_indices,
             to_json=list,
@@ -135,7 +135,7 @@ SETTINGS: dict[str, SettingSpec] = {
         SettingSpec(
             key=WEIGHT_DRIFT_THRESHOLD,
             type_name="decimal",
-            description="Drift (em fracao) a partir do qual um ativo vira BUY.",
+            description="Drift (em fração) a partir do qual um ativo vira BUY.",
             default=Decimal("0.05"),
             parse=_parse_threshold,
             to_json=str,
@@ -144,7 +144,7 @@ SETTINGS: dict[str, SettingSpec] = {
         SettingSpec(
             key=DECIMAL_SEPARATOR,
             type_name="str",
-            description="Separador decimal na exibicao ('.' ou ','); o outro caractere separa o milhar.",
+            description="Separador decimal na exibição ('.' ou ','); o outro caractere separa o milhar.",
             default=".",
             parse=_parse_separator,
             to_json=str,
@@ -162,7 +162,7 @@ SETTINGS: dict[str, SettingSpec] = {
         SettingSpec(
             key=THEME,
             type_name="str",
-            description="Tema da interface interativa (a paleta de comandos tambem grava aqui).",
+            description="Tema da interface interativa (a paleta de comandos também grava aqui).",
             default=DEFAULT_THEME,
             parse=_parse_theme,
             to_json=str,
@@ -171,7 +171,7 @@ SETTINGS: dict[str, SettingSpec] = {
         SettingSpec(
             key=LAST_REBALANCE_DATE,
             type_name="date",
-            description="Data da ultima avaliacao de rebalanceamento (atualizada por 'bogle suggest').",
+            description="Data da última avaliação de rebalanceamento (atualizada por 'bogle suggest').",
             default=None,
             parse=_parse_date,
             to_json=date.isoformat,
@@ -263,7 +263,7 @@ def list_settings(conn: psycopg.Connection[DictRow]) -> list[SettingEntry]:
 def format_value(value: Any) -> str:
     """Human/scriptable rendering: lists comma-joined, dates ISO, None explicit."""
     if value is None:
-        return "(nao definido)"
+        return "(não definido)"
     if isinstance(value, bool):
         # Antes do ramo de int: em Python, bool *e* int.
         return "true" if value else "false"

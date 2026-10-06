@@ -36,16 +36,16 @@ def parse_decimal(value: str, option: str) -> Decimal:
     canonical = fmt.to_canonical(value)
     if canonical is None:
         raise ValidationError(
-            f"{option}: use um unico separador, para os centavos — milhar vai sem separador. "
-            f"Recebido {value!r}; escreva 1000 ou 1000,00 (o ponto tambem vale)."
+            f"{option}: use um único separador, para os centavos — milhar vai sem separador. "
+            f"Recebido {value!r}; escreva 1000 ou 1000,00 (o ponto também vale)."
         )
     try:
         parsed = Decimal(canonical)
     except InvalidOperation:
-        raise ValidationError(f"{option} deve ser um numero decimal, recebido {value!r}.") from None
+        raise ValidationError(f"{option} deve ser um número decimal, recebido {value!r}.") from None
     # NaN/Infinity parseiam como Decimal mas estouram em comparacoes e no banco.
     if not parsed.is_finite():
-        raise ValidationError(f"{option} deve ser um numero decimal, recebido {value!r}.")
+        raise ValidationError(f"{option} deve ser um número decimal, recebido {value!r}.")
     return parsed
 
 
@@ -93,7 +93,7 @@ def parse_ticker_values(values: Sequence[str], option: str, *, unit: str, exampl
             raise ValidationError(f"{option} espera TICKER={unit} (ex: {example}), recebido {raw!r}.")
         name = ticker.strip().upper()
         if name in parsed:
-            raise ValidationError(f"{option} repetido para {name}: informe um so por ticker.")
+            raise ValidationError(f"{option} repetido para {name}: informe um só por ticker.")
         parsed[name] = parse_decimal(number.strip(), f"{option} {name}")
     return parsed
 

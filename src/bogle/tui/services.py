@@ -287,7 +287,7 @@ def record_income(
             return repo.add_rendimento(ticker, when, amount)
         if income_type is TransactionType.INTEREST:
             return repo.add_interest(ticker, when, amount, tax_withheld=tax)
-        raise ValueError(f"tipo de provento invalido: {income_type}")
+        raise ValueError(f"tipo de provento inválido: {income_type}")
     finally:
         conn.close()
 

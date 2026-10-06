@@ -84,7 +84,7 @@ class TestTheme:
         async with app.run_test() as pilot:
             await settle(pilot)
             assert app.theme == DEFAULT_THEME
-            assert toasts.severity_of("nao existe nesta versao") == "warning"
+            assert toasts.severity_of("não existe nesta versão") == "warning"
 
     @pytest.mark.asyncio
     async def test_a_failed_save_warns_without_losing_the_theme(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,7 +101,7 @@ class TestTheme:
             await settle(pilot)
             # O tema vale nesta sessao; so nao vai valer na proxima.
             assert app.theme == "gruvbox"
-            assert toasts.severity_of("nao foi salva") == "warning"
+            assert toasts.severity_of("não foi salva") == "warning"
 
 
 class TestPrivacyToggle:

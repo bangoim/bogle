@@ -61,7 +61,7 @@ def _parse_time(value: Any) -> datetime:
     # brapi sends ISO-8601 with a trailing 'Z' and milliseconds
     # (e.g. "2026-07-20T22:28:54.000Z"); fromisoformat handles both on 3.11+.
     if not value:
-        raise MarketDataError("Cotacao da brapi sem timestamp.", provider=_PROVIDER)
+        raise MarketDataError("Cotação da brapi sem timestamp.", provider=_PROVIDER)
     return datetime.fromisoformat(str(value))
 
 
@@ -172,7 +172,7 @@ class BrapiClient:
     def _request(self, path: str, params: dict[str, str], *, symbol: str) -> Any:
         if not self._token:
             raise MarketDataError(
-                "BRAPI_TOKEN nao configurado; defina a variavel de ambiente ou o .env.",
+                "BRAPI_TOKEN não configurado; defina a variável de ambiente ou o .env.",
                 provider=_PROVIDER,
             )
         headers = {"Authorization": f"Bearer {self._token}"}
@@ -193,7 +193,7 @@ class BrapiClient:
         try:
             body = json.loads(resp.text, parse_float=Decimal)
         except json.JSONDecodeError as exc:
-            raise MarketDataError(f"Resposta invalida da brapi (HTTP {resp.status_code}).", provider=_PROVIDER) from exc
+            raise MarketDataError(f"Resposta inválida da brapi (HTTP {resp.status_code}).", provider=_PROVIDER) from exc
         if resp.status_code != 200 or (isinstance(body, dict) and body.get("error")):
             self._raise_api_error(resp.status_code, body, symbol)
         return body

@@ -74,7 +74,7 @@ class TestTable:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, HistoryScreen())
-            assert table_columns(screen) == ["Data", "Patrimonio", "Variacao", "Variacao %"]
+            assert table_columns(screen) == ["Data", "Patrimônio", "Variação", "Variação %"]
             assert table_rows(screen) == [
                 ["2025-08-12", "7,000.00", "-", "-"],  # primeiro ponto: nao ha anterior
                 ["2025-12-31", "7,350.00", "+350.00", "+5.00%"],
@@ -96,7 +96,7 @@ class TestTable:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, HistoryScreen())
-            assert f"patrimonio nao considera TESOURO-IPCA-2035 ({NO_SOURCE})." in screen.note
+            assert f"patrimônio não considera TESOURO-IPCA-2035 ({NO_SOURCE})." in screen.note
 
 
 class TestWindow:
@@ -116,7 +116,7 @@ class TestWindow:
                 await pilot.press("t")
                 await settle(pilot)
             assert periods == ["12m", "2y", "5y", "10y", "all", "12m"]
-            assert screen.sub_title == "historico - 12m"
+            assert screen.sub_title == "histórico - 12m"
 
 
 class TestChart:
@@ -126,9 +126,9 @@ class TestChart:
         async with app.run_test() as pilot:
             await open_screen(pilot, HistoryScreen())
             title, labels, series = chart.calls[-1]
-            assert title == "Evolucao do patrimonio"
+            assert title == "Evolução do patrimônio"
             assert labels == ["2025-08-12", "2025-12-31", "2026-04-30", "2026-08-12"]
-            assert series == [("Patrimonio", [7000.0, 7350.0, 7600.0, 7866.2])]
+            assert series == [("Patrimônio", [7000.0, 7350.0, 7600.0, 7866.2])]
 
 
 class TestHiddenAmounts:
@@ -194,9 +194,9 @@ class TestExport:
             await pilot.press("o")
             await settle(pilot)
             call = export.calls[-1]
-            assert call["title"] == "Evolucao do patrimonio"
+            assert call["title"] == "Evolução do patrimônio"
             assert call["y_title"] == "R$"
-            assert call["series"] == [("Patrimonio", [7000.0, 7350.0, 7600.0, 7866.2])]
+            assert call["series"] == [("Patrimônio", [7000.0, 7350.0, 7600.0, 7866.2])]
             assert call["path"] == services.chart_path("history-12m")
             assert str(call["path"]) in toasts.messages[-1]
 

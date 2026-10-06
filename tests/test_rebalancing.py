@@ -35,12 +35,12 @@ class TestClassification:
         [rec] = classify_positions([make_position("VWRA11", "0.64", "0.70")])
         assert rec.recommendation is Recommendation.BUY
         assert rec.drift == Decimal("-0.06")
-        assert rec.reason == "Peso atual 64% esta 6 p.p. abaixo do target de 70%."
+        assert rec.reason == "Peso atual 64% está 6 p.p. abaixo do target de 70%."
 
     def test_below_target_within_threshold_is_hold(self) -> None:
         [rec] = classify_positions([make_position("VWRA11", "0.67", "0.70")])
         assert rec.recommendation is Recommendation.HOLD
-        assert "dentro da tolerancia" in rec.reason
+        assert "dentro da tolerância" in rec.reason
 
     def test_at_target_is_hold(self) -> None:
         [rec] = classify_positions([make_position("VWRA11", "0.70", "0.70")])
@@ -88,7 +88,7 @@ class TestMissingPrice:
 class TestReasonFormatting:
     def test_fractional_percentages_keep_one_decimal(self) -> None:
         [rec] = classify_positions([make_position("VWRA11", "0.6375", "0.70")])
-        assert rec.reason == "Peso atual 63.8% esta 6.3 p.p. abaixo do target de 70%."
+        assert rec.reason == "Peso atual 63.8% está 6.3 p.p. abaixo do target de 70%."
 
 
 class TestNextEvaluationDate:

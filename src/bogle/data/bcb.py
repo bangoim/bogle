@@ -162,11 +162,11 @@ class BcbClient:
         except json.JSONDecodeError as exc:
             # SGS answers an unknown code with HTTP 200 + an HTML error page.
             raise MarketDataError(
-                f"BCB SGS nao retornou JSON para a serie {code} (codigo inexistente?).",
+                f"BCB SGS não retornou JSON para a série {code} (código inexistente?).",
                 provider=_PROVIDER,
             ) from exc
         if not isinstance(body, list):
-            raise MarketDataError(f"Formato inesperado do BCB SGS para a serie {code}.", provider=_PROVIDER)
+            raise MarketDataError(f"Formato inesperado do BCB SGS para a série {code}.", provider=_PROVIDER)
         return body
 
     def _http_get(self, path: str, params: dict[str, str]) -> str:

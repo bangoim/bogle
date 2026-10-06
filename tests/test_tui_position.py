@@ -81,8 +81,8 @@ class TestTable:
                 "Ticker",
                 "Tipo",
                 "Qtd",
-                "Preco medio",
-                "Cotacao",
+                "Preço médio",
+                "Cotação",
                 "Montante",
                 "Peso",
                 "Target",
@@ -127,7 +127,7 @@ class TestTable:
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
             assert screen.query_one(DataTable).row_count == 0
-            assert screen.note == "Nenhuma posicao ativa."
+            assert screen.note == "Nenhuma posição ativa."
 
 
 class TestHiddenAmounts:
@@ -154,7 +154,7 @@ class TestHiddenAmounts:
                 "+12.75%",  # TWR
             ]
             assert f"Total investido {MASK}" in screen.totals
-            assert f"Variacao {MASK} (+8.27%)" in screen.totals
+            assert f"Variação {MASK} (+8.27%)" in screen.totals
 
     @pytest.mark.asyncio
     async def test_h_again_brings_them_back(self, spy: SnapshotSpy) -> None:
@@ -186,9 +186,9 @@ class TestTotals:
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
             assert "Total investido 4,550.00" in screen.totals
-            assert "Patrimonio total 4,926.20" in screen.totals
-            assert "Variacao +376.20 (+8.27%)" in screen.totals
-            assert "Lucro do mes +82.40" in screen.totals
+            assert "Patrimônio total 4,926.20" in screen.totals
+            assert "Variação +376.20 (+8.27%)" in screen.totals
+            assert "Lucro do mês +82.40" in screen.totals
             assert "Proventos (12m) +145.00" in screen.totals
 
     @pytest.mark.asyncio
@@ -207,18 +207,18 @@ class TestTotals:
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
             assert "Total investido 4,550.00" in screen.totals
-            assert "Patrimonio total -" in screen.totals
-            assert "Variacao - (-)" in screen.totals
+            assert "Patrimônio total -" in screen.totals
+            assert "Variação - (-)" in screen.totals
 
     @pytest.mark.asyncio
     async def test_price_provenance_is_listed(self, spy: SnapshotSpy) -> None:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
-            assert "Fonte(s) de preco brapi, calculado" in screen.totals
+            assert "Fonte(s) de preço brapi, calculado" in screen.totals
             # Local, nao UTC: o provedor manda em UTC, e uma cotacao da tarde
             # impressa crua apareceria tres horas no futuro.
-            assert "Cotacao mais recente 2026-08-11 15:28" in screen.totals
+            assert "Cotação mais recente 2026-08-11 15:28" in screen.totals
 
     @pytest.mark.asyncio
     async def test_excluded_tickers_are_noted(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -232,10 +232,10 @@ class TestTotals:
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
             assert (
-                f"lucro do mes nao considera TESOURO-SELIC-2029 ({NO_SOURCE}), VALE3 ({INCONSISTENT_LEDGER})."
+                f"lucro do mês não considera TESOURO-SELIC-2029 ({NO_SOURCE}), VALE3 ({INCONSISTENT_LEDGER})."
                 in screen.note
             )
-            assert "sem historico de precos no periodo" not in screen.note
+            assert "sem histórico de preços no período" not in screen.note
 
 
 class TestLoading:
@@ -292,7 +292,7 @@ class TestActions:
             release.set()  # a carga cancelada termina agora
             await settle(pilot)
             assert [r[0] for r in [row(screen, i) for i in range(screen.query_one(DataTable).row_count)]] == ["CDB01"]
-            assert screen.sub_title == "posicao - sem precos"
+            assert screen.sub_title == "posição - sem preços"
 
     @pytest.mark.asyncio
     async def test_opens_with_live_prices(self, spy: SnapshotSpy) -> None:
@@ -300,7 +300,7 @@ class TestActions:
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
             assert spy.calls == [True]
-            assert screen.sub_title == "posicao - precos ao vivo"
+            assert screen.sub_title == "posição - preços ao vivo"
 
     @pytest.mark.asyncio
     async def test_p_switches_to_the_no_prices_view(self, spy: SnapshotSpy) -> None:
@@ -310,7 +310,7 @@ class TestActions:
             await pilot.press("p")
             await settle(pilot)
             assert spy.calls == [True, False]
-            assert screen.sub_title == "posicao - sem precos"
+            assert screen.sub_title == "posição - sem preços"
             await pilot.press("p")
             await settle(pilot)
             assert spy.calls == [True, False, True]

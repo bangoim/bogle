@@ -58,16 +58,16 @@ from bogle.tui.widgets.form import Field
 
 _COLUMNS = (
     "Ticker",
-    "Preco",
+    "Preço",
     "Valor sugerido",
-    "Qtde papeis",
+    "Qtde papéis",
     "Custo efetivo",
     # Onde o ticker esta, onde ele deveria estar, onde ele fica depois deste
     # aporte e o que ainda falta: sozinho, o peso final nao explica nada.
     "Peso atual",
     "Target",
-    "Peso apos",
-    "Drift apos",
+    "Peso após",
+    "Drift após",
 )
 
 _HINT = "[dim]Informe o valor do aporte e pressione Enter.[/dim]"
@@ -76,7 +76,7 @@ _MANUAL_MARK = "*"
 """Marca o que veio do usuario — o preco, a compra fixada: sem ela a coluna
 mistura o que voce informou com o que veio do provedor ou da divisao."""
 
-_UNQUOTED = "sem cotacao"
+_UNQUOTED = "sem cotação"
 
 type _Row = TickerSuggestion | UnquotedTarget
 """Uma linha da tabela: um ticker do aporte, ou um target que ficou de fora."""
@@ -91,7 +91,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
     NOTE = "#suggest-note"
     LIVE_PRICES = True
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("p", "set_price", "Preco"),
+        Binding("p", "set_price", "Preço"),
         Binding("q", "set_purchase", "Qtde"),
     ]
 
@@ -156,7 +156,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
         if isinstance(item, UnquotedTarget) and item.asset_type not in VARIABLE_INCOME_TYPES:
             # Aqui o preco nao e o problema, e informar um nao traria nada de volta.
             self.notify(
-                f"{item.ticker} e renda fixa: um preco informado nao se aplica (entra por valor, nao por cota). "
+                f"{item.ticker} é renda fixa: um preço informado não se aplica (entra por valor, não por cota). "
                 "Confira o ticker no cadastro do ativo.",
                 severity="warning",
                 markup=False,
@@ -165,7 +165,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
         if item.asset_type not in VARIABLE_INCOME_TYPES:
             # Renda fixa entra por valor exato: nao ha cota para o preco converter.
             self.notify(
-                f"{item.ticker} e renda fixa: entra por valor, nao por cota, e nao tem preco a definir.",
+                f"{item.ticker} é renda fixa: entra por valor, não por cota, e não tem preço a definir.",
                 severity="warning",
                 markup=False,
             )
@@ -173,7 +173,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
         current = self.prices.get(item.ticker)
         self.app.push_screen(
             EditModal(
-                f"Preco de {item.ticker}",
+                f"Preço de {item.ticker}",
                 _price_body(item),
                 value=_as_typed(current),
                 placeholder="ex: 114,86",
@@ -188,7 +188,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
             self.prices.pop(ticker, None)
             self.fetch()
             return
-        field = f"Preco de {ticker}"
+        field = f"Preço de {ticker}"
         try:
             price = parse_decimal(raw, field)
             if price <= 0:
@@ -212,9 +212,9 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
             # Sem preco nao ha o que as cotas custem; e a renda fixa sem cotacao e
             # um cadastro a conferir, como no p.
             self.notify(
-                f"{item.ticker} esta sem cotacao: informe o preco (p) antes da quantidade."
+                f"{item.ticker} está sem cotação: informe o preço (p) antes da quantidade."
                 if variable
-                else f"{item.ticker} esta sem cotacao: confira o ticker no cadastro do ativo.",
+                else f"{item.ticker} está sem cotação: confira o ticker no cadastro do ativo.",
                 severity="warning",
                 markup=False,
             )
@@ -224,7 +224,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
             EditModal(
                 f"{'Quantidade' if variable else 'Valor'} de {item.ticker}",
                 f"{'Cotas inteiras' if variable else 'Valor em reais'}; o resto do aporte vai para os outros.\n"
-                "0 tira o ticker do aporte, em branco volta a sugestao.",
+                "0 tira o ticker do aporte, em branco volta a sugestão.",
                 value=_as_typed(pinned.get(item.ticker)),
                 placeholder="ex: 10" if variable else "ex: 500,00",
             ),
@@ -396,8 +396,8 @@ def _price_body(item: _Row) -> str:
     """What the price modal says about the market, and what an empty field does."""
     if isinstance(item, UnquotedTarget) or item.quoted_price is None:
         # Sem cotacao, "voltar ao de mercado" e voltar a ficar de fora.
-        return "Sem cotacao do provedor: com um preco, o ticker entra no aporte.\nEm branco fica fora dele."
-    return f"Mercado: {_quote_of(item)}\nEm branco volta a usar a cotacao."
+        return "Sem cotação do provedor: com um preço, o ticker entra no aporte.\nEm branco fica fora dele."
+    return f"Mercado: {_quote_of(item)}\nEm branco volta a usar a cotação."
 
 
 def _quote_of(item: TickerSuggestion) -> str:

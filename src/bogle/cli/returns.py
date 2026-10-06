@@ -17,7 +17,7 @@ from bogle.reports.valuation import with_reasons
 
 _CONSOLE = Console()
 
-_LABELS = {"total": "Total", "12m": "12 meses", "1m": "Ultimo mes"}
+_LABELS = {"total": "Total", "12m": "12 meses", "1m": "Último mês"}
 
 
 def _window(row: PeriodReturn) -> str:
@@ -48,7 +48,7 @@ def _render(report: ReturnsReport, indices: tuple[str, ...], console: Console) -
 
     if report.excluded:
         console.print(
-            f"\n[yellow]Nota:[/yellow] TWR nao considera {with_reasons(report.excluded, report.excluded_reasons)}."
+            f"\n[yellow]Nota:[/yellow] TWR não considera {with_reasons(report.excluded, report.excluded_reasons)}."
         )
     for index, message in report.index_errors.items():
         console.print(f"[yellow]Nota:[/yellow] {index}: {message}")
@@ -70,7 +70,7 @@ def _resolve_indices(vs: str | None) -> tuple[str, ...]:
 def return_(
     period: str | None = typer.Option(None, "--period", help="total, 12m ou 1m. Default: painel completo."),
     vs: str | None = typer.Option(
-        None, "--vs", help="Indices para comparar (ex: CDI,IPCA); 'default' usa default_compare_indices."
+        None, "--vs", help="Índices para comparar (ex: CDI,IPCA); 'default' usa default_compare_indices."
     ),
 ) -> None:
     periods = DEFAULT_PERIODS if period is None else (parse_period(period, allowed=("total", "12m", "1m")),)

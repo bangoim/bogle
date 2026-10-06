@@ -65,7 +65,7 @@ def add(
         None,
         "--indexer",
         case_sensitive=False,
-        help="Indexador (renda fixa pos-fixada).",
+        help="Indexador (renda fixa pós-fixada).",
     ),
     rate: str | None = typer.Option(
         None,
@@ -75,12 +75,12 @@ def add(
     prefixed: bool | None = typer.Option(
         None,
         "--prefixed/--no-prefixed",
-        help="Titulo prefixado (sem indexador). Default: pos-fixado.",
+        help="Título prefixado (sem indexador). Default: pós-fixado.",
     ),
     daily_liquidity: bool | None = typer.Option(
         None,
         "--daily-liquidity/--no-daily-liquidity",
-        help="Liquidez diaria (renda fixa privada).",
+        help="Liquidez diária (renda fixa privada).",
     ),
     purchase_date: str | None = typer.Option(
         None,
@@ -136,14 +136,14 @@ def update(
         None,
         "--weight",
         "-w",
-        help="Novo peso-alvo em decimal entre 0 e 1; 0 tira o ativo do plano e mantem o historico.",
+        help="Novo peso-alvo em decimal entre 0 e 1; 0 tira o ativo do plano e mantém o histórico.",
     ),
     asset_type: AssetType | None = typer.Option(  # noqa: B008 — padrao do typer, OptionInfo e sentinela imutavel
         None,
         "--type",
         "-t",
         case_sensitive=False,
-        help="Novo tipo do ativo (apenas entre renda variavel: STOCK/BDR/FII/ETF).",
+        help="Novo tipo do ativo (apenas entre renda variável: STOCK/BDR/FII/ETF).",
     ),
 ) -> None:
     # `update` so mexe em target_weight e asset_type. A troca de tipo e
@@ -191,7 +191,7 @@ def list_assets() -> None:
         conn.close()
 
     if not assets:
-        typer.echo("Nenhum ativo cadastrado. Use 'bogle add' para comecar.")
+        typer.echo("Nenhum ativo cadastrado. Use 'bogle add' para começar.")
         return
 
     # Mesma divisao da tela de Ativos: sem posicao e sem target, o ativo fica

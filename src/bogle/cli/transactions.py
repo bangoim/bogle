@@ -39,15 +39,15 @@ def _resolve_date(value: str | None) -> datetime:
 
 
 def _echo_recorded(tx: Transaction) -> None:
-    typer.echo(f"transacao {tx.id} registrada: {tx.transaction_type} {tx.ticker} em {tx.date:%Y-%m-%d}.")
+    typer.echo(f"transação {tx.id} registrada: {tx.transaction_type} {tx.ticker} em {tx.date:%Y-%m-%d}.")
 
 
 def buy(
     ticker: str = typer.Argument(..., help="Ticker do ativo (precisa estar cadastrado)."),
     shares: str = typer.Option(..., "--shares", "-s", help="Quantidade comprada."),
-    price: str = typer.Option(..., "--price", "-p", help="Preco unitario pago."),
-    fees: str = typer.Option("0", "--fees", help="Taxas/corretagem da operacao."),
-    date: str | None = typer.Option(None, "--date", help="Data da operacao (YYYY-MM-DD). Default: hoje."),
+    price: str = typer.Option(..., "--price", "-p", help="Preço unitário pago."),
+    fees: str = typer.Option("0", "--fees", help="Taxas/corretagem da operação."),
+    date: str | None = typer.Option(None, "--date", help="Data da operação (YYYY-MM-DD). Default: hoje."),
 ) -> None:
     # Parse antes de abrir conexao (erro de formato nao precisa de banco).
     when = _resolve_date(date)
@@ -69,19 +69,19 @@ def sell(
     ticker: str = typer.Argument(..., help="Ticker do ativo."),
     shares: str | None = typer.Option(None, "--shares", "-s", help="Quantidade vendida. Omita com --all."),
     sell_all: bool = typer.Option(
-        False, "--all", help="Vende a posicao inteira na data da venda, sem precisar saber a quantidade."
+        False, "--all", help="Vende a posição inteira na data da venda, sem precisar saber a quantidade."
     ),
-    price: str = typer.Option(..., "--price", "-p", help="Preco unitario de venda."),
-    fees: str = typer.Option("0", "--fees", help="Taxas/corretagem da operacao."),
+    price: str = typer.Option(..., "--price", "-p", help="Preço unitário de venda."),
+    fees: str = typer.Option("0", "--fees", help="Taxas/corretagem da operação."),
     tax_withheld: str = typer.Option("0", "--tax-withheld", help="IR retido na fonte (dedo-duro de 0,005% em vendas)."),
-    date: str | None = typer.Option(None, "--date", help="Data da operacao (YYYY-MM-DD). Default: hoje."),
+    date: str | None = typer.Option(None, "--date", help="Data da operação (YYYY-MM-DD). Default: hoje."),
 ) -> None:
     # Um dos dois, nunca os dois: `--all` e uma quantidade, e duas quantidades
     # em desacordo nao teriam um vencedor obvio.
     if sell_all and shares is not None:
-        raise ValidationError("--all ja e a quantidade: use um ou outro, nao os dois.")
+        raise ValidationError("--all já é a quantidade: use um ou outro, não os dois.")
     if not sell_all and shares is None:
-        raise ValidationError("informe --shares, ou --all para vender a posicao inteira.")
+        raise ValidationError("informe --shares, ou --all para vender a posição inteira.")
 
     # Parse antes de abrir conexao (erro de formato nao precisa de banco).
     when = _resolve_date(date)
@@ -105,9 +105,9 @@ def sell(
     finally:
         conn.close()
     if sell_all:
-        typer.echo(f"--all: vendendo a posicao inteira, {exact(quantity)} cotas.")
+        typer.echo(f"--all: vendendo a posição inteira, {exact(quantity)} cotas.")
     _echo_recorded(tx)
-    typer.echo(f"produto bruto da venda: {exact(tx.total_investment)}; custo da operacao: {exact(tx.total_cost)}.")
+    typer.echo(f"produto bruto da venda: {exact(tx.total_investment)}; custo da operação: {exact(tx.total_cost)}.")
     if cleared is not None:
         typer.echo(cleared_notice(cleared))
         # A linha exata que desfaz: e o equivalente do botao "Reverter" da TUI,
@@ -128,15 +128,15 @@ def income(
     tax_withheld: str | None = typer.Option(
         None,
         "--tax-withheld",
-        help="IR retido na fonte. Obrigatorio para JCP; nao se aplica a RENDIMENTO.",
+        help="IR retido na fonte. Obrigatório para JCP; não se aplica a RENDIMENTO.",
     ),
     date: str | None = typer.Option(None, "--date", help="Data do recebimento (YYYY-MM-DD). Default: hoje."),
 ) -> None:
     # JCP sempre tem 15% retido na fonte; RENDIMENTO de FII e isento para PF.
     if income_type is IncomeType.JCP and tax_withheld is None:
-        raise ValidationError("--tax-withheld e obrigatorio para JCP (IR de 15% retido na fonte).")
+        raise ValidationError("--tax-withheld é obrigatório para JCP (IR de 15% retido na fonte).")
     if income_type is IncomeType.RENDIMENTO and tax_withheld is not None:
-        raise ValidationError("--tax-withheld nao se aplica a RENDIMENTO (isento para PF).")
+        raise ValidationError("--tax-withheld não se aplica a RENDIMENTO (isento para PF).")
 
     amount_dec = parse_decimal(amount, "--amount")
     tax_dec = parse_decimal(tax_withheld, "--tax-withheld") if tax_withheld is not None else None
@@ -171,16 +171,16 @@ def list_transactions(
 
     if not transactions:
         suffix = f" para {ticker.upper()}" if ticker else ""
-        typer.echo(f"Nenhuma transacao registrada{suffix}.")
+        typer.echo(f"Nenhuma transação registrada{suffix}.")
         return
 
-    table = Table(title="Transacoes", title_style="bold")
+    table = Table(title="Transações", title_style="bold")
     table.add_column("ID", justify="right")
     table.add_column("Data", no_wrap=True)
     table.add_column("Tipo", no_wrap=True)
     table.add_column("Ticker", style="cyan", no_wrap=True)
     table.add_column("Qtd", justify="right")
-    table.add_column("Preco", justify="right")
+    table.add_column("Preço", justify="right")
     table.add_column("Valor", justify="right")
     table.add_column("Fees", justify="right")
     table.add_column("IR", justify="right")
@@ -201,11 +201,11 @@ def list_transactions(
 
 
 def remove(
-    transaction_id: int = typer.Argument(..., help="ID da transacao (veja 'bogle transactions')."),
+    transaction_id: int = typer.Argument(..., help="ID da transação (veja 'bogle transactions')."),
 ) -> None:
     conn = get_connection()
     try:
         remove_transaction(conn, transaction_id)
     finally:
         conn.close()
-    typer.echo(f"transacao {transaction_id} removida.")
+    typer.echo(f"transação {transaction_id} removida.")

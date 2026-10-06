@@ -129,14 +129,14 @@ class TestSplit:
             await ask(pilot, screen, "1500")
             assert table_columns(screen) == [
                 "Ticker",
-                "Preco",
+                "Preço",
                 "Valor sugerido",
-                "Qtde papeis",
+                "Qtde papéis",
                 "Custo efetivo",
                 "Peso atual",
                 "Target",
-                "Peso apos",
-                "Drift apos",
+                "Peso após",
+                "Drift após",
             ]
             assert table_rows(screen)[0] == [
                 "AUVP11",
@@ -274,21 +274,21 @@ class TestFailures:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert isinstance(app.screen, SuggestScreen)
-            assert "Sem preco atual para: CDB01" in screen.note
-            assert toasts.severity_of("Sem preco atual") == "error"
+            assert "Sem preço atual para: CDB01" in screen.note
+            assert toasts.severity_of("Sem preço atual") == "error"
 
     @pytest.mark.asyncio
     async def test_an_empty_portfolio_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             services,
             "load_suggestion",
-            SuggestSpy(error=ValidationError("Nenhuma posicao ativa para sugerir aporte.")),
+            SuggestSpy(error=ValidationError("Nenhuma posição ativa para sugerir aporte.")),
         )
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
-            assert screen.note == "Nenhuma posicao ativa para sugerir aporte."
+            assert screen.note == "Nenhuma posição ativa para sugerir aporte."
             assert table_rows(screen) == []
 
 
@@ -307,7 +307,7 @@ class TestManualPrice:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.dialog_title == "Preco de AUVP11"
+            assert modal.dialog_title == "Preço de AUVP11"
             assert "126.25" in modal.body
             assert "14:07" in modal.body
             assert modal.typed == ""  # nenhum preco informado ainda
@@ -411,7 +411,7 @@ class TestManualPrice:
             await pilot.press("p")
             await settle(pilot)
             assert isinstance(app.screen, SuggestScreen)  # nenhum modal abriu
-            assert toasts.severity_of("nao tem preco a definir") == "warning"
+            assert toasts.severity_of("não tem preço a definir") == "warning"
 
     @pytest.mark.asyncio
     async def test_the_engine_warning_reaches_the_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -472,7 +472,7 @@ class TestUnquotedTarget:
             await ask(pilot, screen, "1500")
             assert table_rows(screen)[-1] == [
                 "MUND11",
-                "sem cotacao",
+                "sem cotação",
                 "-",
                 "-",
                 "-",
@@ -494,8 +494,8 @@ class TestUnquotedTarget:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.dialog_title == "Preco de MUND11"
-            assert "Sem cotacao do provedor" in modal.body
+            assert modal.dialog_title == "Preço de MUND11"
+            assert "Sem cotação do provedor" in modal.body
             assert modal.typed == ""
 
     @pytest.mark.asyncio
@@ -516,7 +516,7 @@ class TestUnquotedTarget:
             mund = next(row for row in rows if row[0] == "MUND11")
             assert mund[1] == "100.00 *"
             assert mund[3] == "9"  # 900 / 100
-            assert all(row[1] != "sem cotacao" for row in rows)
+            assert all(row[1] != "sem cotação" for row in rows)
 
     @pytest.mark.asyncio
     async def test_the_cursor_follows_the_ticker_when_the_rows_move(self, spy: SuggestSpy) -> None:
@@ -555,7 +555,7 @@ class TestUnquotedTarget:
             assert isinstance(modal, EditModal)
             assert modal.typed == "100"
             assert "Em branco fica fora dele" in modal.body
-            assert "volta a usar a cotacao" not in modal.body
+            assert "volta a usar a cotação" not in modal.body
 
     @pytest.mark.asyncio
     async def test_fixed_income_without_a_quote_is_not_fixed_by_a_price(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -576,7 +576,7 @@ class TestUnquotedTarget:
             await pilot.press("p")
             await settle(pilot)
             assert isinstance(app.screen, SuggestScreen)  # nenhum modal abriu
-            assert toasts.severity_of("nao se aplica") == "warning"
+            assert toasts.severity_of("não se aplica") == "warning"
 
 
 class TestPinnedPurchase:
@@ -684,7 +684,7 @@ class TestPinnedPurchase:
             assert len(spy.calls) == 1
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(("typed", "message"), [("1,5", "numero inteiro de cotas"), ("-2", "zero ou mais")])
+    @pytest.mark.parametrize(("typed", "message"), [("1,5", "número inteiro de cotas"), ("-2", "zero ou mais")])
     async def test_a_quantity_that_is_not_whole_shares_is_refused_without_losing_the_table(
         self, spy: SuggestSpy, monkeypatch: pytest.MonkeyPatch, typed: str, message: str
     ) -> None:
@@ -720,7 +720,7 @@ class TestPinnedPurchase:
     @pytest.mark.parametrize(
         ("target", "message"),
         [
-            (UnquotedTarget("MUND11", AssetType.ETF, Decimal("0.6"), Decimal("0")), "informe o preco (p)"),
+            (UnquotedTarget("MUND11", AssetType.ETF, Decimal("0.6"), Decimal("0")), "informe o preço (p)"),
             (
                 UnquotedTarget("TESOURO-IPCA-2035", AssetType.TESOURO, Decimal("0.2"), Decimal("0")),
                 "confira o ticker no cadastro",

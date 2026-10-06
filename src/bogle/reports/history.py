@@ -62,13 +62,13 @@ def compute_history(
     transactions = TransactionRepository(conn).list()
     inception = first_transaction_date(transactions)
     if inception is None:
-        raise ValidationError("Nenhuma transacao registrada para montar o historico.")
+        raise ValidationError("Nenhuma transação registrada para montar o histórico.")
 
     start = max(period_start(period, today=today) or inception, inception)
     valuation = build_portfolio_valuation(conn, dispatcher, start=start, end=today)
     if valuation.valuator is None:
         raise ValidationError(
-            "Nenhuma posicao com historico de precos para montar o historico."
+            "Nenhuma posição com histórico de preços para montar o histórico."
             + (f" Fora: {with_reasons(valuation.excluded, valuation.reasons)}." if valuation.excluded else "")
         )
 

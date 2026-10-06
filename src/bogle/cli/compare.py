@@ -23,21 +23,21 @@ _PERIODS = ("12m", "2y", "5y", "10y", "all", "ytd")
 
 
 def _render_table(report: CompareReport, period: str, console: Console) -> None:
-    table = Table(title=f"Carteira v. Indices ({period})", title_style="bold")
-    table.add_column("Serie", style="cyan", no_wrap=True)
+    table = Table(title=f"Carteira v. Índices ({period})", title_style="bold")
+    table.add_column("Série", style="cyan", no_wrap=True)
     table.add_column("Retorno", justify="right")
     for series in report.series:
         table.add_row(series.name, signed(series.accumulated_return, percent=True))
     console.print(table)
-    console.print(f"Janela: {report.grid[0].isoformat()} a {report.grid[-1].isoformat()} (base 100 no inicio)")
+    console.print(f"Janela: {report.grid[0].isoformat()} a {report.grid[-1].isoformat()} (base 100 no início)")
     if report.data_as_of is not None:
-        console.print(f"Dados ate: {report.data_as_of.isoformat()}")
+        console.print(f"Dados até: {report.data_as_of.isoformat()}")
 
 
 def _render_chart(report: CompareReport) -> None:
     labels = [on.isoformat() for on in report.grid]
     series = [(s.name, [float(level) for level in s.levels]) for s in report.series]
-    render_line_chart("Base 100 no inicio do periodo", labels, series)
+    render_line_chart("Base 100 no início do período", labels, series)
 
 
 def _export_chart(report: CompareReport, path: str) -> None:
@@ -49,12 +49,12 @@ def _export_chart(report: CompareReport, path: str) -> None:
 
 def compare(
     index: str | None = typer.Option(
-        None, "--index", help="Indices separados por virgula (ex: CDI,IBOV). Default: default_compare_indices."
+        None, "--index", help="Índices separados por vírgula (ex: CDI,IBOV). Default: default_compare_indices."
     ),
     period: str = typer.Option("12m", "--period", help=f"Janela: {', '.join(_PERIODS)}."),
-    no_chart: bool = typer.Option(False, "--no-chart", help="So a tabela, sem o grafico de linha (terminal)."),
+    no_chart: bool = typer.Option(False, "--no-chart", help="Só a tabela, sem o gráfico de linha (terminal)."),
     output: str | None = typer.Option(
-        None, "--output", help="Salva um grafico HTML interativo (plotly) no caminho dado."
+        None, "--output", help="Salva um gráfico HTML interativo (plotly) no caminho dado."
     ),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Abrir o HTML gerado no navegador."),
 ) -> None:
@@ -74,14 +74,14 @@ def compare(
     _render_table(report, parsed, _CONSOLE)
     if output is not None:
         _export_chart(report, output)
-        typer.echo(f"grafico salvo em {output}")
+        typer.echo(f"gráfico salvo em {output}")
         if open_browser:
             open_in_browser(output)
     elif not no_chart:
         _render_chart(report)
     if report.excluded:
         _CONSOLE.print(
-            "[yellow]Nota:[/yellow] a serie da carteira nao considera "
+            "[yellow]Nota:[/yellow] a série da carteira não considera "
             f"{with_reasons(report.excluded, report.excluded_reasons)}."
         )
     for name, message in report.index_errors.items():

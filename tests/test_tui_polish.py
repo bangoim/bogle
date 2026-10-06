@@ -54,18 +54,18 @@ NARROW = (80, 24)
 """The size the plan committed to: the position table has eleven columns."""
 
 SCREENS: dict[str, Callable[[], Screen[None]]] = {
-    "posicao": PositionScreen,
+    "posição": PositionScreen,
     "registrar": RegisterScreen,
     "compra": lambda: TradeFormScreen(kind=TransactionType.BUY),
     "escolher venda": SellPickerScreen,
     "venda": lambda: TradeFormScreen(kind=TransactionType.SELL, position=sale_position()),
     "provento": IncomeFormScreen,
-    "transacoes": TransactionsScreen,
+    "transações": TransactionsScreen,
     "aporte": SuggestScreen,
-    "relatorios": ReportsScreen,
+    "relatórios": ReportsScreen,
     "rentabilidade": ReturnsScreen,
     "comparar": CompareScreen,
-    "historico": HistoryScreen,
+    "histórico": HistoryScreen,
     "lucro": ProfitScreen,
     "proventos": IncomeScreen,
     "ativos": AssetsScreen,
@@ -142,8 +142,8 @@ class TestHelpOverlay:
             assert isinstance(modal, HelpModal)
             assert modal.subject == "comparar - 12m"
             keys = dict(modal.shortcuts)
-            assert keys["t"] == "Periodo"
-            assert keys["i"] == "Indices"
+            assert keys["t"] == "Período"
+            assert keys["i"] == "Índices"
             assert keys["o"] == "Exportar"
             assert keys["esc"] == "Voltar"
 
@@ -205,7 +205,7 @@ class TestHelpOverlay:
             modal = app.screen
             assert isinstance(modal, HelpModal)
             keys = dict(modal.shortcuts)
-            assert keys["1"] == "Posicao"
+            assert keys["1"] == "Posição"
             assert keys["6"] == "Ativos"
             # Status e Config sairam do menu para o rodape.
             assert keys["s"] == "Status"
@@ -291,7 +291,7 @@ class TestFormLayout:
         menu = Menu(REPORT_ITEMS)
         prompts = [menu.get_option_at_index(index).prompt for index in range(menu.option_count)]
         plain = [prompt.plain if isinstance(prompt, Text) else str(prompt) for prompt in prompts]
-        assert "Rentabilidade  TWR total, 12m e ultimo mes" in plain[0]
+        assert "Rentabilidade  TWR total, 12m e último mês" in plain[0]
 
     @pytest.mark.asyncio
     async def test_a_checkbox_row_shows_its_whole_marker(self) -> None:

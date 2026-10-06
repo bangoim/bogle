@@ -287,7 +287,7 @@ class PriceDispatcher:
             return self._tesouro_info(asset.ticker)
         if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
             return PriceInfo(self._fixed_income_value(asset, principal, on_date), "calculado", None)
-        raise ValueError(f"tipo de ativo sem preco: {asset.asset_type}")
+        raise ValueError(f"tipo de ativo sem preço: {asset.asset_type}")
 
     def _variable_income_info(self, ticker: str) -> PriceInfo:
         key = f"quote:{ticker}"
@@ -313,7 +313,7 @@ class PriceDispatcher:
 
     def _fixed_income_value(self, asset: Asset, principal: Decimal | None, on_date: date | None) -> Decimal:
         if principal is None:
-            raise ValueError("principal e obrigatorio para precificar renda fixa privada.")
+            raise ValueError("principal é obrigatório para precificar renda fixa privada.")
         if asset.purchase_date is None or asset.rate is None:
             raise ValueError(f"ativo de renda fixa '{asset.ticker}' sem purchase_date/rate.")
         start = _as_date(asset.purchase_date)
@@ -387,8 +387,8 @@ class PriceDispatcher:
         last = _close_on_or_before(history, end)
         if first is None or last is None or first == _ZERO:
             raise MarketDataError(
-                f"Sem historico de '{key}' no inicio do periodo ({start.isoformat()}); "
-                "as fontes gratuitas nao cobrem esse indice/janela.",
+                f"Sem histórico de '{key}' no início do período ({start.isoformat()}); "
+                "as fontes gratuitas não cobrem esse índice/janela.",
                 provider="yfinance",
             )
         return last / first - Decimal("1")
@@ -421,7 +421,7 @@ class PriceDispatcher:
             close = _close_on_or_before(history, on)
             if close is None:
                 raise MarketDataError(
-                    f"Sem historico de '{key}' em {on.isoformat()}; as fontes gratuitas nao cobrem esse indice/janela.",
+                    f"Sem histórico de '{key}' em {on.isoformat()}; as fontes gratuitas não cobrem esse índice/janela.",
                     provider="yfinance",
                 )
             levels.append(close)
@@ -446,7 +446,7 @@ class PriceDispatcher:
             except MarketDataError:
                 history = []
         if not history:
-            raise MarketDataError(f"Sem historico gratuito para '{key}' (simbolo {symbol}).", provider="yfinance")
+            raise MarketDataError(f"Sem histórico gratuito para '{key}' (símbolo {symbol}).", provider="yfinance")
         return history
 
     def latest_history_date(self, ticker: str, start: date, end: date) -> date | None:

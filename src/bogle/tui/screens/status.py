@@ -17,7 +17,7 @@ from textual.widgets import Footer, Header, Static
 from bogle.tui import services
 from bogle.tui.screens.data import DataScreen
 
-_NEVER = "Nenhuma avaliacao registrada ainda. Use a tela de Aporte (ou 'bogle suggest') para registrar a primeira."
+_NEVER = "Nenhuma avaliação registrada ainda. Use a tela de Aporte (ou 'bogle suggest') para registrar a primeira."
 
 
 class StatusScreen(DataScreen[services.CycleStatus]):
@@ -58,16 +58,16 @@ class StatusScreen(DataScreen[services.CycleStatus]):
 
 
 def _panel_markup(cycle: services.CycleStatus) -> str:
-    lines = [f"[bold]Ciclo de avaliacao[/bold] {cycle.period_months} meses"]
+    lines = [f"[bold]Ciclo de avaliação[/bold] {cycle.period_months} meses"]
     if cycle.last_evaluation is None:
         return lines[0]
-    lines.append(f"Ultima avaliacao   {cycle.last_evaluation.isoformat()}")
+    lines.append(f"Última avaliação   {cycle.last_evaluation.isoformat()}")
     if cycle.next_evaluation is not None and cycle.days is not None:
         when = cycle.next_evaluation.isoformat()
         if cycle.days > 0:
-            lines.append(f"Proxima avaliacao  {when} (em {cycle.days} dia(s))")
+            lines.append(f"Próxima avaliação  {when} (em {cycle.days} dia(s))")
         else:
-            lines.append(f"[red]Avaliacao vencida[/red]  desde {when} (ha {-cycle.days} dia(s))")
+            lines.append(f"[red]Avaliação vencida[/red]  desde {when} (há {-cycle.days} dia(s))")
     return "\n".join(lines)
 
 
@@ -75,5 +75,5 @@ def _note_for(cycle: services.CycleStatus) -> str:
     if cycle.last_evaluation is None:
         return f"[yellow]{_NEVER}[/yellow]"
     if cycle.days is not None and cycle.days <= 0:
-        return "[dim]Uma sugestao de aporte conta como avaliacao e reinicia o ciclo.[/dim]"
+        return "[dim]Uma sugestão de aporte conta como avaliação e reinicia o ciclo.[/dim]"
     return ""

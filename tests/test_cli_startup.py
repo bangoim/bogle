@@ -22,7 +22,7 @@ from bogle.domain.errors import ValidationError
 
 
 def _never(*_args: Any, **_kwargs: Any) -> Any:
-    raise AssertionError("nao deveria ter sido chamado")
+    raise AssertionError("não deveria ter sido chamado")
 
 
 class TestSchemaOnStartup:
@@ -106,7 +106,7 @@ class TestRunShim:
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         err = self._stderr_after(monkeypatch, capsys, psycopg.OperationalError("connection refused"))
-        assert "nao foi possivel conectar ao banco de dados" in err
+        assert "não foi possível conectar ao banco de dados" in err
         assert "BOGLE_DATABASE_URL" in err
 
     def test_any_other_database_error_is_one_line_not_a_traceback(

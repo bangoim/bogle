@@ -32,12 +32,12 @@ def focused_label(app: Any) -> str:
 class TestButtonRow:
     @pytest.mark.asyncio
     async def test_the_two_buttons_have_the_same_height(self) -> None:
-        # Um id nao tem escopo em CSS: o botao "Voltar a Home" chamava-se "home" e
+        # Um id nao tem escopo em CSS: o botao "Voltar à Home" chamava-se "home" e
         # herdava `#home` (o scroll da tela inicial), ganhando padding e ficando
         # duas linhas mais alto e quatro colunas mais largo que o vizinho.
         app = make_app()
         async with app.run_test() as pilot:
-            await pilot.app.push_screen(NextStepModal("transacao 14 registrada: BUY B5P211."))
+            await pilot.app.push_screen(NextStepModal("transação 14 registrada: BUY B5P211."))
             await settle(pilot)
             heights = {button.outer_size.height for button in buttons(app.screen)}
             assert heights == {3}
@@ -58,14 +58,14 @@ class TestArrowNavigation:
     async def test_arrows_walk_the_buttons_of_the_next_step_dialog(self) -> None:
         app = make_app()
         async with app.run_test() as pilot:
-            await pilot.app.push_screen(NextStepModal("transacao 14 registrada: BUY B5P211."))
+            await pilot.app.push_screen(NextStepModal("transação 14 registrada: BUY B5P211."))
             await settle(pilot)
-            assert focused_label(app) == "Novo lancamento"
+            assert focused_label(app) == "Novo lançamento"
             for key, expected in (
-                ("right", "Voltar a Home"),
-                ("left", "Novo lancamento"),
-                ("down", "Voltar a Home"),
-                ("up", "Novo lancamento"),
+                ("right", "Voltar à Home"),
+                ("left", "Novo lançamento"),
+                ("down", "Voltar à Home"),
+                ("up", "Novo lançamento"),
             ):
                 await pilot.press(key)
                 await pilot.pause()
@@ -86,11 +86,11 @@ class TestArrowNavigation:
     async def test_tab_still_works(self) -> None:
         app = make_app()
         async with app.run_test() as pilot:
-            await pilot.app.push_screen(NextStepModal("transacao 14 registrada."))
+            await pilot.app.push_screen(NextStepModal("transação 14 registrada."))
             await settle(pilot)
             await pilot.press("tab")
             await pilot.pause()
-            assert focused_label(app) == "Voltar a Home"
+            assert focused_label(app) == "Voltar à Home"
 
     @pytest.mark.asyncio
     async def test_a_focused_field_keeps_the_horizontal_arrows(self) -> None:
@@ -98,7 +98,7 @@ class TestArrowNavigation:
         # as consumir: dentro do campo, esquerda e direita movem o cursor.
         app = make_app()
         async with app.run_test() as pilot:
-            await pilot.app.push_screen(EditModal("Preco de VWRA11", "Mercado: 114.84", value="114.86"))
+            await pilot.app.push_screen(EditModal("Preço de VWRA11", "Mercado: 114.84", value="114.86"))
             await settle(pilot)
             field = app.screen.query_one(Input)
             assert app.focused is field

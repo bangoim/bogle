@@ -217,7 +217,7 @@ class TestTargetsWithoutAPosition:
 
     def test_the_holders_are_not_disturbed(self) -> None:
         suggestion = suggest_allocation(self.summary(), Decimal("200"))
-        # Quem ja esta no target (ou acima) apenas nao recebe: politica no-sell.
+        # Quem ja está no target (ou acima) apenas nao recebe: politica no-sell.
         assert [item.effective_cost for item in suggestion.items if item.ticker != "CCCC11"] == [_ZERO, _ZERO]
 
     def test_a_portfolio_that_is_only_targets_still_works(self) -> None:
@@ -381,7 +381,7 @@ class TestErrors:
             suggest_allocation(summary, Decimal("0"))
 
     def test_empty_portfolio(self) -> None:
-        with pytest.raises(ValidationError, match="Nenhuma posicao"):
+        with pytest.raises(ValidationError, match="Nenhuma posição"):
             suggest_allocation(make_summary(), Decimal("100"))
 
 
@@ -448,7 +448,7 @@ class TestManualPrice:
             make_position("AAAA11", "1", "50", "0.50", total="100"),
             make_position("CDB01", "50", "50", "0.50", asset_type=AssetType.CDB, total="100"),
         )
-        with pytest.raises(ValidationError, match="renda variavel"):
+        with pytest.raises(ValidationError, match="renda variável"):
             suggest_allocation(summary, Decimal("100"), prices={"CDB01": Decimal("49")})
 
     def test_a_non_positive_price_is_refused(self) -> None:
@@ -558,18 +558,18 @@ class TestPinnedPurchase:
             make_position("CDB01", "50", "50", "0.50", asset_type=AssetType.CDB, total="100"),
             make_position("AAAA11", "1", "50", "0.50", total="100"),
         )
-        with pytest.raises(ValidationError, match="so vale para renda variavel"):
+        with pytest.raises(ValidationError, match="só vale para renda variável"):
             suggest_allocation(summary, Decimal("100"), quantities={"CDB01": Decimal("2")})
 
     def test_a_value_for_variable_income_is_refused(self) -> None:
         # Um numero que valesse cotas num ticker e reais no outro seria um
         # "2" lido como R$ 2 — por isso cada um tem a sua forma.
-        with pytest.raises(ValidationError, match="so vale para renda fixa"):
+        with pytest.raises(ValidationError, match="só vale para renda fixa"):
             suggest_allocation(self.summary(), Decimal("200"), values={"AAAA11": Decimal("20")})
 
     @pytest.mark.parametrize("quantity", ["1.5", "-1"])
     def test_a_quantity_must_be_whole_shares(self, quantity: str) -> None:
-        with pytest.raises(ValidationError, match="numero inteiro de cotas"):
+        with pytest.raises(ValidationError, match="número inteiro de cotas"):
             suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal(quantity)})
 
     @pytest.mark.parametrize("value", ["20.005", "-1"])
@@ -590,7 +590,7 @@ class TestPinnedPurchase:
             make_position("AAAA11", "10", "1000", "0.50", total="1000"),
             make_pending("MUND11", None, "0.50", total="1000"),
         )
-        with pytest.raises(ValidationError, match="informe o preco antes de fixar a quantidade"):
+        with pytest.raises(ValidationError, match="informe o preço antes de fixar a quantidade"):
             suggest_allocation(summary, Decimal("200"), quantities={"MUND11": Decimal("2")})
         priced = suggest_allocation(
             summary, Decimal("200"), prices={"MUND11": Decimal("10")}, quantities={"MUND11": Decimal("2")}

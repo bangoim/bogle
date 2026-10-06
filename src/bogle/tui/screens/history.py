@@ -32,14 +32,14 @@ from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import PeriodScreen
 from bogle.tui.widgets.chart import LineChart
 
-_TITLE = "Evolucao do patrimonio"
-_GRANULARITY = {"daily": "diaria", "weekly": "semanal", "monthly": "mensal"}
-_HIDDEN_CHART = "[dim]Grafico oculto enquanto os valores estao ocultos ('h' mostra).[/dim]"
-_HIDDEN_EXPORT = "valores ocultos: mostre com 'h' antes de exportar o grafico."
+_TITLE = "Evolução do patrimônio"
+_GRANULARITY = {"daily": "diária", "weekly": "semanal", "monthly": "mensal"}
+_HIDDEN_CHART = "[dim]Gráfico oculto enquanto os valores estão ocultos ('h' mostra).[/dim]"
+_HIDDEN_EXPORT = "valores ocultos: mostre com 'h' antes de exportar o gráfico."
 
 
 class HistoryScreen(PeriodScreen[HistoryReport]):
-    SUBJECT = "historico"
+    SUBJECT = "histórico"
     PERIODS = ("12m", "2y", "5y", "10y", "all")
     AUTO_FOCUS = "#points"
     LOADING = "#points"
@@ -51,7 +51,7 @@ class HistoryScreen(PeriodScreen[HistoryReport]):
         yield Header()
         with Vertical(id="history"):
             table = DataTable(id="points", cursor_type="row", zebra_stripes=True)
-            table.add_columns("Data", "Patrimonio", "Variacao", "Variacao %")
+            table.add_columns("Data", "Patrimônio", "Variação", "Variação %")
             yield table
             yield LineChart(id="chart")
             yield Static(id="chart-hidden")
@@ -126,14 +126,14 @@ class HistoryScreen(PeriodScreen[HistoryReport]):
         self.app.call_from_thread(self._exported, path)
 
     def _exported(self, path: object) -> None:
-        self.notify(f"grafico salvo em {path}", title="exportado", timeout=8, markup=False)
+        self.notify(f"gráfico salvo em {path}", title="exportado", timeout=8, markup=False)
 
     def _export_failed(self, message: str) -> None:
-        self.notify(f"nao foi possivel exportar: {message}", title="erro", severity="error", markup=False)
+        self.notify(f"não foi possível exportar: {message}", title="erro", severity="error", markup=False)
 
 
 def _series(report: HistoryReport) -> Series:
-    return [("Patrimonio", [float(point.value) for point in report.points])]
+    return [("Patrimônio", [float(point.value) for point in report.points])]
 
 
 def _note_for(report: HistoryReport) -> str:
@@ -141,5 +141,5 @@ def _note_for(report: HistoryReport) -> str:
     lines = [f"[dim]{len(report.points)} pontos, amostragem {granularity}[/dim]"]
     if report.excluded:
         excluded = escape(with_reasons(report.excluded, report.excluded_reasons))
-        lines.append(f"[yellow]Nota:[/yellow] patrimonio nao considera {excluded}.")
+        lines.append(f"[yellow]Nota:[/yellow] patrimônio não considera {excluded}.")
     return "\n".join(lines)

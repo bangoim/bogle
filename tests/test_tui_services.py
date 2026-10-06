@@ -170,7 +170,7 @@ class TestRecordTrades:
         services.record_buy(
             ticker="PETR4", when=WHEN, shares=Decimal("100"), unit_price=Decimal("30"), fees=Decimal("0")
         )
-        with pytest.raises(InsufficientSharesError, match="nao ha posicao aberta"):
+        with pytest.raises(InsufficientSharesError, match="não há posição aberta"):
             services.record_sell(
                 ticker="PETR4",
                 when=datetime(2025, 12, 1, 12, tzinfo=UTC),
@@ -235,7 +235,7 @@ class TestRecordIncome:
         assert transaction.tax_withheld == Decimal("0")
 
     def test_a_trade_type_is_rejected(self, seeded: None) -> None:
-        with pytest.raises(ValueError, match="tipo de provento invalido"):
+        with pytest.raises(ValueError, match="tipo de provento inválido"):
             services.record_income(ticker="PETR4", income_type=TransactionType.BUY, when=WHEN, amount=Decimal("10"))
 
 
@@ -456,12 +456,12 @@ class TestAssets:
         self, conn: psycopg.Connection[DictRow]
     ) -> None:
         # Mesma validacao de dominio do `bogle add`: nada e escrito.
-        with pytest.raises(ValidationError, match="nao se aplica"):
+        with pytest.raises(ValidationError, match="não se aplica"):
             services.add_asset(ticker="PETR4", target_weight=Decimal("0.2"), asset_type=AssetType.STOCK, issuer="XP")
         assert services.list_assets() == []
 
     def test_missing_fixed_income_fields_are_refused(self, conn: psycopg.Connection[DictRow]) -> None:
-        with pytest.raises(ValidationError, match="--rate e obrigatorio"):
+        with pytest.raises(ValidationError, match="--rate é obrigatório"):
             services.add_asset(ticker="TESOURO-IPCA-2035", target_weight=Decimal("0.2"), asset_type=AssetType.TESOURO)
 
     def test_the_weight_sum_guard_still_applies(self, seeded: None) -> None:

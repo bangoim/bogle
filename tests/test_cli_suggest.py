@@ -106,7 +106,7 @@ class TestTableRender:
         buffer = io.StringIO()
         _render(sample_suggestion(), Console(file=buffer, width=200))
         out = buffer.getvalue()
-        for header in ("Peso atual", "Target", "Peso apos", "Drift apos"):
+        for header in ("Peso atual", "Target", "Peso após", "Drift após"):
             assert header in out
         assert "64.00%" in out  # peso atual do VWRA11
         assert "67.27%" in out  # peso depois do aporte

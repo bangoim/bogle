@@ -56,7 +56,7 @@ def compute_returns(
     transactions = TransactionRepository(conn).list()
     inception = first_transaction_date(transactions)
     if inception is None:
-        raise ValidationError("Nenhuma transacao registrada para calcular rentabilidade.")
+        raise ValidationError("Nenhuma transação registrada para calcular rentabilidade.")
 
     starts = {period: period_start(period, today=today) or inception for period in periods}
     # Janelas que comecam antes da primeira transacao nao fazem sentido: ancora nela.

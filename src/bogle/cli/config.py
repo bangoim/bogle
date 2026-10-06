@@ -12,7 +12,7 @@ from bogle.db import get_connection
 _CONSOLE = Console()
 
 
-def get(key: str = typer.Argument(..., help="Chave da configuracao (ex: rebalance_period_months).")) -> None:
+def get(key: str = typer.Argument(..., help="Chave da configuração (ex: rebalance_period_months).")) -> None:
     conn = get_connection()
     try:
         value = settings_mod.get_setting(conn, key)
@@ -22,8 +22,8 @@ def get(key: str = typer.Argument(..., help="Chave da configuracao (ex: rebalanc
 
 
 def set_(
-    key: str = typer.Argument(..., help="Chave da configuracao."),
-    value: str = typer.Argument(..., help="Novo valor (listas separadas por virgula, datas YYYY-MM-DD)."),
+    key: str = typer.Argument(..., help="Chave da configuração."),
+    value: str = typer.Argument(..., help="Novo valor (listas separadas por vírgula, datas YYYY-MM-DD)."),
 ) -> None:
     conn = get_connection()
     try:
@@ -33,7 +33,7 @@ def set_(
     typer.echo(f"{key} = {settings_mod.format_value(typed)}")
 
 
-def unset(key: str = typer.Argument(..., help="Chave da configuracao.")) -> None:
+def unset(key: str = typer.Argument(..., help="Chave da configuração.")) -> None:
     conn = get_connection()
     try:
         settings_mod.unset_setting(conn, key)
@@ -49,12 +49,12 @@ def list_settings() -> None:
     finally:
         conn.close()
 
-    table = Table(title="Configuracoes", title_style="bold")
+    table = Table(title="Configurações", title_style="bold")
     table.add_column("Chave", style="cyan", no_wrap=True)
     table.add_column("Valor", justify="right")
     table.add_column("Tipo", no_wrap=True)
     table.add_column("Atualizado em", no_wrap=True)
-    table.add_column("Descricao")
+    table.add_column("Descrição")
     for entry in entries:
         table.add_row(
             entry.key,

@@ -95,7 +95,7 @@ class TestTable:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ConfigScreen())
-            assert table_columns(screen) == ["Chave", "Valor", "Tipo", "Atualizado em", "Descricao"]
+            assert table_columns(screen) == ["Chave", "Valor", "Tipo", "Atualizado em", "Descrição"]
             first = table_rows(screen)[0]
             assert first[:4] == ["decimal_separator", ".", "str", "(default)"]
 
@@ -104,7 +104,7 @@ class TestTable:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ConfigScreen())
-            assert table_rows(screen)[row_of(screen, "last_rebalance_date")][1] == "(nao definido)"
+            assert table_rows(screen)[row_of(screen, "last_rebalance_date")][1] == "(não definido)"
 
 
 class TestEditing:
@@ -167,7 +167,7 @@ class TestEditing:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         stub_services(monkeypatch)
-        spy = SettingsSpy(error=ValidationError("Periodo de rebalanceamento deve ser 6 ou 12 meses, recebido 7."))
+        spy = SettingsSpy(error=ValidationError("Período de rebalanceamento deve ser 6 ou 12 meses, recebido 7."))
         monkeypatch.setattr(services, "load_settings", spy.load)
         monkeypatch.setattr(services, "save_setting", spy.save)
         toasts = ToastSpy()
@@ -248,7 +248,7 @@ class TestAppliedNow:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ConfigScreen())
             before = app.theme
-            await edit(pilot, screen, THEME, "tema-que-nao-existe")
+            await edit(pilot, screen, THEME, "tema-que-não-existe")
             assert app.is_running
             assert app.theme == before
-            assert toasts.severity_of("nao existe nesta versao") == "warning"
+            assert toasts.severity_of("não existe nesta versão") == "warning"

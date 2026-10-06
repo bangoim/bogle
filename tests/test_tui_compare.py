@@ -91,8 +91,8 @@ class TestTable:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, CompareScreen())
-            assert "Janela 2025-08-12 a 2026-08-12 (base 100 no inicio)" in screen.note
-            assert "Dados ate 2026-08-11" in screen.note
+            assert "Janela 2025-08-12 a 2026-08-12 (base 100 no início)" in screen.note
+            assert "Dados até 2026-08-11" in screen.note
 
     @pytest.mark.asyncio
     async def test_excluded_tickers_and_index_failures_are_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,14 +102,14 @@ class TestTable:
             lambda **_: make_compare(
                 excluded=["TESOURO-IPCA-2035"],
                 excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
-                index_errors={"IPCA": "sem serie"},
+                index_errors={"IPCA": "sem série"},
             ),
         )
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, CompareScreen())
-            assert f"nao considera TESOURO-IPCA-2035 ({NO_SOURCE})." in screen.note
-            assert "IPCA: sem serie" in screen.note
+            assert f"não considera TESOURO-IPCA-2035 ({NO_SOURCE})." in screen.note
+            assert "IPCA: sem série" in screen.note
 
 
 class TestWindow:
@@ -139,7 +139,7 @@ class TestChart:
         async with app.run_test() as pilot:
             await open_screen(pilot, CompareScreen())
             title, labels, series = chart.calls[-1]
-            assert title == "Base 100 no inicio do periodo"
+            assert title == "Base 100 no início do período"
             assert labels == ["2025-08-12", "2025-12-31", "2026-04-30", "2026-08-12"]
             assert [name for name, _ in series] == ["Carteira", "IBOV"]
             assert series[0][1] == [100.0, 104.0, 109.5, 112.75]
@@ -192,7 +192,7 @@ class TestExport:
         # Depois de uma falha de carga nao existe relatorio: exportar tem de avisar,
         # nao estourar num `None`.
         def boom(**_: Any) -> Any:
-            raise ValidationError("Nenhuma posicao com historico de precos para comparar.")
+            raise ValidationError("Nenhuma posição com histórico de preços para comparar.")
 
         monkeypatch.setattr(services, "load_compare", boom)
         export = ExportSpy()

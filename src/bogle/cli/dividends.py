@@ -31,12 +31,12 @@ class GroupBy(StrEnum):
 
 
 def _title(period: str) -> str:
-    return "Proventos recebidos (ultimos 12 meses)" if period == "12m" else "Proventos recebidos (desde o inicio)"
+    return "Proventos recebidos (últimos 12 meses)" if period == "12m" else "Proventos recebidos (desde o início)"
 
 
 def _render_by_month(rows: list[MonthlyIncome], period: str, console: Console) -> None:
     table = Table(title=_title(period), title_style="bold")
-    table.add_column("Mes", style="cyan", no_wrap=True)
+    table.add_column("Mês", style="cyan", no_wrap=True)
     for header in ("Dividendos", "JCP (liq)", "FII rend.", "Juros RF", "Total"):
         table.add_column(header, justify="right")
     for row in rows:
@@ -95,13 +95,13 @@ def dividends(
     if by is GroupBy.MONTH:
         monthly = income_by_month(transactions, start=start, end=today)
         if not monthly:
-            typer.echo("Nenhum provento no periodo.")
+            typer.echo("Nenhum provento no período.")
             return
         _render_by_month(monthly, parsed, _CONSOLE)
         return
 
     per_ticker = income_by_ticker(transactions, start=start, end=today)
     if not per_ticker:
-        typer.echo("Nenhum provento no periodo.")
+        typer.echo("Nenhum provento no período.")
         return
     _render_by_ticker(per_ticker, parsed, _CONSOLE)

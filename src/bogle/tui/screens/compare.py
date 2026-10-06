@@ -26,7 +26,7 @@ from bogle.tui.screens.data import PeriodScreen
 from bogle.tui.widgets.chart import LineChart
 from bogle.tui.widgets.indices import IndicesInput
 
-_CHART_TITLE = "Base 100 no inicio do periodo"
+_CHART_TITLE = "Base 100 no início do período"
 _EXPORT_TITLE = "Carteira v. Índices"
 
 
@@ -37,7 +37,7 @@ class CompareScreen(PeriodScreen[CompareReport]):
     LOADING = "#series"
     NOTE = "#compare-note"
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("i", "focus_indices", "Indices"),
+        Binding("i", "focus_indices", "Índices"),
         Binding("o", "export", "Exportar"),
     ]
 
@@ -53,7 +53,7 @@ class CompareScreen(PeriodScreen[CompareReport]):
         with Vertical(id="compare"):
             yield IndicesInput(id="indices")
             table = DataTable(id="series", cursor_type="row", zebra_stripes=True)
-            table.add_columns("Serie", "Retorno")
+            table.add_columns("Série", "Retorno")
             yield table
             yield LineChart(id="chart")
             yield Static(id="compare-note")
@@ -122,10 +122,10 @@ class CompareScreen(PeriodScreen[CompareReport]):
         self.app.call_from_thread(self._exported, path)
 
     def _exported(self, path: object) -> None:
-        self.notify(f"grafico salvo em {path}", title="exportado", timeout=8, markup=False)
+        self.notify(f"gráfico salvo em {path}", title="exportado", timeout=8, markup=False)
 
     def _export_failed(self, message: str) -> None:
-        self.notify(f"nao foi possivel exportar: {message}", title="erro", severity="error", markup=False)
+        self.notify(f"não foi possível exportar: {message}", title="erro", severity="error", markup=False)
 
 
 def _series(report: CompareReport) -> Series:
@@ -134,13 +134,13 @@ def _series(report: CompareReport) -> Series:
 
 def _note_for(report: CompareReport) -> str:
     window = f"{report.grid[0].isoformat()} a {report.grid[-1].isoformat()}"
-    lines = [f"[dim]Janela {window} (base 100 no inicio)[/dim]"]
+    lines = [f"[dim]Janela {window} (base 100 no início)[/dim]"]
     if report.data_as_of is not None:
         # O ultimo ponto pode estar forward-filled: quem manda e a data do dado.
-        lines[0] += f"   [dim]Dados ate {report.data_as_of.isoformat()}[/dim]"
+        lines[0] += f"   [dim]Dados até {report.data_as_of.isoformat()}[/dim]"
     if report.excluded:
         excluded = escape(with_reasons(report.excluded, report.excluded_reasons))
-        lines.append(f"[yellow]Nota:[/yellow] a serie da carteira nao considera {excluded}.")
+        lines.append(f"[yellow]Nota:[/yellow] a série da carteira não considera {excluded}.")
     lines.extend(
         f"[yellow]Nota:[/yellow] {escape(index)}: {escape(message)}" for index, message in report.index_errors.items()
     )

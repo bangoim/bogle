@@ -14,19 +14,19 @@ _BRAILLE = "⠀⡀⢀⠄⠂⠁⣀⠤⠊⠒"
 
 def test_single_series_renders_title_label_and_braille_line(capsys: pytest.CaptureFixture[str]) -> None:
     render_line_chart(
-        "Evolucao do patrimonio",
+        "Evolução do patrimônio",
         ["2026-01-01", "2026-02-01", "2026-03-01"],
-        [("Patrimonio", [100.0, 110.0, 105.0])],
+        [("Patrimônio", [100.0, 110.0, 105.0])],
     )
     out = capsys.readouterr().out
-    assert "Evolucao do patrimonio" in out
-    assert "Patrimonio" in out
+    assert "Evolução do patrimônio" in out
+    assert "Patrimônio" in out
     assert any(ch in out for ch in _BRAILLE)  # linha continua, nao pontos esparsos
 
 
 def test_multiple_series_render_every_label(capsys: pytest.CaptureFixture[str]) -> None:
     render_line_chart(
-        "Base 100 no inicio do periodo",
+        "Base 100 no início do período",
         ["2026-01-01", "2026-02-01"],
         [("Carteira", [100.0, 105.0]), ("CDI", [100.0, 101.0])],
     )
@@ -36,14 +36,14 @@ def test_multiple_series_render_every_label(capsys: pytest.CaptureFixture[str]) 
 
 
 def test_single_point_does_not_crash(capsys: pytest.CaptureFixture[str]) -> None:
-    render_line_chart("Evolucao do patrimonio", ["2026-01-01"], [("Patrimonio", [100.0])])
-    assert "Evolucao do patrimonio" in capsys.readouterr().out
+    render_line_chart("Evolução do patrimônio", ["2026-01-01"], [("Patrimônio", [100.0])])
+    assert "Evolução do patrimônio" in capsys.readouterr().out
 
 
 def test_export_html_is_self_contained_with_series_and_fill(tmp_path: Path) -> None:
     out = tmp_path / "chart.html"
     export_line_chart_html(
-        "Carteira v. Indices",
+        "Carteira v. Índices",
         [date(2026, 1, 1), date(2026, 2, 1)],
         [("Carteira", [0.0, 2.5]), ("IBOV", [0.0, 5.0])],
         str(out),
@@ -60,7 +60,7 @@ def test_export_html_is_self_contained_with_series_and_fill(tmp_path: Path) -> N
 def test_export_percent_formatting_in_hover_and_axis(tmp_path: Path) -> None:
     out = tmp_path / "chart.html"
     export_line_chart_html(
-        "Carteira v. Indices",
+        "Carteira v. Índices",
         [date(2026, 1, 1), date(2026, 2, 1)],
         [("Carteira", [0.0, -1.924121])],
         str(out),

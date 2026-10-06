@@ -53,11 +53,11 @@ LOGO = r"""
 # altura da Home — com elas dentro, o resumo empurrava o logo para fora do scroll
 # em terminais de altura normal.
 _ENTRIES: Entries = (
-    (MenuItem("1", "position", "Posicao", "precos ao vivo, pesos e drift"), PositionScreen),
+    (MenuItem("1", "position", "Posição", "preços ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda ou provento"), RegisterScreen),
-    (MenuItem("3", "transactions", "Transacoes", "listar e remover lancamentos"), TransactionsScreen),
+    (MenuItem("3", "transactions", "Transações", "listar e remover lançamentos"), TransactionsScreen),
     (MenuItem("4", "suggest", "Aporte", "como dividir para reduzir o drift"), SuggestScreen),
-    (MenuItem("5", "reports", "Relatorios", "rentabilidade, historico, proventos"), ReportsScreen),
+    (MenuItem("5", "reports", "Relatórios", "rentabilidade, histórico, proventos"), ReportsScreen),
     (MenuItem("6", "assets", "Ativos", "cadastrar, atualizar e remover"), AssetsScreen),
 )
 
@@ -72,23 +72,23 @@ _LEFT = MENU_ITEMS[: (len(MENU_ITEMS) + 1) // _COLUMNS]
 _RIGHT = MENU_ITEMS[(len(MENU_ITEMS) + 1) // _COLUMNS :]
 
 _HELP_NOTES = (
-    '"Cotacao de": preco de hoje (D-0) da brapi, que no plano gratuito atualiza a '
-    'cada 30 minutos. "Fechamento de": ultimo fechamento, antes do pregao, em fim '
+    '"Cotação de": preço de hoje (D-0) da brapi, que no plano gratuito atualiza a '
+    'cada 30 minutos. "Fechamento de": último fechamento, antes do pregão, em fim '
     "de semana ou feriado, ou com a brapi fora do ar.\n\n"
-    "Variacao: patrimonio menos o custo medio das posicoes abertas, so o ganho nao "
-    "realizado. O ganho das vendas fica em Relatorios > Lucro.\n\n"
-    "TWR: exclui o efeito de aportes e retiradas e considera proventos. Ativos ja "
+    "Variação: patrimônio menos o custo médio das posições abertas, só o ganho não "
+    "realizado. O ganho das vendas fica em Relatórios > Lucro.\n\n"
+    "TWR: exclui o efeito de aportes e retiradas e considera proventos. Ativos já "
     "vendidos entram pelo tempo em que estiveram na carteira. Com menos de 12 "
-    "meses de carteira, a janela de 12m comeca na primeira transacao, e as duas "
+    "meses de carteira, a janela de 12m começa na primeira transação, e as duas "
     "rentabilidades coincidem."
 )
 """Como ler o resumo, na ajuda (f1) e nao embaixo dos numeros: e a mesma
 explicacao toda vez, e no painel ela ocupava as linhas das notas que mudam."""
 
-_PATRIMONY = "Patrimonio total"
-_PATRIMONY_PARTIAL = "Patrimonio parcial"
-_VARIATION = "Variacao"
-_VARIATION_PARTIAL = "Variacao parcial"
+_PATRIMONY = "Patrimônio total"
+_PATRIMONY_PARTIAL = "Patrimônio parcial"
+_VARIATION = "Variação"
+_VARIATION_PARTIAL = "Variação parcial"
 
 
 class HomeScreen(MenuScreen):
@@ -281,12 +281,12 @@ def _excluded_note(overview: PortfolioOverview) -> str:
     clauses = []
     if overview.excluded:
         clauses.append(
-            "fora do patrimonio, da variacao e das rentabilidades: "
+            "fora do patrimônio, da variação e das rentabilidades: "
             f"{_listed(overview.excluded, overview.excluded_reasons)}"
         )
     if overview.excluded_from_returns:
         clauses.append(
-            "fora das rentabilidades, mas dentro do patrimonio: "
+            "fora das rentabilidades, mas dentro do patrimônio: "
             f"{_listed(overview.excluded_from_returns, overview.returns_reasons)}"
         )
     if overview.sold_excluded:
@@ -310,7 +310,7 @@ def _summary_title(overview: PortfolioOverview) -> str:
     summary may be, which "hoje" would not.
     """
     if overview.quote_time is not None:
-        return f"Carteira - cotacao de {overview.quote_time:%d-%m-%Y %H:%M}"
+        return f"Carteira - cotação de {overview.quote_time:%d-%m-%Y %H:%M}"
     return f"Carteira - fechamento de {overview.as_of:%d-%m-%Y}"
 
 
@@ -318,7 +318,7 @@ def _quote_failed_note(overview: PortfolioOverview) -> str:
     """Why a weekday summary is a close behind: brapi gave no quote from today."""
     listed = ", ".join(escape(ticker) for ticker in overview.quote_failed)
     return (
-        f"[yellow]Nota:[/yellow] sem cotacao de hoje na brapi para {listed}; "
+        f"[yellow]Nota:[/yellow] sem cotação de hoje na brapi para {listed}; "
         f"resumo do fechamento de {overview.as_of.isoformat()}. [dim]'r' pede de novo.[/dim]"
     )
 
@@ -343,8 +343,8 @@ def _stale_note(overview: PortfolioOverview) -> str:
     listed = ", ".join(
         f"{escape(ticker)} ({when.isoformat()})" for ticker, when in sorted(overview.stale_prices.items())
     )
-    missing = "cotacao de hoje" if overview.is_live else f"fechamento de {overview.as_of.isoformat()}"
-    return f"[yellow]Nota:[/yellow] sem {missing} para {listed}; avaliados no ultimo fechamento disponivel."
+    missing = "cotação de hoje" if overview.is_live else f"fechamento de {overview.as_of.isoformat()}"
+    return f"[yellow]Nota:[/yellow] sem {missing} para {listed}; avaliados no último fechamento disponível."
 
 
 def _pending_note(overview: PortfolioOverview) -> str:
@@ -355,14 +355,14 @@ def _pending_note(overview: PortfolioOverview) -> str:
     summary is identical. Without it the only reading left is that 'r' is broken.
     """
     count = overview.pending_entries
-    entries = "1 lancamento" if count == 1 else f"{count} lancamentos"
-    verb = "ainda nao entra" if count == 1 else "ainda nao entram"
+    entries = "1 lançamento" if count == 1 else f"{count} lançamentos"
+    verb = "ainda não entra" if count == 1 else "ainda não entram"
     # Sem valor quando o movimento e zero: um provento nao muda patrimonio nem
     # capital investido, e um "+0.00" ao lado dele soaria como um erro de conta.
     moved = f" ({fmt.signed_money(overview.pending_invested)})" if overview.pending_invested != 0 else ""
     return (
         f"[yellow]Nota:[/yellow] {entries} depois de {overview.as_of.isoformat()}{moved} {verb}: "
-        f"o resumo e do fechamento desse dia."
+        f"o resumo é do fechamento desse dia."
     )
 
 
@@ -384,7 +384,7 @@ def _note_for(overview: PortfolioOverview) -> str:
 
 def _summary_note(overview: PortfolioOverview) -> str:
     if overview.is_empty:
-        return "[yellow]Nenhuma transacao registrada ainda.[/yellow]"
+        return "[yellow]Nenhuma transação registrada ainda.[/yellow]"
     if overview.returns_are_partial:
         return _excluded_note(overview)
     if overview.patrimony is None:
@@ -393,6 +393,6 @@ def _summary_note(overview: PortfolioOverview) -> str:
         # coisa duas vezes, com "Nota:" duas vezes.
         if overview.has_pending:
             return ""
-        return f"[yellow]Nota:[/yellow] nenhuma posicao avaliavel no fechamento de {overview.as_of.isoformat()}."
+        return f"[yellow]Nota:[/yellow] nenhuma posição avaliável no fechamento de {overview.as_of.isoformat()}."
     # O resto e a legenda de sempre (TWR, janela de 12m), que mora na ajuda (f1).
     return ""

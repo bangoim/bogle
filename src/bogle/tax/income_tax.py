@@ -68,8 +68,8 @@ def income_tax_on_sale(
     rate = _SALE_RATES.get(asset.asset_type)
     if rate is None:
         raise ValidationError(
-            f"income_tax_on_sale aplica-se a renda variavel (STOCK, BDR, ETF, FII); "
-            f"tipo {asset.asset_type} nao suportado. Para renda fixa use income_tax_on_fixed_income."
+            f"income_tax_on_sale aplica-se à renda variável (STOCK, BDR, ETF, FII); "
+            f"tipo {asset.asset_type} não suportado. Para renda fixa use income_tax_on_fixed_income."
         )
     gain = sale.total_investment - sale.fees - cost_basis
     if gain <= _ZERO:
@@ -121,8 +121,8 @@ def income_tax_on_fixed_income(
     """
     if asset.asset_type not in FIXED_INCOME_TYPES:
         raise ValidationError(
-            f"income_tax_on_fixed_income aplica-se a renda fixa "
-            f"(TESOURO, CDB, RDB, LCI, LCA, CAIXINHA); tipo {asset.asset_type} nao suportado."
+            f"income_tax_on_fixed_income aplica-se à renda fixa "
+            f"(TESOURO, CDB, RDB, LCI, LCA, CAIXINHA); tipo {asset.asset_type} não suportado."
         )
     if asset.asset_type in _FIXED_INCOME_EXEMPT:
         return _ZERO

@@ -124,7 +124,7 @@ class HelpModal(ModalScreen[None]):
 
 def _table(shortcuts: list[tuple[str, str]]) -> Text:
     if not shortcuts:
-        return Text("Esta tela nao tem atalhos proprios.")
+        return Text("Esta tela não tem atalhos próprios.")
     width = max(len(key) for key, _ in shortcuts)
     lines = Text()
     for index, (key, description) in enumerate(shortcuts):

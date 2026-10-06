@@ -86,7 +86,7 @@ def price_history_valuator(price_history: Mapping[str, Sequence[HistPoint]]) -> 
                 continue
             price = _price_on_or_before(price_history.get(ticker, ()), on)
             if price is None:
-                raise ValueError(f"Sem preco para '{ticker}' em ou antes de {on.isoformat()}.")
+                raise ValueError(f"Sem preço para '{ticker}' em ou antes de {on.isoformat()}.")
             total += shares * price
         return total
 
@@ -136,7 +136,7 @@ def compute_twr(
         raise ValueError("end deve ser >= start.")
     if valuator is None:
         if price_history is None:
-            raise ValueError("Forneca price_history ou um valuator.")
+            raise ValueError("Forneça price_history ou um valuator.")
         valuator = price_history_valuator(price_history)
 
     txns = sorted((t for t in transactions if _as_date(t.date) <= end), key=lambda t: _as_date(t.date))

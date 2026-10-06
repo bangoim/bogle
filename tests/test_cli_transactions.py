@@ -70,7 +70,7 @@ class TestBuy:
     def test_unknown_ticker_is_friendly(self) -> None:
         result = run_cli("buy", "NOPE", "-s", "10", "-p", "5")
         assert result.returncode == 1
-        assert "nao encontrado" in result.stderr
+        assert "não encontrado" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_repository_validation_surfaces_friendly(self, petr4: None) -> None:
@@ -82,7 +82,7 @@ class TestBuy:
     def test_invalid_decimal_is_friendly(self, petr4: None) -> None:
         result = run_cli("buy", "PETR4", "-s", "abc", "-p", "5")
         assert result.returncode == 1
-        assert "--shares deve ser um numero decimal" in result.stderr
+        assert "--shares deve ser um número decimal" in result.stderr
 
     def test_invalid_date_is_friendly(self, petr4: None) -> None:
         result = run_cli("buy", "PETR4", "-s", "1", "-p", "5", "--date", "15/01/2026")
@@ -132,7 +132,7 @@ class TestSell:
         assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
         result = run_cli("sell", "PETR4", "-s", "100", "-p", "35")
         assert result.returncode == 0
-        assert "a venda zerou a posicao" in result.stdout
+        assert "a venda zerou a posição" in result.stdout
         assert "target de 20.00%" in result.stdout
         assert "para reverter: bogle update PETR4 --weight 0.2" in result.stdout
         asset = repo.get("PETR4")
@@ -164,14 +164,14 @@ class TestSellCeiling:
     def test_selling_a_ticker_never_bought_is_refused(self, petr4: None) -> None:
         result = run_cli("sell", "PETR4", "-s", "1", "-p", "35")
         assert result.returncode == 1
-        assert "nao ha posicao aberta em 'PETR4'" in result.stderr
+        assert "não há posição aberta em 'PETR4'" in result.stderr
 
     def test_a_sale_dated_before_the_purchase_is_refused(self, trepo: TransactionRepository, petr4: None) -> None:
         # A posicao de hoje cobre, a da data nao: o que conta e a da data.
         assert run_cli("buy", "PETR4", "-s", "100", "-p", "30", "--date", "2026-03-10").returncode == 0
         result = run_cli("sell", "PETR4", "-s", "40", "-p", "35", "--date", "2026-03-02")
         assert result.returncode == 1
-        assert "Em 2026-03-02 nao ha posicao aberta em 'PETR4'" in result.stderr
+        assert "Em 2026-03-02 não há posição aberta em 'PETR4'" in result.stderr
         assert [t.transaction_type for t in trepo.list("PETR4")] == [TransactionType.BUY]
 
 
@@ -183,12 +183,12 @@ class TestSellAll:
         assert run_cli("buy", "PETR4", "-s", "37.5", "-p", "31").returncode == 0
         result = run_cli("sell", "PETR4", "--all", "-p", "35")
         assert result.returncode == 0
-        assert "--all: vendendo a posicao inteira, 137.5 cotas." in result.stdout
+        assert "--all: vendendo a posição inteira, 137.5 cotas." in result.stdout
 
         tx = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL)
         assert tx.shares == Decimal("137.5")
         # Zerou a posicao, entao o target vai junto — a politica de bogle.closeout.
-        assert "a venda zerou a posicao" in result.stdout
+        assert "a venda zerou a posição" in result.stdout
         asset = repo.get("PETR4")
         assert asset is not None and asset.target_weight == Decimal("0")
 
@@ -212,13 +212,13 @@ class TestSellAll:
         assert run_cli("sell", "PETR4", "--all", "-p", "35").returncode == 0
         result = run_cli("sell", "PETR4", "--all", "-p", "35")
         assert result.returncode == 1
-        assert "nao ha posicao aberta em 'PETR4'" in result.stderr
+        assert "não há posição aberta em 'PETR4'" in result.stderr
 
     def test_shares_and_all_together_are_refused(self, trepo: TransactionRepository, petr4: None) -> None:
         assert run_cli("buy", "PETR4", "-s", "100", "-p", "30").returncode == 0
         result = run_cli("sell", "PETR4", "--all", "-s", "40", "-p", "35")
         assert result.returncode == 1
-        assert "--all ja e a quantidade" in result.stderr
+        assert "--all já é a quantidade" in result.stderr
         assert [t.transaction_type for t in trepo.list("PETR4")] == [TransactionType.BUY]
 
     def test_neither_of_them_is_refused_with_what_to_type(self, petr4: None) -> None:
@@ -249,7 +249,7 @@ class TestIncome:
     def test_jcp_requires_tax_withheld(self, trepo: TransactionRepository, petr4: None) -> None:
         result = run_cli("income", "PETR4", "--type", "JCP", "--amount", "200")
         assert result.returncode == 1
-        assert "--tax-withheld e obrigatorio para JCP" in result.stderr
+        assert "--tax-withheld é obrigatório para JCP" in result.stderr
 
         result = run_cli("income", "PETR4", "--type", "JCP", "--amount", "200", "--tax-withheld", "30")
         assert result.returncode == 0
@@ -262,7 +262,7 @@ class TestIncome:
         repo.add("MXRF11", Decimal("0.05"))
         result = run_cli("income", "MXRF11", "--type", "RENDIMENTO", "--amount", "80", "--tax-withheld", "1")
         assert result.returncode == 1
-        assert "--tax-withheld nao se aplica a RENDIMENTO" in result.stderr
+        assert "--tax-withheld não se aplica a RENDIMENTO" in result.stderr
 
         assert run_cli("income", "MXRF11", "--type", "RENDIMENTO", "--amount", "80").returncode == 0
         tx = trepo.list("MXRF11")[0]
@@ -288,12 +288,12 @@ class TestListTransactions:
     def test_empty(self) -> None:
         result = run_cli("transactions")
         assert result.returncode == 0
-        assert "Nenhuma transacao registrada." in result.stdout
+        assert "Nenhuma transação registrada." in result.stdout
 
     def test_empty_with_ticker_filter(self) -> None:
         result = run_cli("transactions", "petr4")
         assert result.returncode == 0
-        assert "Nenhuma transacao registrada para PETR4." in result.stdout
+        assert "Nenhuma transação registrada para PETR4." in result.stdout
 
     def test_lists_recorded_transactions(self, petr4: None) -> None:
         assert run_cli("buy", "PETR4", "-s", "100", "-p", "30", "--date", "2026-01-15").returncode == 0
@@ -321,7 +321,7 @@ class TestRemove:
         tx_id = trepo.list("PETR4")[0].id
         result = run_cli("transaction", "remove", str(tx_id))
         assert result.returncode == 0
-        assert f"transacao {tx_id} removida" in result.stdout
+        assert f"transação {tx_id} removida" in result.stdout
         assert trepo.list("PETR4") == []
 
     def test_a_purchase_a_sale_depends_on_is_refused(self, trepo: TransactionRepository, petr4: None) -> None:
@@ -337,7 +337,7 @@ class TestRemove:
     def test_missing_is_friendly(self) -> None:
         result = run_cli("transaction", "remove", "999999")
         assert result.returncode == 1
-        assert "Transacao 999999 nao encontrada" in result.stderr
+        assert "Transação 999999 não encontrada" in result.stderr
 
 
 class TestDatabaseUnreachable:
@@ -358,5 +358,5 @@ class TestDatabaseUnreachable:
             check=False,
         )
         assert result.returncode == 1
-        assert "nao foi possivel conectar ao banco de dados" in result.stderr
+        assert "não foi possível conectar ao banco de dados" in result.stderr
         assert "Traceback" not in result.stderr

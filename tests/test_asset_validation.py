@@ -22,7 +22,7 @@ class TestVariableIncome:
         assert metadata.is_prefixed is None
 
     def test_single_irrelevant_field_raises(self) -> None:
-        with pytest.raises(ValidationError, match="--issuer nao se aplica ao tipo STOCK"):
+        with pytest.raises(ValidationError, match="--issuer não se aplica ao tipo STOCK"):
             validate_asset_metadata(AssetType.STOCK, issuer="Petrobras")
 
     def test_all_irrelevant_fields_listed_at_once(self) -> None:
@@ -59,7 +59,7 @@ class TestTesouro:
             purchase_date=PURCHASE,
             maturity_date=MATURITY,
         )
-        # is_prefixed normalizado para False (pos-fixado e o default).
+        # is_prefixed normalizado para False (pós-fixado e o default).
         assert metadata.is_prefixed is False
         assert metadata.indexer is Indexer.IPCA_PLUS
 
@@ -82,7 +82,7 @@ class TestTesouro:
             assert option in message
 
     def test_issuer_is_irrelevant(self) -> None:
-        with pytest.raises(ValidationError, match="--issuer nao se aplica ao tipo TESOURO"):
+        with pytest.raises(ValidationError, match="--issuer não se aplica ao tipo TESOURO"):
             validate_asset_metadata(
                 AssetType.TESOURO,
                 issuer="Tesouro Nacional",
@@ -94,7 +94,7 @@ class TestTesouro:
 
     @pytest.mark.parametrize("daily_liquidity", [True, False])
     def test_daily_liquidity_is_irrelevant(self, daily_liquidity: bool) -> None:
-        with pytest.raises(ValidationError, match="nao se aplica ao tipo TESOURO"):
+        with pytest.raises(ValidationError, match="não se aplica ao tipo TESOURO"):
             validate_asset_metadata(
                 AssetType.TESOURO,
                 indexer=Indexer.SELIC,
@@ -105,7 +105,7 @@ class TestTesouro:
             )
 
     def test_prefixed_with_indexer_raises(self) -> None:
-        with pytest.raises(ValidationError, match="--indexer nao deve ser informado junto com --prefixed"):
+        with pytest.raises(ValidationError, match="--indexer não deve ser informado junto com --prefixed"):
             validate_asset_metadata(
                 AssetType.TESOURO,
                 is_prefixed=True,
@@ -171,7 +171,7 @@ class TestPrivateFixedIncome:
             assert option in message
 
     def test_no_daily_liquidity_without_maturity_raises(self) -> None:
-        with pytest.raises(ValidationError, match="--maturity-date e obrigatorio para RDB sem liquidez diaria"):
+        with pytest.raises(ValidationError, match="--maturity-date é obrigatório para RDB sem liquidez diária"):
             validate_asset_metadata(
                 AssetType.RDB,
                 issuer="Banco Z",
@@ -195,7 +195,7 @@ class TestPrivateFixedIncome:
         assert metadata.indexer is None
 
     def test_explicit_no_prefixed_requires_indexer(self) -> None:
-        with pytest.raises(ValidationError, match="--indexer e obrigatorio para CDB pos-fixado"):
+        with pytest.raises(ValidationError, match="--indexer é obrigatório para CDB pós-fixado"):
             validate_asset_metadata(
                 AssetType.CDB,
                 issuer="Banco W",
@@ -215,11 +215,11 @@ class TestExtraErrors:
                 rate=Decimal("1.0"),
                 daily_liquidity=True,
                 purchase_date=PURCHASE,
-                extra_errors=["--rate deve ser um numero decimal, recebido 'abc'."],
+                extra_errors=["--rate deve ser um número decimal, recebido 'abc'."],
             )
         message = str(exc.value)
-        assert "--rate deve ser um numero decimal" in message
-        assert "--issuer e obrigatorio para CDB" in message
+        assert "--rate deve ser um número decimal" in message
+        assert "--issuer é obrigatório para CDB" in message
 
     def test_extra_errors_alone_still_raise(self) -> None:
         with pytest.raises(ValidationError, match="boom"):
@@ -247,7 +247,7 @@ class TestTypeChange:
 
     @pytest.mark.parametrize("current", [AssetType.CDB, AssetType.TESOURO, AssetType.LCA])
     def test_from_fixed_income_is_rejected(self, current: AssetType) -> None:
-        with pytest.raises(ValidationError, match="metadados orfaos"):
+        with pytest.raises(ValidationError, match="metadados órfãos"):
             validate_type_change("CDB1", current, AssetType.STOCK)
 
     def test_error_message_names_the_ticker_and_escape_hatch(self) -> None:

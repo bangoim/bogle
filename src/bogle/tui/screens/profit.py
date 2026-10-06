@@ -28,7 +28,7 @@ from bogle.tui.screens.data import PeriodScreen
 
 _INCOME_LABELS: tuple[tuple[TransactionType, str], ...] = (
     (TransactionType.DIVIDEND, "Dividendos"),
-    (TransactionType.JCP, "JCP (liquido)"),
+    (TransactionType.JCP, "JCP (líquido)"),
     (TransactionType.RENDIMENTO, "FII rendimentos"),
     (TransactionType.INTEREST, "Renda fixa juros"),
 )
@@ -36,7 +36,7 @@ _INCOME_LABELS: tuple[tuple[TransactionType, str], ...] = (
 _WIDTH = 24
 """Width of the panel's label column, so every amount lines up under the next."""
 
-_PARTIAL_TOTAL = "Lucro total omitido: ganho de capital e desde o inicio; proventos, 12 meses."
+_PARTIAL_TOTAL = "Lucro total omitido: ganho de capital é desde o início; proventos, 12 meses."
 
 
 class ProfitScreen(PeriodScreen[ProfitReport]):
@@ -94,7 +94,7 @@ def _panel_markup(report: ProfitReport, period: str) -> str:
         "",
         _line("Ganho de capital", fmt.signed(report.capital_total, percent=False)),
         _line("Realizado (vendas)", fmt.signed(report.realized, percent=False), indent=2),
-        _line("Nao realizado", fmt.signed(report.unrealized, percent=False), indent=2),
+        _line("Não realizado", fmt.signed(report.unrealized, percent=False), indent=2),
         "",
         _line(
             "Proventos (12m)" if period == "12m" else "Proventos recebidos",
@@ -113,5 +113,5 @@ def _panel_markup(report: ProfitReport, period: str) -> str:
 def _note_for(report: ProfitReport) -> str:
     if report.unpriced:
         unpriced = escape(", ".join(report.unpriced))
-        return f"[yellow]Nota:[/yellow] ganho nao realizado nao considera {unpriced} (sem preco atual)."
+        return f"[yellow]Nota:[/yellow] ganho não realizado não considera {unpriced} (sem preço atual)."
     return ""
