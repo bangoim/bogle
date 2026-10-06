@@ -135,8 +135,8 @@ class TestCli:
     def test_table_and_chart(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["compare", "--index", "cdi,ifix"])
         assert result.exit_code == 0, result.output
-        assert "+25.00%" in result.stdout
-        assert "+1.00%" in result.stdout
+        assert "+25,00%" in result.stdout
+        assert "+1,00%" in result.stdout
         assert "Sem histórico gratuito" in result.stdout
         assert self.captured["indices"] == ("CDI", "IFIX")
 

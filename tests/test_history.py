@@ -126,9 +126,9 @@ class TestCli:
         result = runner.invoke(app, ["history", "--no-chart"])
         assert result.exit_code == 0, result.output
         assert "Evolução do patrimônio" in result.stdout
-        assert "+10.00" in result.stdout  # 200 -> 210
-        assert "+5.00%" in result.stdout
-        assert "+40.00" in result.stdout  # 210 -> 250
+        assert "+10,00" in result.stdout  # 200 -> 210
+        assert "+5,00%" in result.stdout
+        assert "+40,00" in result.stdout  # 210 -> 250
         note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
         assert f"patrimônio não considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
         assert "sem histórico de preços no período" not in note

@@ -121,13 +121,13 @@ class TestCli:
         result = runner.invoke(app, ["profit"])
         assert result.exit_code == 0, result.output
         assert "Lucro da carteira (desde 2026-01-05)" in result.stdout
-        assert "+150.00" in result.stdout  # ganho de capital
-        assert "+50.00" in result.stdout  # realizado
-        assert "+100.00" in result.stdout  # nao realizado
+        assert "+150,00" in result.stdout  # ganho de capital
+        assert "+50,00" in result.stdout  # realizado
+        assert "+100,00" in result.stdout  # nao realizado
         assert "JCP (líquido)" in result.stdout
-        assert "+85.00" in result.stdout
+        assert "+85,00" in result.stdout
         assert "Lucro total" in result.stdout
-        assert "+235.00" in result.stdout
+        assert "+235,00" in result.stdout
 
     def test_12m_period_omits_grand_total(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["profit", "--period", "12m"])

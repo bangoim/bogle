@@ -51,7 +51,7 @@ class TestBuy:
         assert result.returncode == 0
         assert "registrada: BUY PETR4 em 2026-01-15" in result.stdout
         # Linha completa: pina tambem a normalizacao dos Decimais (_fmt).
-        assert "custo total: 3,055.2 (100 x 30.5 + 5.2 de fees)." in result.stdout
+        assert "custo total: 3.055,2 (100 x 30,5 + 5,2 de fees)." in result.stdout
 
         tx = trepo.list("PETR4")[0]
         assert tx.transaction_type is TransactionType.BUY
@@ -110,7 +110,7 @@ class TestSell:
         )
         assert result.returncode == 0
         assert "registrada: SELL PETR4" in result.stdout
-        assert "produto bruto da venda: 1,400" in result.stdout
+        assert "produto bruto da venda: 1.400" in result.stdout
 
         tx = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL)
         assert tx.shares == Decimal("40")
@@ -133,8 +133,8 @@ class TestSell:
         result = run_cli("sell", "PETR4", "-s", "100", "-p", "35")
         assert result.returncode == 0
         assert "a venda zerou a posição" in result.stdout
-        assert "target de 20.00%" in result.stdout
-        assert "para reverter: bogle update PETR4 --weight 0.2" in result.stdout
+        assert "target de 20,00%" in result.stdout
+        assert "para reverter: bogle update PETR4 --weight 0,2" in result.stdout  # a entrada aceita a virgula
         asset = repo.get("PETR4")
         assert asset is not None and asset.target_weight == Decimal("0")
 
@@ -183,7 +183,7 @@ class TestSellAll:
         assert run_cli("buy", "PETR4", "-s", "37.5", "-p", "31").returncode == 0
         result = run_cli("sell", "PETR4", "--all", "-p", "35")
         assert result.returncode == 0
-        assert "--all: vendendo a posição inteira, 137.5 cotas." in result.stdout
+        assert "--all: vendendo a posição inteira, 137,5 cotas." in result.stdout
 
         tx = next(t for t in trepo.list("PETR4") if t.transaction_type is TransactionType.SELL)
         assert tx.shares == Decimal("137.5")

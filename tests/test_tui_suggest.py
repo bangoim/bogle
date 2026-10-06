@@ -107,7 +107,9 @@ class TestAmount:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "0")
             assert spy.amounts == []
-            assert screen.query_one("#amount", Field).error == "Valor disponível deve ser maior que zero, recebido 0."
+            assert (
+                screen.query_one("#amount", Field).error == "Valor disponível deve ser maior que zero, recebido 0.00."
+            )
 
     @pytest.mark.asyncio
     async def test_r_recalculates_the_same_amount(self, spy: SuggestSpy) -> None:
@@ -345,7 +347,7 @@ class TestManualPrice:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.typed == "100"  # reabre com o que foi informado
+            assert modal.typed == "100.00"  # reabre com o que foi informado
             modal.query_one(Input).value = ""
             await pilot.press("enter")
             await settle(pilot)
@@ -380,7 +382,7 @@ class TestManualPrice:
             await ask(pilot, screen, "1500")
             await pilot.press("p")
             await settle(pilot)
-            app.screen.query_one(Input).value = "-3"
+            await pilot.press("0")  # 0,00: a mascara nao deixa digitar sinal, mas zero passa
             await pilot.press("enter")
             await settle(pilot)
             assert screen.prices == {}
@@ -543,7 +545,7 @@ class TestUnquotedTarget:
             await settle(pilot)
             modal = app.screen
             assert isinstance(modal, EditModal)
-            assert modal.typed == "100"
+            assert modal.typed == "100.00"
             assert "Em branco fica fora dele" in modal.body
             assert "volta a usar a cotação" not in modal.body
 

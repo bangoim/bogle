@@ -330,6 +330,7 @@ class TradeFormScreen(FormScreen):
                 id="price",
                 placeholder="preço por cota",
                 validators=[DecimalField("Preço unitário", positive=True)],
+                money=True,
             )
             yield Field(
                 "Taxas",
@@ -337,6 +338,7 @@ class TradeFormScreen(FormScreen):
                 value="0",
                 placeholder="corretagem e emolumentos",
                 validators=[DecimalField("Taxas", feminine=True, plural=True)],
+                money=True,
             )
             if self.is_sale:
                 yield Field(
@@ -345,6 +347,7 @@ class TradeFormScreen(FormScreen):
                     value="0",
                     placeholder="dedo-duro de 0,005%",
                     validators=[DecimalField("IR retido")],
+                    money=True,
                 )
             yield Field(
                 "Data",
@@ -509,12 +512,14 @@ class IncomeFormScreen(FormScreen):
                 id="amount",
                 placeholder="valor recebido, antes do IR",
                 validators=[DecimalField("Valor bruto", positive=True)],
+                money=True,
             )
             yield Field(
                 "IR retido na fonte",
                 id="tax",
                 placeholder="opcional",
                 validators=[DecimalField("IR retido", allow_blank=True)],
+                money=True,
             )
             yield Field(
                 "Data",

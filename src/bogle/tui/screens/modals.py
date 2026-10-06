@@ -24,6 +24,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label
 
 from bogle.tui.navigation import ARROW_FOCUS
+from bogle.tui.widgets.money import MoneyInput
 
 # Prefixados com "dialog-": um id nao tem escopo em CSS, e um botao chamado
 # "home" herdava as regras de `#home` (o scroll da tela inicial) — que e padding
@@ -83,19 +84,23 @@ class EditModal(ButtonRowModal[str | None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancelar")]
 
-    def __init__(self, title: str, body: str, *, value: str = "", placeholder: str = "") -> None:
+    def __init__(self, title: str, body: str, *, value: str = "", placeholder: str = "", money: bool = False) -> None:
         super().__init__()
         self.dialog_title = title
         self.body = body
         self.value = value
         self.placeholder = placeholder
+        self.money = money
+        """An amount in reais, typed from the cents (:class:`MoneyInput`)."""
 
     @override
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Label(self.dialog_title, id="dialog-title", markup=False)
             yield Label(self.body, id="dialog-body", markup=False)
-            yield Input(value=self.value, placeholder=self.placeholder, compact=True, id="dialog-input")
+            yield (MoneyInput if self.money else Input)(
+                value=self.value, placeholder=self.placeholder, compact=True, id="dialog-input"
+            )
             with Horizontal(id="dialog-buttons"):
                 yield Button("Salvar", id="confirm", variant="primary")
                 yield Button("Cancelar", id="cancel")
@@ -105,11 +110,13 @@ class EditModal(ButtonRowModal[str | None]):
 
     @property
     def typed(self) -> str:
-        return self.query_one(Input).value
+        """What was typed; a money field hands back ``3286.84``, not its display."""
+        field = self.query_one(Input)
+        return field.canonical if isinstance(field, MoneyInput) else field.value
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        self.dismiss(event.value)
+        self.dismiss(self.typed)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(self.typed if event.button.id == "confirm" else None)

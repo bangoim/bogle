@@ -13,7 +13,7 @@ import psycopg
 import pytest
 
 from bogle import format as fmt
-from bogle.settings import DEFAULT_THEME
+from bogle.settings import DEFAULT_DECIMAL_SEPARATOR, DEFAULT_THEME
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 from tests.tui_fakes import ToastSpy, make_app, settle, stub_services
@@ -150,7 +150,7 @@ class TestLoadPreferences:
 
         monkeypatch.setattr(services, "get_connection", boom)
         preferences = services.load_preferences()
-        assert preferences.decimal_separator == fmt.CANONICAL_DECIMAL
+        assert preferences.decimal_separator == DEFAULT_DECIMAL_SEPARATOR == ","
         assert preferences.hide_amounts is False
         assert preferences.theme == DEFAULT_THEME
 

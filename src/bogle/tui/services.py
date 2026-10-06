@@ -23,7 +23,6 @@ from tempfile import gettempdir
 import psycopg
 
 from bogle import charts
-from bogle import format as fmt
 from bogle.closeout import ClearedTarget, clear_closed_target
 from bogle.data import default_dispatcher
 from bogle.db import get_connection, migrate_if_pending
@@ -53,6 +52,7 @@ from bogle.sales import remove_transaction, resolve_sale_shares
 from bogle.settings import (
     DECIMAL_SEPARATOR,
     DEFAULT_COMPARE_INDICES,
+    DEFAULT_DECIMAL_SEPARATOR,
     DEFAULT_THEME,
     HIDE_VALUES,
     LAST_REBALANCE_DATE,
@@ -77,7 +77,7 @@ def _today(today: date | None) -> date:
 class Preferences:
     """How the interface should open, from ``user_settings``."""
 
-    decimal_separator: str = fmt.CANONICAL_DECIMAL
+    decimal_separator: str = DEFAULT_DECIMAL_SEPARATOR
     hide_amounts: bool = False
     theme: str = DEFAULT_THEME
 

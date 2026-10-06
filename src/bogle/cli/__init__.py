@@ -22,7 +22,13 @@ from bogle.cli import transactions as transactions_cli
 from bogle.db import get_connection, migrate_if_pending, migrated_notice
 from bogle.domain.errors import BogleError
 from bogle.rebalancing import overdue_notice
-from bogle.settings import DECIMAL_SEPARATOR, LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting
+from bogle.settings import (
+    DECIMAL_SEPARATOR,
+    DEFAULT_DECIMAL_SEPARATOR,
+    LAST_REBALANCE_DATE,
+    REBALANCE_PERIOD_MONTHS,
+    get_setting,
+)
 
 app = typer.Typer(
     help="bogle - CLI tool for passive portfolio rebalancing.",
@@ -68,7 +74,7 @@ def _read_preferences() -> tuple[str, str | None]:
     """The display separator and the overdue-cycle reminder, in one round trip.
 
     Best-effort by design: any failure (database down, migrations pending) leaves
-    the canonical number format and no reminder, instead of breaking the command
+    the default number format and no reminder, instead of breaking the command
     that follows.
     """
     try:
@@ -80,7 +86,7 @@ def _read_preferences() -> tuple[str, str | None]:
         finally:
             conn.close()
     except Exception:
-        return fmt.CANONICAL_DECIMAL, None
+        return DEFAULT_DECIMAL_SEPARATOR, None
     return separator, overdue_notice(last, period, today=date.today())
 
 

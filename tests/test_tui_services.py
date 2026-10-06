@@ -17,7 +17,6 @@ import pytest
 from psycopg import errors as pg_errors
 from psycopg.rows import DictRow
 
-from bogle import format as fmt
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import (
     AssetHasTransactionsError,
@@ -309,7 +308,7 @@ class TestPreferences:
 
     def test_defaults_when_nothing_was_configured(self, conn: psycopg.Connection[DictRow]) -> None:
         preferences = services.load_preferences()
-        assert preferences.decimal_separator == fmt.CANONICAL_DECIMAL
+        assert preferences.decimal_separator == ","  # padrao brasileiro
         assert preferences.hide_amounts is False
         assert preferences.theme == DEFAULT_THEME
 
@@ -624,8 +623,8 @@ class TestSettingsAccess:
             services.save_setting("nao_existe", "1")
 
     def test_resetting_returns_the_default_that_came_back(self, conn: psycopg.Connection[DictRow]) -> None:
-        services.save_setting(DECIMAL_SEPARATOR, ",")
-        assert services.reset_setting(DECIMAL_SEPARATOR) == "."
+        services.save_setting(DECIMAL_SEPARATOR, ".")
+        assert services.reset_setting(DECIMAL_SEPARATOR) == ","
         entries = {entry.key: entry for entry in services.load_settings()}
         assert entries[DECIMAL_SEPARATOR].is_default is True
 

@@ -133,10 +133,10 @@ class TestCliRendering:
         result = runner.invoke(app, ["return", "--vs", "cdi"])
         assert result.exit_code == 0, result.output
         assert "Rentabilidade da carteira" in result.stdout
-        assert "+47.30%" in result.stdout
+        assert "+47,30%" in result.stdout
         assert "vs CDI:" in result.stdout
-        assert "+17.50 p.p." in result.stdout  # outperform
-        assert "-3.10 p.p." in result.stdout  # underperform
+        assert "+17,50 p.p." in result.stdout  # outperform
+        assert "-3,10 p.p." in result.stdout  # underperform
         note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
         assert f"TWR não considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
 

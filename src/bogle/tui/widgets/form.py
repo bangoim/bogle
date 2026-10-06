@@ -16,6 +16,8 @@ from textual.validation import Validator
 from textual.widget import Widget
 from textual.widgets import Input, Label
 
+from bogle.tui.widgets.money import MoneyInput
+
 
 class ControlRow(Horizontal):
     """A labeled row for a control that is not an ``Input`` (a Select, a Checkbox).
@@ -45,12 +47,15 @@ class Field(Vertical):
         value: str = "",
         placeholder: str = "",
         validators: list[Validator] | None = None,
+        money: bool = False,
     ) -> None:
         super().__init__(id=id, classes="field")
         self.label = label
         self._initial = value
         self._placeholder = placeholder
         self._validators = validators or []
+        self._money = money
+        """An amount in reais, typed from the cents (:class:`MoneyInput`)."""
         self._error = ""
 
     @override
@@ -60,7 +65,7 @@ class Field(Vertical):
         # sempre ocupando a linha, para o layout nao pular quando ela aparece.
         with Horizontal(classes="field-row"):
             yield Label(self.label, classes="field-label")
-            yield Input(
+            yield (MoneyInput if self._money else Input)(
                 value=self._initial,
                 placeholder=self._placeholder,
                 validators=self._validators,
@@ -81,6 +86,10 @@ class Field(Vertical):
 
     @property
     def value(self) -> str:
+        """What was typed, as the parsers read it: a money field gives ``3286.84``,
+        not the ``3,286.84`` it shows."""
+        if isinstance(self.input, MoneyInput):
+            return self.input.canonical
         return self.input.value.strip()
 
     def set_value(self, value: str) -> None:

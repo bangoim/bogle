@@ -117,6 +117,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
                 id="amount",
                 placeholder="ex: 1500 (Enter calcula)",
                 validators=[DecimalField("Valor disponível", positive=True)],
+                money=True,
             )
             table = DataTable(id="allocation", cursor_type="row", zebra_stripes=True)
             table.add_columns(*_COLUMNS)
@@ -177,6 +178,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
                 _price_body(item),
                 value=_as_typed(current),
                 placeholder="ex: 114,86",
+                money=True,
             ),
             lambda raw: self._on_price(item.ticker, raw),
         )
@@ -227,6 +229,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
                 "0 tira o ticker do aporte, em branco volta a sugestão.",
                 value=_as_typed(pinned.get(item.ticker)),
                 placeholder="ex: 10" if variable else "ex: 500,00",
+                money=not variable,
             ),
             lambda raw: self._on_purchase(item, raw),
         )

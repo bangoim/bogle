@@ -17,8 +17,9 @@ Two conventions worth knowing:
 **Display.** ``decimal_separator`` (see :mod:`bogle.settings`) picks which
 character separates the decimals; the other one groups the thousands. Money and
 quantities are grouped, percentages are not — a weight or a return never needs
-it. Each frontend calls :func:`configure` once at startup; the default is the
-canonical ``1,234.56``.
+it. Each frontend calls :func:`configure` once at startup with the setting, whose
+default is the Brazilian ``1.234,56``; a process that never configures it
+(the tests, a script importing the module) renders the canonical ``1,234.56``.
 
 **Input** is deliberately narrower and does not follow the setting: one
 separator, always the cents (``,`` or ``.``), and thousands with no separator at
@@ -39,7 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from rich.markup import escape
 
@@ -198,6 +199,38 @@ def shortfall(value: Decimal) -> str:
     if value < 0 and not _HIDDEN:
         return f"[red]{money(value)}[/red]"
     return money(value)
+
+
+def typed_money(value: Decimal) -> str:
+    """An amount as a money field shows it while it is typed: ``3,286.84``.
+
+    Grouped and with the configured separators, like the tables around it — and
+    never masked, unlike :func:`money`: it is the number the user is typing.
+    """
+    return _localized(f"{value:,.2f}")
+
+
+def read_money(text: str) -> Decimal | None:
+    """An amount pasted into a money field, or ``None`` when it is not one.
+
+    With one separator it is the input rule (:func:`to_canonical`: it marks the
+    cents). With both, it is a grouped number copied from somewhere — this table,
+    a bank statement — and the one that comes last marks the cents, whichever
+    convention the source used: ``3.286,84`` and ``3,286.84`` are the same amount.
+    """
+    text = text.strip()
+    if "." in text and "," in text:
+        decimal = "," if text.rindex(",") > text.rindex(".") else "."
+        canonical: str | None = text.replace("." if decimal == "," else ",", "").replace(decimal, CANONICAL_DECIMAL)
+    else:
+        canonical = to_canonical(text)
+    if not canonical:
+        return None
+    try:
+        amount = Decimal(canonical)
+    except InvalidOperation:
+        return None
+    return amount if amount.is_finite() and amount >= 0 else None
 
 
 def attention(warnings: Sequence[str]) -> str:

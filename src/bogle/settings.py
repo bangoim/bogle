@@ -31,6 +31,9 @@ THEME = "theme"
 
 DEFAULT_THEME = "textual-dark"
 
+DEFAULT_DECIMAL_SEPARATOR = ","
+"""O padrao brasileiro, ``1.234,56``. Quem prefere ``1,234.56`` troca na Config."""
+
 _VALID_PERIODS = (6, 12)
 
 
@@ -145,7 +148,7 @@ SETTINGS: dict[str, SettingSpec] = {
             key=DECIMAL_SEPARATOR,
             type_name="str",
             description="Separador decimal na exibição ('.' ou ','); o outro caractere separa o milhar.",
-            default=".",
+            default=DEFAULT_DECIMAL_SEPARATOR,
             parse=_parse_separator,
             to_json=str,
             from_json=str,
