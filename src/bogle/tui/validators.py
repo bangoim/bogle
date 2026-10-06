@@ -5,7 +5,8 @@ module with the format rules — no typer involved) and translate a
 ``ValidationError`` into a Textual ``ValidationResult``. The ``label`` becomes
 the subject of the message, so the same parser that says
 ``--shares deve ser um numero decimal`` says ``Quantidade deve ser um numero
-decimal`` here.
+decimal`` here. ``feminine`` and ``plural`` describe the label, so what is said
+about it agrees: "Quantidade é obrigatória", "Taxas não podem ser negativas".
 
 Range rules stay next to the format ones on purpose: catching "quantidade 0"
 while it is typed is the whole point of the interface — the repository would
@@ -27,17 +28,25 @@ from bogle.domain.errors import ValidationError
 _ZERO = Decimal("0")
 
 
+def _agree(adjective: str, *, feminine: bool, plural: bool) -> str:
+    """``obrigatório`` -> ``obrigatória`` / ``obrigatórios`` / ``obrigatórias``."""
+    if feminine:
+        adjective = adjective[:-1] + "a"
+    return adjective + "s" if plural else adjective
+
+
 class TextField(Validator):
     """Required free text (a ticker being registered, an issuer's name)."""
 
-    def __init__(self, label: str) -> None:
+    def __init__(self, label: str, *, feminine: bool = False) -> None:
         super().__init__()
         self.label = label
+        self.feminine = feminine
 
     @override
     def validate(self, value: str) -> ValidationResult:
         if not value.strip():
-            return self.failure(f"{self.label} é obrigatório.")
+            return self.failure(f"{self.label} é {_agree('obrigatório', feminine=self.feminine, plural=False)}.")
         return self.success()
 
 
@@ -52,9 +61,13 @@ class DecimalField(Validator):
         positive: bool = False,
         blank_message: str | None = None,
         parse: Callable[[str, str], Decimal] = parse_decimal,
+        feminine: bool = False,
+        plural: bool = False,
     ) -> None:
         super().__init__()
         self.label = label
+        self.feminine = feminine
+        self.plural = plural
         self.allow_blank = allow_blank
         self.positive = positive
         """``True`` requires > 0; otherwise >= 0 (fees, taxes)."""
@@ -71,22 +84,27 @@ class DecimalField(Validator):
         if not text:
             if self.allow_blank:
                 return self.success()
-            return self.failure(self.blank_message or f"{self.label} é obrigatório.")
+            required = _agree("obrigatório", feminine=self.feminine, plural=self.plural)
+            return self.failure(self.blank_message or f"{self.label} {'são' if self.plural else 'é'} {required}.")
         try:
             parsed = self.parse(text, self.label)
         except ValidationError as exc:
             return self.failure(str(exc))
         if self.positive and parsed <= _ZERO:
-            return self.failure(f"{self.label} deve ser maior que zero, recebido {parsed}.")
+            greater = "devem ser maiores" if self.plural else "deve ser maior"
+            return self.failure(f"{self.label} {greater} que zero, recebido {parsed}.")
         if not self.positive and parsed < _ZERO:
-            return self.failure(f"{self.label} não pode ser negativo, recebido {parsed}.")
+            negative = _agree("negativo", feminine=self.feminine, plural=self.plural)
+            can = "podem" if self.plural else "pode"
+            return self.failure(f"{self.label} não {can} ser {negative}, recebido {parsed}.")
         return self.success()
 
 
 class DateField(Validator):
-    def __init__(self, label: str, *, allow_blank: bool = False) -> None:
+    def __init__(self, label: str, *, allow_blank: bool = False, feminine: bool = False) -> None:
         super().__init__()
         self.label = label
+        self.feminine = feminine
         self.allow_blank = allow_blank
         """``True`` where the date is genuinely optional (a maturity date on a
         daily-liquidity instrument)."""
@@ -97,7 +115,7 @@ class DateField(Validator):
         if not text:
             if self.allow_blank:
                 return self.success()
-            return self.failure(f"{self.label} é obrigatória.")
+            return self.failure(f"{self.label} é {_agree('obrigatório', feminine=self.feminine, plural=False)}.")
         try:
             parse_date(text, self.label)
         except ValidationError as exc:
@@ -120,12 +138,12 @@ class HeldShares(Validator):
     what the ledger would take.
     """
 
-    def __init__(self, ticker: str, available: Decimal, *, label: str = "Quantidade") -> None:
+    def __init__(self, ticker: str, available: Decimal, *, label: str = "Quantidade", feminine: bool = True) -> None:
         super().__init__()
         self.ticker = ticker
         self.available = available
         self.label = label
-        self._amount = DecimalField(label, positive=True)
+        self._amount = DecimalField(label, positive=True, feminine=feminine)
         """Format and sign first: "abc" is not a quantity above the ceiling."""
 
     @override

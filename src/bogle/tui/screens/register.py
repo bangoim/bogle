@@ -336,7 +336,7 @@ class TradeFormScreen(FormScreen):
                 id="fees",
                 value="0",
                 placeholder="corretagem e emolumentos",
-                validators=[DecimalField("Taxas")],
+                validators=[DecimalField("Taxas", feminine=True, plural=True)],
             )
             if self.is_sale:
                 yield Field(
@@ -351,7 +351,7 @@ class TradeFormScreen(FormScreen):
                 id="date",
                 value=_today(),
                 placeholder="YYYY-MM-DD",
-                validators=[DateField("Data")],
+                validators=[DateField("Data", feminine=True)],
             )
             with Horizontal(id="form-buttons"):
                 yield Button("Registrar", id="submit", variant="primary")
@@ -361,7 +361,7 @@ class TradeFormScreen(FormScreen):
     def _shares_validator(self) -> DecimalField | HeldShares:
         """A quantidade da venda tem teto; a da compra, nao."""
         if self.position is None:
-            return DecimalField("Quantidade", positive=True)
+            return DecimalField("Quantidade", positive=True, feminine=True)
         return HeldShares(self.position.ticker, self.position.quantity)
 
     def on_mount(self) -> None:
@@ -521,7 +521,7 @@ class IncomeFormScreen(FormScreen):
                 id="date",
                 value=_today(),
                 placeholder="YYYY-MM-DD",
-                validators=[DateField("Data")],
+                validators=[DateField("Data", feminine=True)],
             )
             with Horizontal(id="form-buttons"):
                 yield Button("Registrar", id="submit", variant="primary")

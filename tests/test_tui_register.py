@@ -152,7 +152,7 @@ class TestValidation:
             assert spy.calls == []
             assert isinstance(app.screen, TradeFormScreen)  # nem chegou no modal
             assert error_of(screen, "ticker") == "Ticker é obrigatório."
-            assert error_of(screen, "shares") == "Quantidade é obrigatório."
+            assert error_of(screen, "shares") == "Quantidade é obrigatória."
             assert error_of(screen, "price") == "Preço unitário é obrigatório."
 
     @pytest.mark.asyncio
@@ -173,7 +173,7 @@ class TestValidation:
             fill(screen, ticker="PETR4", shares="1", price="30", fees="-1")
             await pilot.press("ctrl+s")
             await settle(pilot)
-            assert error_of(screen, "fees") == "Taxas não pode ser negativo, recebido -1."
+            assert error_of(screen, "fees") == "Taxas não podem ser negativas, recebido -1."
 
     @pytest.mark.asyncio
     async def test_unknown_ticker_is_caught_from_the_registered_list(self) -> None:

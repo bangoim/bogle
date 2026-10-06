@@ -223,11 +223,14 @@ class AssetFormScreen(WriteScreen[Asset]):
                 "Taxa",
                 id="rate",
                 placeholder=_RATE_HINT,
-                validators=[DecimalField("Taxa", parse=parse_rate)],
+                validators=[DecimalField("Taxa", parse=parse_rate, feminine=True)],
             )
             yield ControlRow("Liquidez diária", Checkbox(id="daily-liquidity", compact=True), id="liquidity-row")
             yield Field(
-                "Data de compra", id="purchase-date", placeholder="YYYY-MM-DD", validators=[DateField("Data de compra")]
+                "Data de compra",
+                id="purchase-date",
+                placeholder="YYYY-MM-DD",
+                validators=[DateField("Data de compra", feminine=True)],
             )
             yield Field(
                 "Vencimento", id="maturity-date", placeholder="YYYY-MM-DD", validators=[DateField("Vencimento")]
@@ -280,8 +283,8 @@ class AssetFormScreen(WriteScreen[Asset]):
         self.query_one("#liquidity-row").display = private
 
         self._applies("issuer", private, [TextField("Emissor")])
-        self._applies("rate", fixed, [DecimalField("Taxa", parse=parse_rate)], placeholder=_RATE_HINT)
-        self._applies("purchase-date", fixed, [DateField("Data de compra")], placeholder="YYYY-MM-DD")
+        self._applies("rate", fixed, [DecimalField("Taxa", parse=parse_rate, feminine=True)], placeholder=_RATE_HINT)
+        self._applies("purchase-date", fixed, [DateField("Data de compra", feminine=True)], placeholder="YYYY-MM-DD")
         self._applies(
             "maturity-date",
             fixed,

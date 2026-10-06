@@ -326,7 +326,7 @@ class TestConditionalFields:
             screen.query_one("#asset-type", Select).value = AssetType.CDB
             await pilot.pause()
             maturity = screen.field("maturity-date")
-            assert maturity.check() == "Vencimento é obrigatória."
+            assert maturity.check() == "Vencimento é obrigatório."
 
             screen.query_one("#daily-liquidity", Checkbox).value = True
             await pilot.pause()
