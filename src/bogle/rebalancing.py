@@ -42,7 +42,7 @@ from calendar import monthrange
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 from enum import StrEnum
 
 from bogle.domain.assets import PRIVATE_FIXED_INCOME_TYPES, VARIABLE_INCOME_TYPES, AssetType
@@ -142,15 +142,19 @@ def classify_positions(positions: list[Position], threshold: Decimal = DEFAULT_T
 
 _CENT = Decimal("0.01")
 
-B3_FEE_RATE = Decimal("0.0003")
-"""Tarifa da B3 sobre a compra de renda variavel no pregao regular, pessoa fisica.
+B3_FEE_RATE = Decimal("0.00032")
+"""Tarifa da B3 sobre a compra de renda variavel, pessoa fisica, como ela sai na nota.
 
-0,0050% de negociacao + 0,0224% de CCP + 0,0026% de transferencia de ativos (TTA),
+0,0070% de negociacao + 0,0224% de CCP + 0,0026% de transferencia de ativos (TTA),
 na tabela "Tarifacao de Produtos de Renda Variavel" v3.0 (vigente desde
-15/08/2025). Vale igual para acao, BDR, FII e ETF — de acoes, internacional ou de
-renda fixa. Nos leiloes de abertura e fechamento a negociacao sobe para 0,0070%, e
-a TTA e recalculada todo ano: a estimativa fica alguns centavos abaixo da nota
-nesses casos. Renda fixa (CDB, LCI, Tesouro...) nao paga tarifa de negociacao.
+15/08/2025): a negociacao e a dos leiloes de abertura e fechamento. No pregao
+regular ela cai para 0,0050% (0,0300% no total), mas as 17 notas de compra
+registradas ate 06/10/2026 sairam todas acima disso, e as maiores fecham em
+0,0320%. A nota cobra cada ativo por si e arredonda para cima; calculada assim, a
+taxa acerta 14 das 17 notas e erra as outras por um centavo para menos. A TTA e
+recalculada todo ano. Vale igual para acao, BDR, FII e ETF — de acoes,
+internacional ou de renda fixa. Renda fixa (CDB, LCI, Tesouro...) nao paga tarifa
+de negociacao.
 """
 
 
@@ -381,9 +385,10 @@ def suggest_allocation(
     when they cost more than ``amount`` the others get nothing and ``leftover``
     goes negative.
 
-    The B3 fee on the variable-income purchases (:data:`B3_FEE_RATE`) is estimated
-    on top of the split, not taken out of it: ``leftover`` is what remains after
-    the purchases *and* the fee, and goes negative when the fee does not fit.
+    The B3 fee on the variable-income purchases (:data:`B3_FEE_RATE`, per ticker,
+    rounded up to the cent like the broker note) is estimated on top of the split,
+    not taken out of it: ``leftover`` is what remains after the purchases *and*
+    the fee, and goes negative when the fee does not fit.
     """
     if amount <= 0:
         raise ValidationError(f"--amount deve ser positivo, recebido {amount}.")
@@ -469,9 +474,12 @@ def suggest_allocation(
 
     total_allocated = sum((line.cost for line in lines), Decimal("0"))
     # So estimada, por cima da divisao: ela nao tira cota de ninguem, e a sobra e
-    # que diz se o dinheiro cobre as compras com a taxa.
-    variable_income = sum((line.cost for line in lines if line.is_variable_income), Decimal("0"))
-    estimated_fees = (variable_income * B3_FEE_RATE).quantize(_CENT, rounding=ROUND_HALF_UP)
+    # que diz se o dinheiro cobre as compras com a taxa. Por ticker, como na nota:
+    # arredondar a soma uma vez so perde o centavo que cada linha arredonda para cima.
+    estimated_fees = sum(
+        ((line.cost * B3_FEE_RATE).quantize(_CENT, rounding=ROUND_UP) for line in lines if line.is_variable_income),
+        Decimal("0"),
+    )
     items = [
         TickerSuggestion(
             ticker=line.position.ticker,

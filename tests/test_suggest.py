@@ -127,7 +127,7 @@ class TestAllocationBranches:
         aaaa = next(item for item in suggestion.items if item.ticker == "AAAA11")
         assert aaaa.effective_cost == Decimal("18000")
         assert aaaa.weight_after == Decimal("0.40")  # exatamente no target do patrimonio futuro
-        assert suggestion.leftover == Decimal("1994.60")  # 2k menos a taxa B3 dos 18k
+        assert suggestion.leftover == Decimal("1994.24")  # 2k menos a taxa B3 dos 18k
 
     def test_proportional_when_needs_exceed_amount(self) -> None:
         # future = 120: A precisa 20, B precisa 6, total 26 > 20 -> proporcional.
@@ -146,7 +146,7 @@ class TestAllocationBranches:
         assert bbbb.effective_cost == Decimal("6")
         assert bbbb.weight_after == Decimal("0.3")  # nunca passa do target
         assert suggestion.total_allocated == Decimal("15")
-        assert suggestion.leftover == Decimal("5")
+        assert suggestion.leftover == Decimal("4.98")  # um centavo de taxa em cada ticker
 
     def test_portfolio_at_target_stays_at_target(self) -> None:
         summary = make_summary(
@@ -298,14 +298,24 @@ class TestTargetsWithoutAPosition:
 
 class TestB3Fee:
     def test_the_fee_closes_the_account_of_a_real_purchase(self) -> None:
-        # 102 cotas de MUND11 a 100.01: 10,201.02 de papel, 0.03% de taxa.
+        # 102 cotas de MUND11 a 100.01 em 30/09/2026: 10,201.02 de papel, 3.27 na nota.
         summary = make_summary(make_pending("MUND11", "100.01", "1"))
         suggestion = suggest_allocation(summary, Decimal("10205"))
         assert suggestion.items[0].quantity == Decimal("102")
         assert suggestion.total_allocated == Decimal("10201.02")
-        assert suggestion.estimated_fees == Decimal("3.06")
-        assert suggestion.total_with_fees == Decimal("10204.08")
-        assert suggestion.leftover == Decimal("0.92")
+        assert suggestion.estimated_fees == Decimal("3.27")
+        assert suggestion.total_with_fees == Decimal("10204.29")
+        assert suggestion.leftover == Decimal("0.71")
+
+    def test_each_ticker_is_charged_on_its_own(self) -> None:
+        # Compra de 06/10/2026: 0.2113 vira 0.22 e 0.8399 vira 0.84, onde a soma
+        # (1.0512) daria 1.05. A nota cobrou 0.22 + 0.85: um centavo a menos aqui.
+        summary = make_summary(make_pending("NB1011", "55.03", "0.3"), make_pending("MUND11", "97.21", "0.7"))
+        quantities = {"NB1011": Decimal("12"), "MUND11": Decimal("27")}
+        suggestion = suggest_allocation(summary, Decimal("3286.84"), quantities=quantities)
+        assert suggestion.total_allocated == Decimal("3285.03")
+        assert suggestion.estimated_fees == Decimal("1.06")
+        assert suggestion.leftover == Decimal("0.75")
 
     def test_fixed_income_pays_no_fee(self) -> None:
         summary = make_summary(
@@ -324,7 +334,7 @@ class TestB3Fee:
         )
         suggestion = suggest_allocation(summary, Decimal("2000"))
         assert suggestion.total_allocated == Decimal("2000")
-        assert suggestion.estimated_fees == Decimal("0.30")  # sobre os 1000 do FII, nao sobre os 2000
+        assert suggestion.estimated_fees == Decimal("0.32")  # sobre os 1000 do FII, nao sobre os 2000
 
     def test_a_fee_that_does_not_fit_leaves_the_cash_negative(self) -> None:
         # O floor nao deixou sobra nenhuma: a taxa sai de um dinheiro que nao ha,
@@ -332,12 +342,12 @@ class TestB3Fee:
         summary = make_summary(make_pending("AAAA11", "10", "1"))
         suggestion = suggest_allocation(summary, Decimal("1000"))
         assert suggestion.total_allocated == Decimal("1000")
-        assert suggestion.leftover == Decimal("-0.30")
+        assert suggestion.leftover == Decimal("-0.32")
 
-    def test_the_fee_rounds_half_up_to_the_cent(self) -> None:
-        summary = make_summary(make_pending("AAAA11", "50", "1"))
-        suggestion = suggest_allocation(summary, Decimal("50"))
-        assert suggestion.estimated_fees == Decimal("0.02")  # 0.015
+    def test_the_fee_rounds_up_to_the_cent(self) -> None:
+        summary = make_summary(make_pending("AAAA11", "100", "1"))
+        suggestion = suggest_allocation(summary, Decimal("100"))
+        assert suggestion.estimated_fees == Decimal("0.04")  # 0.032
 
 
 class TestInvariants:
@@ -510,7 +520,7 @@ class TestPinnedPurchase:
         suggestion = suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("30")})
         assert self.item(suggestion, "BBBB11").effective_cost == _ZERO
         assert suggestion.total_allocated == Decimal("300")
-        assert suggestion.leftover == Decimal("-100.09")  # 200 - 300 - taxa de 0.09
+        assert suggestion.leftover == Decimal("-100.10")  # 200 - 300 - taxa de 0.10
         assert suggestion.warnings == ["Compra em AAAA11 fixada pelo usuário", "Compra fixada passa do aporte"]
 
     def test_the_pinned_shares_are_bought_at_the_informed_price(self) -> None:

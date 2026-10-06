@@ -58,8 +58,8 @@ def sample_suggestion() -> AporteSuggestion:
             ),
         ],
         total_allocated=Decimal("9950.50"),
-        estimated_fees=Decimal("2.70"),  # 0.03% dos 9000 do ETF; o CDB nao paga
-        leftover=Decimal("46.80"),
+        estimated_fees=Decimal("2.88"),  # 0.032% dos 9000 do ETF; o CDB nao paga
+        leftover=Decimal("46.62"),
         warnings=["CDB01 é renda fixa privada: registre como novo ativo"],
     )
 
@@ -72,9 +72,9 @@ class TestJson:
         assert vwra["quantity"] == "90"
         assert vwra["effective_cost"] == "9000"
         assert data["totals"]["allocated"] == "9950.5"
-        assert data["totals"]["estimated_fees"] == "2.7"
-        assert data["totals"]["with_fees"] == "9953.2"
-        assert data["totals"]["leftover"] == "46.8"
+        assert data["totals"]["estimated_fees"] == "2.88"
+        assert data["totals"]["with_fees"] == "9953.38"
+        assert data["totals"]["leftover"] == "46.62"
         assert data["warnings"]
 
     def test_fixed_income_quantity_is_null(self) -> None:
@@ -97,8 +97,8 @@ class TestTableRender:
         _render(sample_suggestion(), Console(file=buffer, width=200))
         out = buffer.getvalue()
         assert "VWRA11" in out
-        assert "Alocado: 9,950.50 / Taxa B3 (est.): 2.70 / Custo: 9,953.20" in out
-        assert "Aporte: 10,000.00 / Sobra (caixa): 46.80" in out
+        assert "Alocado: 9,950.50 / Taxa B3 (est.): 2.88 / Custo: 9,953.38" in out
+        assert "Aporte: 10,000.00 / Sobra (caixa): 46.62" in out
         assert "Taxa B3 estimada" not in out  # o rotulo (est.) ja diz que e estimativa
         assert "Atenção:\n1. CDB01 é renda fixa privada: registre como novo ativo" in out
 
@@ -188,8 +188,8 @@ class TestCliFlow:
         data = json.loads(result.stdout)
         vwra = next(item for item in data["items"] if item["ticker"] == "VWRA11")
         assert vwra["quantity"] == "100"
-        assert data["totals"]["estimated_fees"] == "3"
-        assert data["totals"]["leftover"] == "-3"  # o floor gastou tudo, e a taxa fica faltando
+        assert data["totals"]["estimated_fees"] == "3.2"
+        assert data["totals"]["leftover"] == "-3.2"  # o floor gastou tudo, e a taxa fica faltando
 
     def test_records_last_rebalance_date(self, runner: CliRunner, conn: psycopg.Connection[DictRow]) -> None:
         assert get_setting(conn, LAST_REBALANCE_DATE) is None
