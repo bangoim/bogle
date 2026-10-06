@@ -106,19 +106,19 @@ interface, since a full-screen interface needs a real terminal.
  █▀▀▄ █  █ █ ▀█ █    █▀▀
  █▄▄▀ ▀▄▄▀ ▀▄▄▀ █▄▄▄ █▄▄▄
  ╭─ Carteira - fechamento de 2026-08-11 ───────────────────────────────────────╮
- │ Patrimonio total                     Variacao                               │
- │ 12,772.90                            +685.43  (+5.67%)                      │
+ │ Patrimônio total                     Variação                               │
+ │ 12.772,90                            +685,43  (+5,67%)                      │
  │ Rentabilidade 12m (TWR)              Rentabilidade total (TWR)              │
- │ +7.06%                               +7.06%                                 │
+ │ +7,06%                               +7,06%                                 │
  │                                                                             │
  │ Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera...  │
  ╰─────────────────────────────────────────────────────────────────────────────╯
  ╭─ Menu ──────────────────────────────────────────────────────────────────────╮
- │ 1  Posicao     precos ao vivo, pesos e drift                                │
+ │ 1  Posição     preços ao vivo, pesos e drift                                │
  │ 2  Registrar   compra, venda ou provento                                    │
- │ 3  Transacoes  listar e remover lancamentos                                 │
+ │ 3  Transações  listar e remover lançamentos                                 │
  │ 4  Aporte      como dividir para reduzir o drift                            │
- │ 5  Relatorios  rentabilidade, historico, proventos                          │
+ │ 5  Relatórios  rentabilidade, histórico, proventos                          │
  │ 6  Ativos      cadastrar, atualizar e remover                               │
  ╰─────────────────────────────────────────────────────────────────────────────╯
  q Sair  r Atualizar  s Status  c Config  h Valores  f1 Ajuda
@@ -140,11 +140,11 @@ arrives as a notification here instead of a line on stderr.
 
 | Screen | What it covers | Equivalent commands |
 |--------|----------------|---------------------|
-| Posicao | Priced table (average price, quote, weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
+| Posição | Priced table (average price, quote, weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
 | Registrar | Guided forms for buy, sell and income, with a confirmation summary; a sale starts from the list of open positions and can be zeroed with `Vender tudo` | `bogle buy` / `sell` / `income` |
-| Transacoes | Ledger with a ticker filter; `d` removes the selected row after confirming | `bogle transactions`, `bogle transaction remove` |
-| Aporte | Amount → suggested split; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
-| Relatorios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
+| Transações | Ledger with a ticker filter; `d` removes the selected row after confirming | `bogle transactions`, `bogle transaction remove` |
+| Aporte | Amount → suggested split; `p` sets the price of a limit order, `q` pins a ticker's purchase; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
+| Relatórios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
 | Ativos | List with the fixed-income metadata + forms; `a` registers, `u` changes weight/type, `d` removes | `bogle list` / `add` / `update` / `remove` |
 | Status (`s`) | The rebalance cycle: period, last and next evaluation | `bogle status` |
 | Config (`c`) | Every setting, editable in place (`e`) or back to its default (`d`) | `bogle config list` / `set` / `unset` |
@@ -314,21 +314,21 @@ bogle position --json        # machine-readable output for scripts
 ```
 
 ```text
-                                                     Posicao
+                                                     Posição
 ┏━━━━━━━━┳━━━━━━━┳━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┓
-┃ Ticker ┃ Tipo  ┃ Qtd ┃ Preco medio ┃ Cotacao ┃ Montante ┃   Peso ┃ Target ┃  Drift ┃  PnL R$ ┃  PnL % ┃     TWR ┃
+┃ Ticker ┃ Tipo  ┃ Qtd ┃ Preço médio ┃ Cotação ┃ Montante ┃   Peso ┃ Target ┃  Drift ┃  PnL R$ ┃  PnL % ┃     TWR ┃
 ┡━━━━━━━━╇━━━━━━━╇━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━┩
-│ PETR4  │ STOCK │ 100 │       37.50 │   41.15 │ 4,115.00 │ 52.30% │ 50.00% │ +2.30% │ +365.00 │ +9.74% │ +12.75% │
-│ MXRF11 │ FII   │ 300 │        9.33 │    9.80 │ 2,940.00 │ 37.36% │ 40.00% │ -2.64% │ +140.00 │ +5.00% │  +6.10% │
-│ CDB01  │ CDB   │   1 │      800.00 │  811.20 │   811.20 │ 10.31% │ 10.00% │ +0.31% │  +11.20 │ +1.40% │  +1.40% │
+│ PETR4  │ STOCK │ 100 │       37,50 │   41,15 │ 4.115,00 │ 52,30% │ 50,00% │ +2,30% │ +365,00 │ +9,74% │ +12,75% │
+│ MXRF11 │ FII   │ 300 │        9,33 │    9,80 │ 2.940,00 │ 37,36% │ 40,00% │ -2,64% │ +140,00 │ +5,00% │  +6,10% │
+│ CDB01  │ CDB   │   1 │      800,00 │  811,20 │   811,20 │ 10,31% │ 10,00% │ +0,31% │  +11,20 │ +1,40% │  +1,40% │
 └────────┴───────┴─────┴─────────────┴─────────┴──────────┴────────┴────────┴────────┴─────────┴────────┴─────────┘
-Total investido: 7,350.00
-Patrimonio total: 7,866.20
-Variacao: +516.20 (+7.02%)
-Lucro do mes: +82.40
-Proventos (12m): +145.00
-Fonte(s) de preco: brapi, calculado
-Cotacao mais recente: 2026-07-20 18:28
+Total investido: 7.350,00
+Patrimônio total: 7.866,20
+Variação: +516,20 (+7,02%)
+Lucro do mês: +82,40
+Proventos (12m): +145,00
+Fonte(s): brapi, calculado
+Cotação: 2026-07-20 18:28
 ```
 
 Live B3 quotes need a brapi token — see [Setup step 5](#5-optional-brapi-token-for-live-b3-quotes).
@@ -361,6 +361,20 @@ tool first. If the provider cannot quote it, the ticker sits that contribution
 out with a warning (there is no way to say how many shares the money buys);
 `--price TICKER=VALOR` gets it back in.
 
+**Price and purchase per ticker.** `--price TICKER=VALOR` is for a limit order:
+the shares and the cost are computed at the price you intend to pay, while the
+split itself stays at market. `--qty TICKER=N` (variable income, whole shares) and
+`--value TICKER=VALOR` (fixed income) pin what you will buy of a ticker instead —
+`0` sits it out this time — and the rest of the contribution is split among the
+other tickers. A pinned purchase is your call, so it may go past the target; when
+the pins cost more than the contribution, the others get nothing and the leftover
+goes negative. In the `Aporte` screen these are the `p` and `q` keys, and an `*`
+marks what you informed.
+
+```bash
+bogle suggest --amount 10000 --qty VWRA11=10 --value CDB-XP-2027=2000
+```
+
 The other side of that policy: **a sale that empties a position clears the
 asset's target weight**, since a target left over from an asset you walked away
 from would take the next contribution. The command prints what it did and the
@@ -378,9 +392,9 @@ stands, and any command emits a reminder once the period (6 or 12 months,
 
 ```bash
 bogle status
-# Ciclo de avaliacao: 12 meses.
-# Ultima avaliacao: 2026-07-22.
-# Proxima avaliacao em 365 dia(s) (2027-07-22).
+# Ciclo de avaliação: 12 meses.
+# Última avaliação: 2026-07-22.
+# Próxima avaliação em 365 dia(s) (2027-07-22).
 ```
 
 ### Reports
@@ -421,8 +435,8 @@ as lines) and opens it in the browser — add `--no-open` to only write the file
 Semantics worth knowing:
 
 - **Total investido** (`position`, the Home) = average price × quantity of the
-  open positions, purchase fees included — the same "Preco medio" of the table.
-  **Variacao** = patrimony − that = the **unrealized** gain alone: a sale takes
+  open positions, purchase fees included — the same "Preço médio" of the table.
+  **Variação** = patrimony − that = the **unrealized** gain alone: a sale takes
   out the cost of the units it sold, and its gain goes to `bogle profit`.
   **Lucro total** (`profit`) = realized + unrealized + income received.
 - Historical numbers (`return`, `compare`, `history`, the Home's TWRs and the
@@ -454,7 +468,7 @@ bogle config get rebalance_period_months     # 12 (default)
 bogle config set rebalance_period_months 6   # only 6 or 12 accepted
 bogle config unset rebalance_period_months   # back to the default
 
-bogle config set decimal_separator ,         # 1.234,56 instead of 1,234.56
+bogle config set decimal_separator .         # 1,234.56 instead of 1.234,56
 bogle config set hide_values true            # interface opens with amounts masked
 bogle config set theme ansi-dark             # any theme the installed textual has
 ```
@@ -470,7 +484,7 @@ the Config screen applies it immediately instead of waiting for the next session
 | `rebalance_period_months` | int | `12` | Evaluation cycle (6 or 12 months) |
 | `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY |
 | `default_compare_indices` | list[str] | `IBOV,CDI` | Indices for future `bogle compare` without `--index` |
-| `decimal_separator` | str | `.` | Decimal separator on screen (`.` or `,`); the other character groups thousands |
+| `decimal_separator` | str | `,` | Decimal separator on screen (`,` or `.`); the other character groups thousands |
 | `hide_values` | bool | `false` | Amounts masked in the interactive interface (`h` toggles and remembers) |
 | `theme` | str | `textual-dark` | Theme of the interactive interface (the command palette also writes here) |
 | `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
@@ -482,8 +496,8 @@ Money, percentages and quantities are shown with the separator pair you choose:
 thousands. Money and quantities are grouped, percentages are not.
 
 ```bash
-bogle config set decimal_separator ,   # 12.772,90   +5,67%
-bogle config set decimal_separator .   # 12,772.90   +5.67%   (default)
+bogle config set decimal_separator ,   # 12.772,90   +5,67%   (default)
+bogle config set decimal_separator .   # 12,772.90   +5.67%
 ```
 
 **Input is narrower on purpose and does not follow the setting**: one separator,
@@ -503,6 +517,17 @@ above. The two readings differ by a factor of a thousand, which is not a guess
 worth making on a buy order — so anything with a second separator is refused,
 with the message saying what to type instead.
 
+**In the interactive interface, amounts in reais are typed from the cents**, as
+in banking apps: each digit enters as the last cent and pushes the others left,
+so `3`, `32`, `328` and `328684` show `0,03`, `0,32`, `3,28` and `3.286,84` —
+grouped with the separators above, and with no separator ever typed. Backspace
+takes the last digit back out, and past `0,00` the field is empty again (empty
+still means "not informed": an optional tax, or "back to the market price" in
+the `p` dialog). A pasted amount is read as a number, in either convention. This
+applies to the money fields only — price, fees, withheld tax, gross income, the
+amount available for a contribution; quantities, weights and rates are typed as
+above.
+
 `--json` output is never localized: it always uses a canonical dot decimal with
 no grouping, so scripts keep parsing it with `Decimal(...)`.
 
@@ -519,10 +544,10 @@ bogle config set hide_values true    # opens hidden
 
 ```text
  ╭─ Carteira - fechamento de 2026-08-11 ───────────────────────╮
- │ Patrimonio total                 Variacao                   │
- │ ••••••                           ••••••  (+7.02%)           │
+ │ Patrimônio total                 Variação                   │
+ │ ••••••                           ••••••  (+7,02%)           │
  │ Rentabilidade 12m (TWR)          Rentabilidade total (TWR)  │
- │ +12.75%                          +18.40%                    │
+ │ +12,75%                          +18,40%                    │
  ╰─────────────────────────────────────────────────────────────╯
 ```
 
