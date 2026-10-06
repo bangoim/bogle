@@ -674,6 +674,14 @@ class TestSuggestion:
         assert item.price == Decimal("30")
         assert item.is_manual_price
 
+    def test_the_pinned_purchases_reach_the_engine(self, priced: None) -> None:
+        suggestion = services.load_suggestion(
+            Decimal("320"), quantities={"PETR4": Decimal("3")}, today=date(2026, 3, 20)
+        )
+        item = suggestion.items[0]
+        assert item.quantity == Decimal("3")
+        assert item.is_pinned
+
     def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(self, priced: None) -> None:
         # O caminho do 'r' da tela: sem isso a cotacao vem do cache de 5 minutos e
         # o "Atualizar" nao atualiza nada.

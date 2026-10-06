@@ -534,6 +534,8 @@ def load_suggestion(
     amount: Decimal,
     *,
     prices: Mapping[str, Decimal] | None = None,
+    quantities: Mapping[str, Decimal] | None = None,
+    values: Mapping[str, Decimal] | None = None,
     refresh: bool = False,
     today: date | None = None,
 ) -> AporteSuggestion:
@@ -543,7 +545,8 @@ def load_suggestion(
     so it stamps ``last_rebalance_date`` — the same side effect ``bogle suggest``
     has, which is what makes the overdue reminder stop nagging.
 
-    ``prices`` are the prices the user intends to pay (see
+    ``prices`` are the prices the user intends to pay, and ``quantities`` /
+    ``values`` the purchases they pinned (see
     :func:`~bogle.rebalancing.suggest_allocation`); ``refresh`` skips the quote
     cache, as in :func:`load_snapshot`.
     """
@@ -553,7 +556,7 @@ def load_suggestion(
         # get_allocation_summary, e nao a posicao: um ativo com target e sem
         # compra nenhuma tambem concorre ao aporte (o mesmo que `bogle suggest`).
         summary = get_allocation_summary(conn, dispatcher)
-        suggestion = suggest_allocation(summary, amount, prices=prices)
+        suggestion = suggest_allocation(summary, amount, prices=prices, quantities=quantities, values=values)
         set_value(conn, LAST_REBALANCE_DATE, _today(today))
         return suggestion
     finally:

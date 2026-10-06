@@ -60,7 +60,7 @@ def sample_suggestion() -> AporteSuggestion:
         total_allocated=Decimal("9950.50"),
         estimated_fees=Decimal("2.70"),  # 0.03% dos 9000 do ETF; o CDB nao paga
         leftover=Decimal("46.80"),
-        warnings=["Aporte em renda fixa privada (CDB01) cria um novo contrato."],
+        warnings=["CDB01 é renda fixa privada: registre como novo ativo"],
     )
 
 
@@ -97,10 +97,10 @@ class TestTableRender:
         _render(sample_suggestion(), Console(file=buffer, width=200))
         out = buffer.getvalue()
         assert "VWRA11" in out
-        assert "Total alocado: 9,950.50 / Taxa B3 (est.): 2.70 / Total com taxa: 9,953.20" in out
+        assert "Alocado: 9,950.50 / Taxa B3 (est.): 2.70 / Total: 9,953.20" in out
         assert "Aporte: 10,000.00 / Sobra (caixa): 46.80" in out
-        assert "Taxa B3 estimada em 0.03%" in out
-        assert "novo contrato" in out
+        assert "Taxa B3 estimada" not in out  # o rotulo (est.) ja diz que e estimativa
+        assert "Atenção:\n1. CDB01 é renda fixa privada: registre como novo ativo" in out
 
     def test_shows_the_weight_before_the_target_and_after(self) -> None:
         buffer = io.StringIO()
@@ -121,6 +121,18 @@ class TestTableRender:
         buffer = io.StringIO()
         _render(suggestion, Console(file=buffer, width=200))
         assert "--price MUND11=VALOR" in buffer.getvalue()
+
+    def test_a_pinned_purchase_marks_what_was_informed(self) -> None:
+        # Cotas na renda variavel, valor na renda fixa: o asterisco fica no numero
+        # que veio de voce, como no preco informado.
+        vwra, cdb = sample_suggestion().items
+        suggestion = replace(sample_suggestion(), items=[replace(vwra, is_pinned=True), replace(cdb, is_pinned=True)])
+        buffer = io.StringIO()
+        _render(suggestion, Console(file=buffer, width=200))
+        out = buffer.getvalue()
+        assert "90 *" in out
+        assert "9,000.00 *" not in out
+        assert "950.50 *" in out
 
     def test_no_hint_when_every_target_has_a_quote(self) -> None:
         buffer = io.StringIO()
@@ -195,7 +207,7 @@ class TestCliFlow:
         result = runner.invoke(app, ["suggest", "--amount", "10000", "--price", "VWRA11=80"])
         assert result.exit_code == 0, result.output
         assert "*" in result.stdout
-        assert "executa nesse preco" in result.stdout
+        assert "1. Preço de VWRA11 definido pelo usuário" in result.stdout
 
     def test_price_in_json_keeps_the_quote_beside_it(self, runner: CliRunner) -> None:
         result = runner.invoke(app, ["suggest", "--amount", "10000", "--price", "vwra11=80", "--json"])
@@ -205,6 +217,30 @@ class TestCliFlow:
         assert vwra["quoted_price"] == "100"
         assert vwra["manual_price"] is True
         assert vwra["quantity"] == "125"
+
+    def test_qty_pins_the_ticker_and_the_rest_goes_to_the_others(self, runner: CliRunner) -> None:
+        # B5P211 esta acima do target e nao receberia nada; fixado em 10 cotas
+        # (900), o VWRA11 fica com os 9.100 que sobraram: 91 cotas em vez de 100.
+        result = runner.invoke(app, ["suggest", "--amount", "10000", "--qty", "b5p211=10", "--json"])
+        assert result.exit_code == 0, result.output
+        items = {item["ticker"]: item for item in json.loads(result.stdout)["items"]}
+        assert items["B5P211"]["quantity"] == "10"
+        assert items["B5P211"]["pinned"] is True
+        assert items["VWRA11"]["quantity"] == "91"
+        assert items["VWRA11"]["pinned"] is False
+
+    def test_qty_is_marked_and_explained_in_the_table(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["suggest", "--amount", "10000", "--qty", "B5P211=10"])
+        assert result.exit_code == 0, result.output
+        assert "10 *" in result.stdout
+        assert "1. Compra em B5P211 fixada pelo usuário" in result.stdout
+
+    def test_value_on_variable_income_fails_without_recording(
+        self, runner: CliRunner, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        result = runner.invoke(app, ["suggest", "--amount", "10000", "--value", "VWRA11=500"])
+        assert result.exit_code != 0
+        assert get_setting(conn, LAST_REBALANCE_DATE) is None
 
     def test_a_price_for_a_ticker_outside_the_portfolio_fails(
         self, runner: CliRunner, conn: psycopg.Connection[DictRow]

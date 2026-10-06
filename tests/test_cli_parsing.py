@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bogle.cli.parsing import parse_date, parse_decimal, parse_price_overrides, parse_rate, parse_weight
+from bogle.cli.parsing import parse_date, parse_decimal, parse_rate, parse_ticker_values, parse_weight
 from bogle.domain.errors import ValidationError
 
 
@@ -79,7 +79,11 @@ class TestParseWeight:
             parse_weight(value, "--weight", allow_zero=True)
 
 
-class TestParsePriceOverrides:
+def parse_price_overrides(values: list[str], option: str) -> dict[str, Decimal]:
+    return parse_ticker_values(values, option, unit="PRECO", example="VWRA11=114,86")
+
+
+class TestParseTickerValues:
     def test_pairs_become_a_mapping_with_upper_case_tickers(self) -> None:
         assert parse_price_overrides(["vwra11=114,86", "B5P211=110.67"], "--price") == {
             "VWRA11": Decimal("114.86"),
@@ -107,3 +111,7 @@ class TestParsePriceOverrides:
         # Silenciosamente valeria o ultimo, e o usuario leria o primeiro.
         with pytest.raises(ValidationError, match="repetido para VWRA11"):
             parse_price_overrides(["VWRA11=114", "vwra11=115"], "--price")
+
+    def test_the_error_names_the_unit_and_shows_the_example(self) -> None:
+        with pytest.raises(ValidationError, match=r"--qty espera TICKER=QTDE \(ex: VWRA11=10\)"):
+            parse_ticker_values(["VWRA11"], "--qty", unit="QTDE", example="VWRA11=10")

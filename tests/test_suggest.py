@@ -9,7 +9,7 @@ import pytest
 from bogle.domain.assets import AssetType
 from bogle.domain.errors import MissingPriceError, ValidationError
 from bogle.position import PortfolioSummary, Position
-from bogle.rebalancing import suggest_allocation
+from bogle.rebalancing import AporteSuggestion, TickerSuggestion, suggest_allocation
 
 _ZERO = Decimal("0")
 
@@ -171,7 +171,7 @@ class TestFixedIncome:
         assert cdb.quantity is None
         assert cdb.effective_cost == Decimal("20.00")  # future 120 * 0.5 - 40 = 20, sem floor
         assert suggestion.leftover == _ZERO
-        assert any("CDB01" in w and "novo contrato" in w for w in suggestion.warnings)
+        assert "CDB01 é renda fixa privada: registre como novo ativo" in suggestion.warnings
 
     def test_tesouro_gets_exact_value_without_warning(self) -> None:
         summary = make_summary(
@@ -243,7 +243,7 @@ class TestTargetsWithoutAPosition:
         )
         suggestion = suggest_allocation(summary, Decimal("100"))
         assert [item.ticker for item in suggestion.items] == ["AAAA11"]
-        assert any("XPTO11" in warning and "Sem cotacao" in warning for warning in suggestion.warnings)
+        assert suggestion.warnings == ["Sem cotação para XPTO11"]
         assert suggestion.leftover == Decimal("100")  # o dinheiro fica em caixa
 
     def test_the_unquoted_target_comes_back_as_data(self) -> None:
@@ -292,7 +292,7 @@ class TestTargetsWithoutAPosition:
         assert xpto.quantity == Decimal("4")
         assert xpto.effective_cost == Decimal("100")
         assert xpto.is_manual_price
-        assert not any("Sem cotacao" in warning for warning in suggestion.warnings)
+        assert not any("Sem cotação" in warning for warning in suggestion.warnings)
         assert suggestion.unquoted == []
 
 
@@ -419,9 +419,13 @@ class TestManualPrice:
         assert other.price == Decimal("90")
         assert not other.is_manual_price
 
-    def test_a_warning_says_the_numbers_assume_the_order_executes(self) -> None:
-        suggestion = suggest_allocation(self.summary(), Decimal("1000"), prices={"VWRA11": Decimal("80")})
-        assert any("VWRA11" in warning and "executa" in warning for warning in suggestion.warnings)
+    def test_a_warning_names_the_informed_prices(self) -> None:
+        one = suggest_allocation(self.summary(), Decimal("1000"), prices={"VWRA11": Decimal("80")})
+        assert one.warnings == ["Preço de VWRA11 definido pelo usuário"]
+        both = suggest_allocation(
+            self.summary(), Decimal("1000"), prices={"VWRA11": Decimal("80"), "B5P211": Decimal("85")}
+        )
+        assert both.warnings == ["Preços de B5P211, VWRA11 definidos pelo usuário"]
 
     def test_the_ticker_is_matched_case_insensitively(self) -> None:
         suggestion = suggest_allocation(self.summary(), Decimal("1000"), prices={"vwra11": Decimal("80")})
@@ -450,3 +454,145 @@ class TestManualPrice:
     def test_a_non_positive_price_is_refused(self) -> None:
         with pytest.raises(ValidationError, match="positivo"):
             suggest_allocation(self.summary(), Decimal("1000"), prices={"VWRA11": Decimal("0")})
+
+
+class TestPinnedPurchase:
+    """A compra fixada pelo usuario sai da divisao, e o resto vai para os outros."""
+
+    def summary(self) -> PortfolioSummary:
+        # future = 1200: A e B precisam de 280 cada (40% de 1200 - 200), C esta
+        # acima do target e nao recebe. Sem fixar nada, 200 dao 13 cotas de A e
+        # 7 de B (o floor deixa 60, que voltam para A).
+        return make_summary(
+            make_position("AAAA11", "10", "200", "0.40", total="1000"),
+            make_position("BBBB11", "10", "200", "0.40", total="1000"),
+            make_position("CCCC11", "10", "600", "0.20", total="1000"),
+        )
+
+    @staticmethod
+    def item(suggestion: AporteSuggestion, ticker: str) -> TickerSuggestion:
+        return next(item for item in suggestion.items if item.ticker == ticker)
+
+    def test_the_pinned_ticker_buys_what_was_informed(self) -> None:
+        suggestion = suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("2")})
+        aaaa = self.item(suggestion, "AAAA11")
+        assert aaaa.quantity == Decimal("2")
+        assert aaaa.effective_cost == Decimal("20")
+        assert aaaa.allocation == Decimal("20")  # o "sugerido" passa a ser o que voce fixou
+        assert aaaa.is_pinned
+
+    def test_the_rest_of_the_amount_goes_to_the_others(self) -> None:
+        # Os 180 que A deixou vao para B, que precisava de 280: 18 cotas.
+        suggestion = suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("2")})
+        bbbb = self.item(suggestion, "BBBB11")
+        assert bbbb.quantity == Decimal("18")
+        assert not bbbb.is_pinned
+        assert suggestion.total_allocated == Decimal("200")
+
+    def test_zero_sits_the_ticker_out_and_gives_its_money_away(self) -> None:
+        suggestion = suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("0")})
+        assert self.item(suggestion, "AAAA11").effective_cost == _ZERO
+        assert self.item(suggestion, "BBBB11").quantity == Decimal("20")
+
+    def test_the_others_still_stop_at_their_target(self) -> None:
+        # Fixar nao empurra ninguem alem do target: C, acima do dele, segue sem nada.
+        suggestion = suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("0")})
+        assert self.item(suggestion, "CCCC11").effective_cost == _ZERO
+
+    def test_a_pin_past_the_target_is_the_users_call(self) -> None:
+        # 200 + 700 sobre 2000: 45% num target de 40%.
+        suggestion = suggest_allocation(self.summary(), Decimal("1000"), quantities={"AAAA11": Decimal("70")})
+        aaaa = self.item(suggestion, "AAAA11")
+        assert aaaa.effective_cost == Decimal("700")
+        assert aaaa.weight_after == Decimal("0.45")
+
+    def test_pins_beyond_the_amount_leave_the_others_empty_and_the_cash_negative(self) -> None:
+        suggestion = suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("30")})
+        assert self.item(suggestion, "BBBB11").effective_cost == _ZERO
+        assert suggestion.total_allocated == Decimal("300")
+        assert suggestion.leftover == Decimal("-100.09")  # 200 - 300 - taxa de 0.09
+        assert suggestion.warnings == ["Compra em AAAA11 fixada pelo usuário", "Compra fixada passa do aporte"]
+
+    def test_the_pinned_shares_are_bought_at_the_informed_price(self) -> None:
+        suggestion = suggest_allocation(
+            self.summary(),
+            Decimal("200"),
+            prices={"AAAA11": Decimal("8")},
+            quantities={"AAAA11": Decimal("5")},
+        )
+        assert self.item(suggestion, "AAAA11").effective_cost == Decimal("40")
+        assert self.item(suggestion, "BBBB11").quantity == Decimal("16")  # os 160 que sobraram
+
+    def test_a_warning_names_the_pinned_purchases(self) -> None:
+        one = suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("2")})
+        assert one.warnings == ["Compra em AAAA11 fixada pelo usuário"]
+        both = suggest_allocation(
+            self.summary(), Decimal("200"), quantities={"AAAA11": Decimal("2"), "BBBB11": Decimal("3")}
+        )
+        assert both.warnings == ["Compras em AAAA11, BBBB11 fixadas pelo usuário"]
+
+    def test_no_pins_leaves_everything_as_it_was(self) -> None:
+        plain = suggest_allocation(self.summary(), Decimal("200"))
+        pinned = suggest_allocation(self.summary(), Decimal("200"), quantities={}, values={})
+        assert pinned == plain
+        assert not any(item.is_pinned for item in plain.items)
+
+    def test_the_ticker_is_matched_case_insensitively(self) -> None:
+        suggestion = suggest_allocation(self.summary(), Decimal("200"), quantities={"aaaa11": Decimal("2")})
+        assert self.item(suggestion, "AAAA11").is_pinned
+
+    def test_fixed_income_is_pinned_by_value(self) -> None:
+        summary = make_summary(
+            make_position("CDB01", "50", "50", "0.50", asset_type=AssetType.CDB, total="100"),
+            make_position("AAAA11", "1", "50", "0.50", total="100"),
+        )
+        suggestion = suggest_allocation(summary, Decimal("100"), values={"CDB01": Decimal("20")})
+        cdb = self.item(suggestion, "CDB01")
+        assert cdb.quantity is None
+        assert cdb.effective_cost == Decimal("20")
+        assert cdb.is_pinned
+        assert self.item(suggestion, "AAAA11").effective_cost == Decimal("50")  # a necessidade inteira dele
+
+    def test_a_quantity_for_fixed_income_is_refused(self) -> None:
+        summary = make_summary(
+            make_position("CDB01", "50", "50", "0.50", asset_type=AssetType.CDB, total="100"),
+            make_position("AAAA11", "1", "50", "0.50", total="100"),
+        )
+        with pytest.raises(ValidationError, match="so vale para renda variavel"):
+            suggest_allocation(summary, Decimal("100"), quantities={"CDB01": Decimal("2")})
+
+    def test_a_value_for_variable_income_is_refused(self) -> None:
+        # Um numero que valesse cotas num ticker e reais no outro seria um
+        # "2" lido como R$ 2 — por isso cada um tem a sua forma.
+        with pytest.raises(ValidationError, match="so vale para renda fixa"):
+            suggest_allocation(self.summary(), Decimal("200"), values={"AAAA11": Decimal("20")})
+
+    @pytest.mark.parametrize("quantity", ["1.5", "-1"])
+    def test_a_quantity_must_be_whole_shares(self, quantity: str) -> None:
+        with pytest.raises(ValidationError, match="numero inteiro de cotas"):
+            suggest_allocation(self.summary(), Decimal("200"), quantities={"AAAA11": Decimal(quantity)})
+
+    @pytest.mark.parametrize("value", ["20.005", "-1"])
+    def test_a_value_must_be_cents_and_not_negative(self, value: str) -> None:
+        summary = make_summary(
+            make_position("CDB01", "50", "50", "0.50", asset_type=AssetType.CDB, total="100"),
+            make_position("AAAA11", "1", "50", "0.50", total="100"),
+        )
+        with pytest.raises(ValidationError, match="em centavos"):
+            suggest_allocation(summary, Decimal("100"), values={"CDB01": Decimal(value)})
+
+    def test_a_ticker_outside_the_portfolio_is_refused(self) -> None:
+        with pytest.raises(ValidationError, match="fora da carteira: XPTO11"):
+            suggest_allocation(self.summary(), Decimal("200"), quantities={"XPTO11": Decimal("2")})
+
+    def test_an_unquoted_target_needs_a_price_first(self) -> None:
+        summary = make_summary(
+            make_position("AAAA11", "10", "1000", "0.50", total="1000"),
+            make_pending("MUND11", None, "0.50", total="1000"),
+        )
+        with pytest.raises(ValidationError, match="informe o preco antes de fixar a quantidade"):
+            suggest_allocation(summary, Decimal("200"), quantities={"MUND11": Decimal("2")})
+        priced = suggest_allocation(
+            summary, Decimal("200"), prices={"MUND11": Decimal("10")}, quantities={"MUND11": Decimal("2")}
+        )
+        assert self.item(priced, "MUND11").effective_cost == Decimal("20")

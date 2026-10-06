@@ -75,7 +75,9 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         services,
         "load_suggestion",
-        lambda amount, **kwargs: make_suggestion(amount=amount, prices=kwargs.get("prices")),
+        lambda amount, **kwargs: make_suggestion(
+            amount=amount, prices=kwargs.get("prices"), quantities=kwargs.get("quantities"), values=kwargs.get("values")
+        ),
     )
     monkeypatch.setattr(services, "load_cycle", lambda **_: make_cycle())
     monkeypatch.setattr(services, "load_settings", make_settings)
@@ -401,18 +403,29 @@ as telas mostram 14:07, o horario local (America/Sao_Paulo)."""
 
 
 def make_suggestion(
-    *, amount: Decimal | None = None, prices: Mapping[str, Decimal] | None = None, **overrides: Any
+    *,
+    amount: Decimal | None = None,
+    prices: Mapping[str, Decimal] | None = None,
+    quantities: Mapping[str, Decimal] | None = None,
+    values: Mapping[str, Decimal] | None = None,
+    **overrides: Any,
 ) -> AporteSuggestion:
-    """A suggestion for the screen tests, honoring manual ``prices``.
+    """A suggestion for the screen tests, honoring manual ``prices`` and pins.
 
     ``prices`` reprices the variable-income line the way the engine does — shares
-    from the informed price — so the screen can be tested against a table that
-    really changed, and not only against the call it made.
+    from the informed price — and ``quantities`` / ``values`` pin AUVP11 / the
+    CDB, so the screen can be tested against a table that really changed, and not
+    only against the call it made. Where the rest of the money goes is the
+    engine's business (``tests/test_suggest.py``): here the other line stays put.
     """
     value = amount if amount is not None else Decimal("1500")
     manual = {ticker.upper(): price for ticker, price in (prices or {}).items()}
     auvp_price = manual.get("AUVP11", Decimal("126.25"))
     auvp_shares = (Decimal("1010.00") / auvp_price).to_integral_value(rounding=ROUND_DOWN)
+    auvp_pin = (quantities or {}).get("AUVP11")
+    if auvp_pin is not None:
+        auvp_shares = auvp_pin
+    cdb_pin = (values or {}).get("CDB-XP-2027")
     fields: dict[str, Any] = {
         "amount": value,
         "items": [
@@ -423,6 +436,7 @@ def make_suggestion(
                 allocation=Decimal("1010.00"),
                 quantity=auvp_shares,
                 effective_cost=auvp_shares * auvp_price,
+                is_pinned=auvp_pin is not None,
                 target_weight=Decimal("0.3"),
                 weight_after=Decimal("0.2840"),
                 current_weight=Decimal("0.2610"),
@@ -435,9 +449,10 @@ def make_suggestion(
                 ticker="CDB-XP-2027",
                 asset_type=AssetType.CDB,
                 price=Decimal("811.20"),
-                allocation=Decimal("489.50"),
+                allocation=cdb_pin if cdb_pin is not None else Decimal("489.50"),
                 quantity=None,  # renda fixa vai por valor, nao por cota
-                effective_cost=Decimal("489.50"),
+                effective_cost=cdb_pin if cdb_pin is not None else Decimal("489.50"),
+                is_pinned=cdb_pin is not None,
                 target_weight=Decimal("0.1"),
                 weight_after=Decimal("0.0980"),
                 current_weight=Decimal("0.0710"),

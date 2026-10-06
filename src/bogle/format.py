@@ -37,8 +37,11 @@ The machine-readable path never goes through the localized helpers:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+
+from rich.markup import escape
 
 DASH = "-"
 """Rendered in place of a value that is not available."""
@@ -195,6 +198,18 @@ def shortfall(value: Decimal) -> str:
     if value < 0 and not _HIDDEN:
         return f"[red]{money(value)}[/red]"
     return money(value)
+
+
+def attention(warnings: Sequence[str]) -> str:
+    """Warnings as one Rich-markup block: ``Atenção:`` once, then a numbered line each.
+
+    Empty when there is nothing to say. Escaped: a warning carries tickers, and a
+    ``[`` in one would otherwise be read as markup.
+    """
+    if not warnings:
+        return ""
+    numbered = (f"{index}. {escape(warning)}" for index, warning in enumerate(warnings, start=1))
+    return "\n".join(["[yellow]Atenção:[/yellow]", *numbered])
 
 
 # ------------------------------------------------------------------ entrada
