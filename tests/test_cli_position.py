@@ -110,8 +110,8 @@ class TestTableRender:
         out = buffer.getvalue()
         assert "PETR4" in out
         assert "Total investido" in out
-        assert "Fonte(s) de preço: brapi" in out
-        assert "Cotação mais recente" in out
+        assert "Fonte(s): brapi" in out
+        assert "Cotação: " in out
 
     def test_renders_month_profit_income_and_excluded_note(self) -> None:
         buffer = io.StringIO()

@@ -91,13 +91,14 @@ class TestAmount:
             assert app.focused is screen.query_one("#amount", Field).input
 
     @pytest.mark.asyncio
-    async def test_enter_asks_for_the_split_and_shows_the_amount_in_the_header(self, spy: SuggestSpy) -> None:
+    async def test_enter_asks_for_the_split_and_keeps_the_amount_out_of_the_header(self, spy: SuggestSpy) -> None:
+        # O valor ja esta no campo, logo abaixo: no cabecalho so repetiria.
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert spy.amounts == [Decimal("1500")]
-            assert screen.sub_title == "aporte - 1,500.00"
+            assert screen.sub_title == "aporte"
 
     @pytest.mark.asyncio
     async def test_an_invalid_amount_never_reaches_the_service(self, spy: SuggestSpy) -> None:
@@ -106,7 +107,7 @@ class TestAmount:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "0")
             assert spy.amounts == []
-            assert screen.query_one("#amount", Field).error == "Valor do aporte deve ser maior que zero, recebido 0."
+            assert screen.query_one("#amount", Field).error == "Valor disponível deve ser maior que zero, recebido 0."
 
     @pytest.mark.asyncio
     async def test_r_recalculates_the_same_amount(self, spy: SuggestSpy) -> None:
@@ -130,11 +131,11 @@ class TestSplit:
             assert table_columns(screen) == [
                 "Ticker",
                 "Preço",
-                "Valor sugerido",
-                "Qtde papéis",
-                "Custo efetivo",
-                "Peso atual",
+                "Valor",
+                "Qtde",
+                "Custo",
                 "Target",
+                "Peso atual",
                 "Peso após",
                 "Drift após",
             ]
@@ -144,8 +145,8 @@ class TestSplit:
                 "1,010.00",
                 "8",
                 "1,010.00",
-                "26.10%",
                 "30.00%",
+                "26.10%",
                 "28.40%",
                 "-1.60%",
             ]
@@ -167,7 +168,7 @@ class TestSplit:
             await ask(pilot, screen, "1500")
             assert "Alocado 1,499.50" in screen.totals
             assert "Taxa B3 (est.) 0.30" in screen.totals
-            assert "Total 1,499.80" in screen.totals
+            assert "Custo 1,499.80" in screen.totals
             assert "Sobra (caixa) 0.20" in screen.totals
 
     @pytest.mark.asyncio
@@ -189,7 +190,7 @@ class TestSplit:
             screen = await open_screen(pilot, SuggestScreen())
             await ask(pilot, screen, "1500")
             assert screen.totals.splitlines()[0] == (
-                "Alocado 1,499.50   Taxa B3 (est.) 0.30   Total 1,499.80   Sobra (caixa) 0.20"
+                "Alocado 1,499.50   Taxa B3 (est.) 0.30   Custo 1,499.80   Sobra (caixa) 0.20"
             )
             totals = screen.query_one("#suggest-totals")
             assert totals.size.height == 2  # os pares numa linha, a procedencia na outra
@@ -207,6 +208,9 @@ class TestSplit:
             assert screen.note == (
                 "Atenção:\n1. Preços de MUND11, NB1011 definidos pelo usuário\n2. Compra em NB1011 fixada pelo usuário"
             )
+            # Acima dos totais: os avisos dizem como ler os numeros de baixo.
+            note, totals = screen.query_one("#suggest-note"), screen.query_one("#suggest-totals")
+            assert note.region.y < totals.region.y
 
     @pytest.mark.asyncio
     async def test_without_warnings_there_is_no_note(self, spy: SuggestSpy) -> None:
@@ -220,20 +224,6 @@ class TestSplit:
 
 
 class TestHiddenAmounts:
-    @pytest.mark.asyncio
-    async def test_h_also_takes_the_amount_out_of_the_header(self, spy: SuggestSpy) -> None:
-        # O subtitulo carrega o valor do aporte: mascarar a tabela e deixa-lo no
-        # cabecalho esconderia o aporte no lugar menos visivel da tela.
-        app = make_app()
-        async with app.run_test() as pilot:
-            screen = await open_screen(pilot, SuggestScreen())
-            await ask(pilot, screen, "1500")
-            assert screen.sub_title == "aporte - 1,500.00"
-            screen.query_one(DataTable).focus()
-            await pilot.press("h")
-            await pilot.pause()
-            assert screen.sub_title == f"aporte - {MASK}"
-
     @pytest.mark.asyncio
     async def test_h_masks_the_amounts_but_keeps_the_weights(self, spy: SuggestSpy) -> None:
         app = make_app()
@@ -251,8 +241,8 @@ class TestHiddenAmounts:
                 MASK,
                 MASK,
                 MASK,
-                "26.10%",
                 "30.00%",
+                "26.10%",
                 "28.40%",
                 "-1.60%",
             ]
@@ -476,8 +466,8 @@ class TestUnquotedTarget:
                 "-",
                 "-",
                 "-",
-                "0.00%",
                 "60.00%",
+                "0.00%",
                 "0.00%",
                 "-60.00%",
             ]

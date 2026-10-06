@@ -182,9 +182,9 @@ def _totals_markup(snapshot: PortfolioSnapshot) -> str:
     origin = price_provenance((p.price_source, p.as_of) for p in summary.positions)
     provenance = []
     if origin.sources:
-        provenance.append(f"[dim]Fonte(s) de preço[/dim] {', '.join(origin.sources)}")
+        provenance.append(f"[dim]Fonte(s)[/dim] {', '.join(origin.sources)}")
     if origin.latest is not None:
-        provenance.append(f"[dim]Cotação mais recente[/dim] {origin.latest:%Y-%m-%d %H:%M}")
+        provenance.append(f"[dim]Cotação[/dim] {origin.latest:%Y-%m-%d %H:%M}")
     if provenance:
         lines.append("   ".join(provenance))
     return "\n".join(lines)

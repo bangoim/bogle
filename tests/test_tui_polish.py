@@ -15,9 +15,10 @@ from typing import Any
 
 import pytest
 from rich.text import Text
+from textual.coordinate import Coordinate
 from textual.screen import Screen
 from textual.widget import Widget
-from textual.widgets import Checkbox, Footer, Label, Select, Static
+from textual.widgets import Checkbox, DataTable, Footer, Label, Select, Static
 
 from bogle.domain.assets import AssetType
 from bogle.domain.transactions import TransactionType
@@ -377,3 +378,32 @@ class TestHelpDoesNotDisturb:
             await settle(pilot)
             assert isinstance(app.screen, HelpModal)
             assert app.is_running
+
+
+def header_backgrounds(table: DataTable[Any]) -> set[str]:
+    """The background colors the header row is painted with."""
+    return {str(segment.style.bgcolor) for segment in table.render_line(0) if segment.style and segment.text.strip()}
+
+
+class TestTableHeader:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("theme", ["textual-dark", "textual-light", "ansi-dark", "tokyo-night"])
+    @pytest.mark.parametrize("focused", [True, False])
+    async def test_the_header_does_not_light_up_under_the_mouse(self, theme: str, focused: bool) -> None:
+        # O cabecalho nao e clicavel: a tarja que o textual pinta sob o ponteiro
+        # parecia um botao.
+        app = make_app()
+        async with app.run_test(size=(120, 30)) as pilot:
+            app.theme = theme
+            screen = await open_screen(pilot, PositionScreen())
+            table = screen.query_one(DataTable)
+            if focused:
+                table.focus()
+            await pilot.pause()
+            table._show_hover_cursor = True  # pyright: ignore[reportPrivateUsage] — o que o mouse liga
+            table.hover_coordinate = Coordinate(0, 0)
+            await pilot.pause()
+            resting = header_backgrounds(table)
+            table.hover_coordinate = Coordinate(-1, 2)  # linha -1: o cabecalho
+            await pilot.pause()
+            assert header_backgrounds(table) == resting

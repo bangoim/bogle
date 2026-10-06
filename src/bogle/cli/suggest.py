@@ -69,11 +69,11 @@ def _render(suggestion: AporteSuggestion, console: Console) -> None:
     table.add_column("Ticker", style="cyan", no_wrap=True)
     for header in (
         "Preço",
-        "Valor sugerido",
-        "Qtde papéis",
-        "Custo efetivo",
-        "Peso atual",
+        "Valor",
+        "Qtde",
+        "Custo",
         "Target",
+        "Peso atual",
         "Peso após",
         "Drift após",
     ):
@@ -89,8 +89,8 @@ def _render(suggestion: AporteSuggestion, console: Console) -> None:
             money(item.allocation),
             _marked(exact(item.quantity), pinned_quantity),
             _marked(money(item.effective_cost), item.is_pinned and not pinned_quantity),
-            pct(item.current_weight),
             pct(item.target_weight),
+            pct(item.current_weight),
             pct(item.weight_after),
             signed(item.drift_after, percent=True),
         )
@@ -98,7 +98,7 @@ def _render(suggestion: AporteSuggestion, console: Console) -> None:
 
     console.print(
         f"Alocado: {money(suggestion.total_allocated)} / Taxa B3 (est.): {money(suggestion.estimated_fees)}"
-        f" / Total: {money(suggestion.total_with_fees)}"
+        f" / Custo: {money(suggestion.total_with_fees)}"
     )
     console.print(f"Aporte: {money(suggestion.amount)} / Sobra (caixa): {shortfall(suggestion.leftover)}")
     origin = price_provenance((item.price_source, item.as_of) for item in suggestion.items)
@@ -119,7 +119,7 @@ def _marked(text: str, informed: bool) -> str:
 
 
 def suggest(
-    amount: str = typer.Option(..., "--amount", "-a", help="Valor do aporte (ex: 10000)."),
+    amount: str = typer.Option(..., "--amount", "-a", help="Valor disponível para aporte (ex: 10000)."),
     # Repetivel em vez de lista separada por virgula (como --index faz): a virgula
     # tambem e separador decimal, e "VWRA11=114,86" ficaria ambiguo.
     price: list[str] = typer.Option(  # noqa: B008 — padrao do typer, OptionInfo e sentinela imutavel

@@ -59,13 +59,13 @@ from bogle.tui.widgets.form import Field
 _COLUMNS = (
     "Ticker",
     "Preço",
-    "Valor sugerido",
-    "Qtde papéis",
-    "Custo efetivo",
-    # Onde o ticker esta, onde ele deveria estar, onde ele fica depois deste
+    "Valor",
+    "Qtde",
+    "Custo",
+    # Onde o ticker deveria estar, onde ele esta, onde ele fica depois deste
     # aporte e o que ainda falta: sozinho, o peso final nao explica nada.
-    "Peso atual",
     "Target",
+    "Peso atual",
     "Peso após",
     "Drift após",
 )
@@ -113,16 +113,17 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
         yield Header()
         with Vertical(id="suggest"):
             yield Field(
-                "Valor do aporte",
+                "Disponível para aporte",
                 id="amount",
                 placeholder="ex: 1500 (Enter calcula)",
-                validators=[DecimalField("Valor do aporte", positive=True)],
+                validators=[DecimalField("Valor disponível", positive=True)],
             )
             table = DataTable(id="allocation", cursor_type="row", zebra_stripes=True)
             table.add_columns(*_COLUMNS)
             yield table
-            yield Static(id="suggest-totals")
+            # Os avisos antes dos totais: eles dizem como ler os numeros de baixo.
             yield Static(id="suggest-note")
+            yield Static(id="suggest-totals")
         yield Footer()
 
     # --- entrada --------------------------------------------------------
@@ -132,8 +133,7 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
         field = self.query_one("#amount", Field)
         if field.check() is not None:
             return
-        self.amount = parse_decimal(field.value, "Valor do aporte")
-        self.sub_title = _subtitle(self.amount)
+        self.amount = parse_decimal(field.value, "Valor disponível")
         self.fetch()
 
     # --- preco informado -------------------------------------------------
@@ -279,10 +279,6 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
 
     @override
     def render_report(self, report: AporteSuggestion) -> None:
-        # O subtitulo tambem carrega um valor, entao ele e refeito no redraw: sem
-        # isso, ligar a privacidade mascarava a tabela e deixava o aporte no
-        # cabecalho, que e onde ele estava mais visivel.
-        self.sub_title = _subtitle(report.amount)
         table = self.query_one(DataTable)
         # Um p ou um q reordena as linhas (elas vao pelo custo): o cursor segue o
         # ticker, e nao a posicao, para a proxima tecla cair onde se esta olhando.
@@ -295,8 +291,8 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
                 cells.money(item.allocation),
                 _quantity_cell(item),
                 _cost_cell(item),
-                cells.pct(item.current_weight),
                 cells.pct(item.target_weight),
+                cells.pct(item.current_weight),
                 cells.pct(item.weight_after),
                 # Mesma convencao (e mesma cor) do Drift da tela de Posicao.
                 cells.signed(item.drift_after, percent=True),
@@ -311,21 +307,21 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
                 cells.right(fmt.DASH),
                 cells.right(fmt.DASH),
                 cells.right(fmt.DASH),
-                cells.pct(target.current_weight),
                 cells.pct(target.target_weight),
+                cells.pct(target.current_weight),
                 cells.pct(target.weight_after),
                 cells.signed(target.drift_after, percent=True),
                 key=target.ticker,
             )
         if cursor is not None and cursor in table.rows:
             table.move_cursor(row=table.get_row_index(cursor))
-        # O aporte fica fora: ele ja esta no campo e no subtitulo, e o que importa
-        # aqui e o que as compras custam e o que isso deixa em caixa.
+        # O aporte fica fora: ele ja esta no campo, e o que importa aqui e o que
+        # as compras custam e o que isso deixa em caixa.
         self._show_totals(
             [
                 f"[dim]Alocado[/dim] {fmt.money(report.total_allocated)}",
                 f"[dim]Taxa B3 (est.)[/dim] {fmt.money(report.estimated_fees)}",
-                f"[dim]Total[/dim] {fmt.money(report.total_with_fees)}",
+                f"[dim]Custo[/dim] {fmt.money(report.total_with_fees)}",
                 f"[dim]Sobra (caixa)[/dim] {fmt.shortfall(report.leftover)}",
             ],
             _provenance_markup(report),
@@ -350,10 +346,6 @@ class SuggestScreen(DataScreen[AporteSuggestion]):
 def _rows(report: AporteSuggestion) -> list[_Row]:
     """The table's rows, in its order: what the contribution buys, then what it left out."""
     return [*report.items, *report.unquoted]
-
-
-def _subtitle(amount: Decimal) -> str:
-    return f"aporte - {fmt.money(amount)}"
 
 
 def _cursor_key(table: DataTable[object]) -> str | None:

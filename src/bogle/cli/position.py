@@ -118,9 +118,9 @@ def _render(
     console.print(f"Proventos (12m): {signed(income_12m, percent=False)}")
     origin = price_provenance((p.price_source, p.as_of) for p in summary.positions)
     if origin.sources:
-        console.print(f"Fonte(s) de preço: {', '.join(origin.sources)}")
+        console.print(f"Fonte(s): {', '.join(origin.sources)}")
     if origin.latest is not None:
-        console.print(f"Cotação mais recente: {origin.latest:%Y-%m-%d %H:%M}")
+        console.print(f"Cotação: {origin.latest:%Y-%m-%d %H:%M}")
     if excluded:
         console.print(
             f"[yellow]Nota:[/yellow] lucro do mês não considera {with_reasons(excluded, excluded_reasons or {})}."

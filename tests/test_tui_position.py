@@ -215,10 +215,10 @@ class TestTotals:
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_position(pilot)
-            assert "Fonte(s) de preço brapi, calculado" in screen.totals
+            assert "Fonte(s) brapi, calculado" in screen.totals
             # Local, nao UTC: o provedor manda em UTC, e uma cotacao da tarde
             # impressa crua apareceria tres horas no futuro.
-            assert "Cotação mais recente 2026-08-11 15:28" in screen.totals
+            assert "Cotação 2026-08-11 15:28" in screen.totals
 
     @pytest.mark.asyncio
     async def test_excluded_tickers_are_noted(self, monkeypatch: pytest.MonkeyPatch) -> None:

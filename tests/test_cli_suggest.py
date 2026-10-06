@@ -97,7 +97,7 @@ class TestTableRender:
         _render(sample_suggestion(), Console(file=buffer, width=200))
         out = buffer.getvalue()
         assert "VWRA11" in out
-        assert "Alocado: 9,950.50 / Taxa B3 (est.): 2.70 / Total: 9,953.20" in out
+        assert "Alocado: 9,950.50 / Taxa B3 (est.): 2.70 / Custo: 9,953.20" in out
         assert "Aporte: 10,000.00 / Sobra (caixa): 46.80" in out
         assert "Taxa B3 estimada" not in out  # o rotulo (est.) ja diz que e estimativa
         assert "Atenção:\n1. CDB01 é renda fixa privada: registre como novo ativo" in out
@@ -106,8 +106,9 @@ class TestTableRender:
         buffer = io.StringIO()
         _render(sample_suggestion(), Console(file=buffer, width=200))
         out = buffer.getvalue()
-        for header in ("Peso atual", "Target", "Peso após", "Drift após"):
-            assert header in out
+        header = next(line for line in out.splitlines() if "Ticker" in line)
+        order = ["Preço", "Valor", "Qtde", "Custo", "Target", "Peso atual", "Peso após", "Drift após"]
+        assert [header.index(name) for name in order] == sorted(header.index(name) for name in order)
         assert "64.00%" in out  # peso atual do VWRA11
         assert "67.27%" in out  # peso depois do aporte
         assert "-2.73%" in out  # o que ainda falta para o target de 70%
