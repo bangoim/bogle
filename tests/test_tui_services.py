@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -17,6 +18,7 @@ import pytest
 from psycopg import errors as pg_errors
 from psycopg.rows import DictRow
 
+from bogle.backup import DumpFormat
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import (
     AssetHasTransactionsError,
@@ -798,3 +800,15 @@ class TestUpdateSchema:
         monkeypatch.setattr(services, "migrate_if_pending", boom)
         with pytest.raises(pg_errors.SyntaxError):
             services.update_schema()
+
+
+class TestBackup:
+    def test_writes_the_default_backup(
+        self, conn: psycopg.Connection[DictRow], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # bogle_test (o BOGLE_DATABASE_URL da suite), com o schema e vazio.
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        result = services.backup()
+        assert result.path.parent == tmp_path / "bogle" / "backups"
+        assert result.format is DumpFormat.CUSTOM
+        assert result.rows == {"assets": 0, "transactions": 0, "user_settings": 0, "price_history": 0}

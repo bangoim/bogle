@@ -10,6 +10,11 @@ mode. Editing one of those posts :class:`ConfigScreen.PreferenceChanged`, which
 the App applies immediately — a change that only showed up in the next session
 would read as not having worked. It travels as a message instead of a call so the
 screen does not have to import the App that mounts it.
+
+``b`` writes a backup (issue #32), the same file ``bogle backup`` writes. It lives
+here because it is the screen about the database itself, and it is a key rather
+than a screen because there is nothing to fill in. Restore stays in the command:
+the interface is running on the database a restore drops.
 """
 
 from __future__ import annotations
@@ -24,6 +29,8 @@ from textual.containers import Vertical
 from textual.message import Message
 from textual.widgets import DataTable, Footer, Header, Static
 
+from bogle import format as fmt
+from bogle.backup import BackupResult
 from bogle.settings import SettingEntry, format_value
 from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
@@ -43,7 +50,13 @@ class ConfigScreen(DataScreen[list[SettingEntry]]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("e", "edit", "Editar"),
         Binding("d", "reset", "Reverter"),
+        Binding("b", "backup", "Backup"),
     ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.backing_up = False
+        """True while a backup runs: a second ``b`` would start a second dump."""
 
     class PreferenceChanged(Message):
         """A setting the interface reads at startup changed; apply it now."""
@@ -162,6 +175,33 @@ class ConfigScreen(DataScreen[list[SettingEntry]]):
         # A tabela continua valida: so a escrita falhou (valor invalido, banco
         # fora). As linhas ficam, e o toast diz o que houve.
         self.notify(message, title="erro", severity="error", timeout=10, markup=False)
+
+    # --- backup ---------------------------------------------------------
+
+    def action_backup(self) -> None:
+        if self.backing_up:
+            self.notify("backup em andamento; um instante.", severity="warning")
+            return
+        self.backing_up = True
+        self.notify("gravando o backup...", timeout=3)
+        self._backup()
+
+    @work(thread=True, group="backup")
+    def _backup(self) -> None:
+        try:
+            result = services.backup()
+        except HANDLED as exc:
+            self.app.call_from_thread(self._backup_done, None, message_for(exc))
+            return
+        self.app.call_from_thread(self._backup_done, result, "")
+
+    def _backup_done(self, result: BackupResult | None, error: str) -> None:
+        self.backing_up = False
+        if result is None:
+            self.notify(error, title="erro", severity="error", timeout=10, markup=False)
+            return
+        # O caminho inteiro, e nao so o nome: e o que se copia para restaurar.
+        self.notify(f"backup em {result.path} ({fmt.file_size(result.size)})", title="backup", timeout=10, markup=False)
 
 
 def _placeholder(entry: SettingEntry) -> str:
