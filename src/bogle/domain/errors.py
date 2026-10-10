@@ -137,6 +137,13 @@ class UnknownSettingError(BogleError):
         super().__init__(f"Configuração '{key}' não reconhecida. Chaves suportadas: {', '.join(known_keys)}.")
 
 
+class BackupError(BogleError):
+    """A backup or a restore that could not be done: a PostgreSQL client program
+    missing or too old, a file that is not a bogle backup, a dump the database
+    refused. Raised before anything is written, or after a rollback — the message
+    says which."""
+
+
 class MarketDataError(BogleError):
     """Base for failures fetching market data from an external provider.
 

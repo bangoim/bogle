@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from bogle import format as fmt
 from bogle.cli import assets as assets_cli
+from bogle.cli import backup as backup_cli
 from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
 from bogle.cli import dividends as dividends_cli
@@ -57,6 +58,18 @@ app.command("return", help="Rentabilidade da carteira (TWR), opcionalmente vs í
 app.command("compare", help="Comparar a carteira com índices (base 100).")(compare_cli.compare)
 app.command("history", help="Evolução do patrimônio ao longo do tempo.")(history_cli.history)
 app.command("profit", help="Lucro decomposto: ganho de capital + proventos.")(profit_cli.profit)
+
+app.command("backup", help="Gravar um backup do banco (pg_dump), fora do repositório.")(backup_cli.backup)
+app.command("restore", help="Substituir o banco por um backup, tudo ou nada, com confirmação.")(backup_cli.restore_)
+
+_AS_IS = frozenset({"backup", "restore"})
+"""Commands that take the database as it is: no migration before them.
+
+A backup taken after migrating would not be a copy of the database it was asked
+of — and when the migration fails (003 refuses bad rows), there would be no backup
+at all, at the exact moment it is needed. A restore replaces the database whole,
+then migrates the result itself (:func:`bogle.backup.restore`).
+"""
 
 transaction_app = typer.Typer(help="Operações sobre uma transação individual.", no_args_is_help=True)
 transaction_app.command("remove", help="Remover uma transação pelo ID.")(transactions_cli.remove)
@@ -128,6 +141,12 @@ def _main(ctx: typer.Context) -> None:
         from bogle.tui import run_tui  # import tardio: comandos diretos nao pagam pelo textual
 
         run_tui()
+        return
+    if ctx.invoked_subcommand in _AS_IS:
+        # So o formato dos numeros: o lembrete de ciclo vencido seria ruido aqui,
+        # e migrar e justamente o que estes dois nao podem fazer antes de rodar.
+        separator, _ = _read_preferences()
+        fmt.configure(separator)
         return
     _update_schema()
     separator, notice = _read_preferences()

@@ -129,6 +129,16 @@ def run_migrations(database_url: str | None = None) -> None:
         backend.apply_migrations(backend.to_apply(migrations))
 
 
+def known_migrations() -> list[str]:
+    """Ids of the migrations this version of the code ships, in order.
+
+    The ids yoyo records in ``migrations.yoyo_migration`` (the file name without
+    ``.sql``). A database that has applied an id outside this list was migrated by
+    a newer bogle — which is what a restore checks before committing a dump.
+    """
+    return [migration.id for migration in read_migrations(str(_migrations_path()))]
+
+
 def pending_migrations(database_url: str | None = None) -> list[str]:
     """Ids of the migrations on disk that the database has not applied, in order.
 
@@ -141,7 +151,7 @@ def pending_migrations(database_url: str | None = None) -> list[str]:
     """
     if database_url is None:
         database_url = get_database_url()
-    available = [migration.id for migration in read_migrations(str(_migrations_path()))]
+    available = known_migrations()
     with psycopg.connect(database_url, autocommit=True) as conn:
         try:
             rows = conn.execute("SELECT migration_id FROM migrations.yoyo_migration").fetchall()
