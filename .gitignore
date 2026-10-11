@@ -9,3 +9,6 @@ __pycache__/
 # Documentacao de referencia versionada (docs/tax_rules.md etc.)
 !docs/
 !docs/**
+# Backups do banco (bogle backup) gravados dentro do repo por engano
+*.dump
+bogle-*.sql

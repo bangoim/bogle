@@ -23,6 +23,7 @@ from tempfile import gettempdir
 import psycopg
 
 from bogle import charts
+from bogle.backup import BackupResult, create_backup
 from bogle.closeout import ClearedTarget, clear_closed_target
 from bogle.data import default_dispatcher
 from bogle.db import get_connection, migrate_if_pending
@@ -625,3 +626,13 @@ def reset_setting(key: str) -> object:
         return get_setting(conn, key)
     finally:
         conn.close()
+
+
+def backup() -> BackupResult:
+    """``bogle backup`` with no arguments: the default directory, custom format.
+
+    A subprocess plus a file that can take a few seconds on a long price history,
+    hence a service the Config screen calls from a worker. Restore has no service:
+    the interface runs on the database a restore drops (see :mod:`bogle.backup`).
+    """
+    return create_backup()

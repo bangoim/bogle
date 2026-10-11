@@ -5,13 +5,15 @@ reverting to the default, and the three preferences that must take effect at onc
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
 from textual.widgets import DataTable, Input
 
 from bogle import format as fmt
-from bogle.domain.errors import ValidationError
+from bogle.backup import BackupResult, DumpFormat
+from bogle.domain.errors import BackupError, ValidationError
 from bogle.settings import DECIMAL_SEPARATOR, HIDE_VALUES, SETTINGS, THEME
 from bogle.tui import services
 from bogle.tui.app import BogleApp
@@ -252,3 +254,66 @@ class TestAppliedNow:
             assert app.is_running
             assert app.theme == before
             assert toasts.severity_of("não existe nesta versão") == "warning"
+
+
+class TestBackup:
+    @pytest.mark.asyncio
+    async def test_b_writes_a_backup_and_says_where(self, spy: SettingsSpy, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[str] = []
+
+        def backup() -> BackupResult:
+            calls.append("backup")
+            return BackupResult(
+                path=Path("/home/ana/.local/share/bogle/backups/bogle-bogle-2026-10-10-14-05-22.dump"),
+                format=DumpFormat.CUSTOM,
+                size=41234,
+                rows={"assets": 5},
+                database="bogle em localhost",
+            )
+
+        monkeypatch.setattr(services, "backup", backup)
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, ConfigScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_screen(pilot, ConfigScreen())
+            await pilot.press("b")
+            await settle(pilot)
+            assert calls == ["backup"]
+            assert (
+                "backup em /home/ana/.local/share/bogle/backups/bogle-bogle-2026-10-10-14-05-22.dump (41.2 kB)"
+                in toasts.messages
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_failed_backup_is_an_error_toast_and_the_key_works_again(
+        self, spy: SettingsSpy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def backup() -> BackupResult:
+            raise BackupError("pg_dump não encontrado.")
+
+        monkeypatch.setattr(services, "backup", backup)
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, ConfigScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, ConfigScreen())
+            await pilot.press("b")
+            await settle(pilot)
+            assert toasts.severity_of("pg_dump não encontrado") == "error"
+            assert not screen.backing_up
+            assert app.is_running
+
+    @pytest.mark.asyncio
+    async def test_a_second_b_while_writing_does_not_start_another(
+        self, spy: SettingsSpy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, ConfigScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, ConfigScreen())
+            screen.backing_up = True  # um backup em voo
+            await pilot.press("b")
+            await settle(pilot)
+            assert toasts.severity_of("backup em andamento") == "warning"

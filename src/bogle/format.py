@@ -171,6 +171,26 @@ def exact_or_none(value: Decimal | None) -> str | None:
     return format(value.normalize(), "f") if value is not None else None
 
 
+def count(value: int) -> str:
+    """How many of something: ``1234`` -> ``"1,234"``.
+
+    Never masked: a number of rows or transactions says nothing about how much
+    money they hold.
+    """
+    return _localized(f"{value:,}")
+
+
+_SIZE_UNITS = (("GB", 10**9), ("MB", 10**6), ("kB", 10**3))
+
+
+def file_size(n_bytes: int) -> str:
+    """A file size in decimal units, one place: ``41234`` -> ``"41.2 kB"``."""
+    for unit, scale in _SIZE_UNITS:
+        if n_bytes >= scale:
+            return f"{_localized(f'{Decimal(n_bytes) / scale:.1f}')} {unit}"
+    return f"{n_bytes} B"
+
+
 def sign_color(value: Decimal) -> str:
     """``"green"`` for gains (and zero), ``"red"`` for losses."""
     return "green" if value >= 0 else "red"

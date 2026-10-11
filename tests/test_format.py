@@ -21,8 +21,10 @@ from bogle.format import (
     amounts_hidden,
     attention,
     configure,
+    count,
     exact,
     exact_or_none,
+    file_size,
     hide_amounts,
     money,
     pct,
@@ -125,6 +127,34 @@ class TestRate:
         hide_amounts(True)
         assert rate(Decimal("1.10")) == "1.1"
         assert exact(Decimal("1.10")) == MASK  # a quantidade, sim
+
+
+class TestCountAndSize:
+    def test_count_is_grouped_and_follows_the_separator(self, comma: None) -> None:
+        assert count(5) == "5"
+        assert count(1234567) == "1.234.567"
+
+    def test_count_is_not_masked(self) -> None:
+        # Quantas linhas um backup tem nao diz quanto dinheiro ha nelas.
+        hide_amounts(True)
+        assert count(773) == "773"
+
+    @pytest.mark.parametrize(
+        ("n_bytes", "expected"),
+        [
+            (0, "0 B"),
+            (999, "999 B"),
+            (1000, "1.0 kB"),
+            (41234, "41.2 kB"),
+            (8_438_000, "8.4 MB"),
+            (2 * 10**9, "2.0 GB"),
+        ],
+    )
+    def test_file_size_in_decimal_units(self, n_bytes: int, expected: str) -> None:
+        assert file_size(n_bytes) == expected
+
+    def test_file_size_follows_the_separator(self, comma: None) -> None:
+        assert file_size(41234) == "41,2 kB"
 
 
 class TestPoints:

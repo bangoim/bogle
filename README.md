@@ -13,6 +13,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **No-sell rebalancing** — `bogle suggest` splits a contribution across the laggards (whole shares for variable income, exact values for fixed income); `bogle status` tracks the evaluation cycle (6 or 12 months).
 - **Reports** — `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
+- **Backup and restore** — `bogle backup` writes the whole database to a file outside the repository; `bogle restore` puts it back, all or nothing, after a safety backup. See [Backup and restore](#backup-and-restore).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices from Tesouro Transparente, cached on disk. Private fixed income is marked to present value.
 - **Brazilian taxes** — income tax per operation and regressive IOF on fixed-income redemptions.
 
@@ -28,6 +29,11 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 brew install postgresql@18
 brew services start postgresql@18
 ```
+
+`postgresql@18` is keg-only: `createdb`, `psql` and `pg_dump` stay out of the
+PATH until `brew link postgresql@18` (or until you add
+`$(brew --prefix postgresql@18)/bin` to it). `bogle backup` and `bogle restore`
+look there on their own.
 
 **Linux (Debian/Ubuntu):**
 
@@ -83,7 +89,8 @@ says so when it did. See [Schema migrations](#schema-migrations) below.
 
 `bogle` with no arguments opens a full-screen interface in the terminal; every
 command keeps working exactly as before when given directly. Both are frontends
-over the same data — nothing is exclusive to one of them:
+over the same data, and only two things are exclusive to the commands (see
+below):
 
 ```bash
 bogle             # opens the interface
@@ -94,9 +101,10 @@ bogle --help      # still the help
 
 The interface covers **every command** — registering operations without
 memorizing flags (guided forms with validation as you type), the position,
-reports with charts, assets, contributions, the rebalance cycle and the settings.
-Use the direct commands for one-shot answers and for scripting (`--json`, which
-is CLI-only).
+reports with charts, assets, contributions, the rebalance cycle, the settings and
+the backup. Use the direct commands for one-shot answers and for scripting
+(`--json`, which is CLI-only). `bogle restore` is CLI-only too: the interface
+runs on the database a restore replaces.
 
 Piping or redirecting (`bogle | cat`) prints the help instead of opening the
 interface, since a full-screen interface needs a real terminal.
@@ -147,7 +155,7 @@ arrives as a notification here instead of a line on stderr.
 | Relatórios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
 | Ativos | List with the fixed-income metadata + forms; `a` registers, `u` changes weight/type, `d` removes | `bogle list` / `add` / `update` / `remove` |
 | Status (`s`) | The rebalance cycle: period, last and next evaluation | `bogle status` |
-| Config (`c`) | Every setting, editable in place (`e`) or back to its default (`d`) | `bogle config list` / `set` / `unset` |
+| Config (`c`) | Every setting, editable in place (`e`) or back to its default (`d`); `b` writes a backup | `bogle config list` / `set` / `unset`, `bogle backup` |
 
 The last two are footer shortcuts instead of menu items — they are the screens
 you consult now and then, and the menu is what decides how tall the home screen
@@ -619,11 +627,66 @@ which provider wrote it (`source`) and the day it was last loaded or confirmed
 > historical Tesouro prices (the direct API is behind a bot challenge; only the
 > current snapshot is available). Variable income and private fixed income do have TWR.
 
+### Backup and restore
+
+```bash
+bogle backup                          # ~/.local/share/bogle/backups/bogle-bogle-2026-10-10-14-05-22.dump
+bogle backup --output ~/Drive/        # a directory (fresh name inside) or a file
+bogle backup --format plain           # .sql you can read, instead of the compressed .dump
+bogle backup --json                   # path, format, size and rows, for scripts
+
+bogle restore ~/Drive/bogle-bogle-2026-10-10-14-05-22.dump
+bogle restore backup.dump --force     # no confirmation
+```
+
+**What a backup holds:** the whole database — the assets, the ledger, the
+settings, the stored daily closes (`price_history`) and the migration
+bookkeeping. The closes are kept on purpose: they look like a cache, but brapi
+only corrects the last 30 sessions and Yahoo skips some, so loading them again
+would not give back the same table. Two things stay out: your `.env`
+(`BRAPI_TOKEN`) and `~/.cache/bogle` (quotes and macro series, which rebuild
+themselves).
+
+The file goes to `~/.local/share/bogle/backups/` (`$XDG_DATA_HOME` if set),
+readable only by you, never to the current directory: that is usually this
+repository, and the repository is public. It is written under a temporary name
+and only takes its real one after `pg_dump` finished and the file checked out
+(`pg_restore --list` for `.dump`, the closing line for `.sql`). The output says
+how many rows of each table went in. The `b` key on the Config screen writes the
+same file.
+
+**A restore replaces, it never merges.** It asks first (database, file, and what
+is about to be replaced), then writes a safety backup of the current database
+next to the others (`bogle-<db>-pre-restore-<time>.dump`; `--no-safety-backup`
+skips it), then empties the database and replays the file in **one
+transaction**. That transaction only commits if the result is a bogle database
+this version knows — so a corrupt file, a dump of some other database, a backup
+taken by a **newer** bogle, or another session holding the tables all end in a
+rollback, with the database exactly as it was. A backup from an **older** bogle
+is migrated forward right after, with the usual `aviso: banco de dados
+atualizado`. The format is read from the file itself, so a renamed file
+restores all the same.
+
+Close the interface in other terminals before restoring: the restore waits five
+seconds for their locks and then gives up.
+
+**Moving to another machine:** install PostgreSQL there, `createdb bogle`, copy
+the file, `bogle restore <file>`. A fresh database has nothing to replace, so no
+safety backup is written for it.
+
+Both commands run the PostgreSQL client programs (`pg_dump`, `pg_restore`,
+`psql`), which must be at least the server's major version — an older `pg_dump`
+refuses to read a newer server. `bogle` looks for them in `BOGLE_PG_BIN` (a
+directory, when set), then the PATH, then where Homebrew, Postgres.app and
+Debian put them; the error says which one was found and why it was not used.
+Neither command migrates the database before running: a backup copies the
+database as it is, and a restore replaces it whole.
+
 ## Schema migrations
 
 Schema changes live in `src/bogle/migrations/` as numbered SQL files (`001_initial.sql`, `002_*.sql`, ...). They are applied by `yoyo-migrations`, which records progress in the `migrations.yoyo_migration` table on the database side.
 
-Pending migrations are applied automatically: every start of `bogle` (a command or the interactive mode) compares the files on disk with that table — a single query, about 2 ms on a local server — and runs yoyo only when something is missing. When it does, the CLI prints `aviso: banco de dados atualizado: <ids>.` on stderr and the TUI shows the same line as a toast. A brand-new database is initialised the same way on first use.
+Pending migrations are applied automatically: every start of `bogle` (a command or the interactive mode) compares the files on disk with that table — a single query, about 2 ms on a local server — and runs yoyo only when something is missing. When it does, the CLI prints `aviso: banco de dados atualizado: <ids>.` on stderr and the TUI shows the same line as a toast. A brand-new database is initialised the same way on first use. `bogle backup` and `bogle restore` are the two exceptions (see [Backup and restore](#backup-and-restore)).
 
 To apply them by hand (a script, a CI job):
 
