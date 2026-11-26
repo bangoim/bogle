@@ -197,10 +197,11 @@ bogle add VTI --weight 0.4              # --type STOCK is the default
 bogle add MXRF11 --type FII --weight 0.1
 ```
 
-Tesouro Direto (`TESOURO`) requires indexer, rate and both dates:
+Tesouro Direto (`TESOURO`) requires indexer, rate and both dates. Its ticker
+must be the title name as published by Tesouro Transparente, and `add` checks it:
 
 ```bash
-bogle add TESOURO-IPCA-2035 --type TESOURO --weight 0.2 \
+bogle add "Tesouro IPCA+ 2035" --type TESOURO --weight 0.2 \
   --indexer IPCA+ --rate 0.065 \
   --purchase-date 2026-01-10 --maturity-date 2035-05-15
 ```
@@ -223,7 +224,7 @@ bogle add CAIXINHA-NU --type CAIXINHA --weight 0.05 \
 Prefixed instruments (fixed rate) use `--prefixed` instead of `--indexer`:
 
 ```bash
-bogle add TESOURO-PRE-2029 --type TESOURO --weight 0.1 \
+bogle add "Tesouro Prefixado 2029" --type TESOURO --weight 0.1 \
   --prefixed --rate 0.12 \
   --purchase-date 2026-01-10 --maturity-date 2029-01-01
 ```
