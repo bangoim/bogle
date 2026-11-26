@@ -14,6 +14,7 @@ from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
 from bogle.cli import dividends as dividends_cli
 from bogle.cli import history as history_cli
+from bogle.cli import import_ as import_cli
 from bogle.cli import position as position_cli
 from bogle.cli import profit as profit_cli
 from bogle.cli import returns as returns_cli
@@ -61,6 +62,9 @@ app.command("profit", help="Lucro decomposto: ganho de capital + proventos.")(pr
 
 app.command("backup", help="Gravar um backup do banco (pg_dump), fora do repositório.")(backup_cli.backup)
 app.command("restore", help="Substituir o banco por um backup, tudo ou nada, com confirmação.")(backup_cli.restore_)
+app.command("import", help="Importar compras e vendas do extrato de Negociação da B3 (.xlsx), com prévia.")(
+    import_cli.import_
+)
 
 _AS_IS = frozenset({"backup", "restore"})
 """Commands that take the database as it is: no migration before them.

@@ -107,3 +107,14 @@ def parse_date(value: str, option: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE))
     return parsed
+
+
+def parse_fee_rate(value: str, option: str) -> Decimal:
+    """Parse a fee rate: a fraction of the traded amount in ``[0, 1)`` (``0.00032`` = 0,032%).
+
+    Zero is accepted and means no fee, the same as leaving the option out.
+    """
+    rate = parse_decimal(value, option)
+    if not (Decimal("0") <= rate < Decimal("1")):
+        raise ValidationError(f"{option} deve estar em [0, 1), recebido {rate}.")
+    return rate

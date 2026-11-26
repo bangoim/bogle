@@ -8,7 +8,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bogle.cli.parsing import parse_date, parse_decimal, parse_rate, parse_ticker_values, parse_weight
+from bogle.cli.parsing import (
+    parse_date,
+    parse_decimal,
+    parse_fee_rate,
+    parse_rate,
+    parse_ticker_values,
+    parse_weight,
+)
 from bogle.domain.errors import ValidationError
 
 
@@ -54,6 +61,17 @@ class TestParseRate:
         # estouraria com NumericValueOutOfRange cru.
         with pytest.raises(ValidationError, match=r"--rate deve estar em \(0, 10000\)"):
             parse_rate(value, "--rate")
+
+
+class TestParseFeeRate:
+    @pytest.mark.parametrize(("value", "expected"), [("0.00032", "0.00032"), ("0,00032", "0.00032"), ("0", "0")])
+    def test_a_fraction_in_zero_to_one(self, value: str, expected: str) -> None:
+        assert parse_fee_rate(value, "--fee-rate") == Decimal(expected)
+
+    @pytest.mark.parametrize("value", ["1", "-0.0001", "32"])
+    def test_out_of_range(self, value: str) -> None:
+        with pytest.raises(ValidationError, match=r"--fee-rate deve estar em \[0, 1\)"):
+            parse_fee_rate(value, "--fee-rate")
 
 
 class TestParseWeight:
