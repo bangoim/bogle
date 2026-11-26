@@ -17,6 +17,7 @@ from bogle.domain.validation import validate_asset_metadata, validate_type_chang
 from bogle.rebalancing import weight_sum_notice
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
+from bogle.tesouro_title import check_tesouro_title
 
 
 def _parse_provided[T](
@@ -111,6 +112,11 @@ def add(
         ),
         extra_errors=parse_errors,
     )
+    # O ticker de um TESOURO e o nome do titulo: so assim a Posicao o precifica (#93).
+    # O vencimento e obrigatorio para TESOURO, entao a validacao acima ja o garantiu.
+    title_warning = None
+    if asset_type is AssetType.TESOURO and metadata.maturity_date is not None:
+        title_warning = check_tesouro_title(ticker, metadata.maturity_date)
     conn = get_connection()
     try:
         asset = AssetRepository(conn).add(
@@ -128,6 +134,8 @@ def add(
     finally:
         conn.close()
     typer.echo(f"asset {asset.ticker} ({asset.asset_type}) adicionado com peso {asset.target_weight:.2%}.")
+    if title_warning is not None:
+        typer.echo(f"aviso: {title_warning}", err=True)
 
 
 def update(

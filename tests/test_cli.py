@@ -11,9 +11,12 @@ from zoneinfo import ZoneInfo
 import psycopg
 import pytest
 from psycopg.rows import DictRow
+from typer.testing import CliRunner
 
+from bogle.cli import app
 from bogle.domain.assets import AssetType, Indexer
 from bogle.repositories.assets import AssetRepository
+from tests.tesouro_fakes import FakeTitles
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BOGLE_BIN = PROJECT_ROOT / ".venv" / "bin" / "bogle"
@@ -204,27 +207,34 @@ def test_add_cdb_full_metadata(conn: psycopg.Connection[DictRow]) -> None:
     assert asset.maturity_date == datetime(2027, 4, 1, tzinfo=SAO_PAULO)
 
 
-def test_add_tesouro_prefixado(conn: psycopg.Connection[DictRow]) -> None:
-    result = run_cli(
-        "add",
-        "TESOURO-PRE-2029",
-        "--type",
-        "TESOURO",
-        "--weight",
-        "0.2",
-        "--prefixed",
-        "--rate",
-        "0.12",
-        "--purchase-date",
-        "2026-01-10",
-        "--maturity-date",
-        "2029-01-01",
+def test_add_tesouro_prefixado(conn: psycopg.Connection[DictRow], monkeypatch: pytest.MonkeyPatch) -> None:
+    # Em processo, com a lista de titulos injetada: o subprocesso baixaria o CSV do
+    # Tesouro Transparente (o ticker de um TESOURO e conferido contra ele, #93).
+    monkeypatch.setattr("bogle.tesouro_title.default_source", FakeTitles)
+    result = CliRunner().invoke(
+        app,
+        [
+            "add",
+            "Tesouro Prefixado 2029",
+            "--type",
+            "TESOURO",
+            "--weight",
+            "0.2",
+            "--prefixed",
+            "--rate",
+            "0.12",
+            "--purchase-date",
+            "2026-01-10",
+            "--maturity-date",
+            "2029-01-01",
+        ],
     )
-    assert result.returncode == 0
-    assert "TESOURO-PRE-2029" in result.stdout
+    assert result.exit_code == 0, result.output
+    assert "TESOURO PREFIXADO 2029" in result.stdout
 
-    asset = AssetRepository(conn).get("TESOURO-PRE-2029")
+    asset = AssetRepository(conn).get("Tesouro Prefixado 2029")
     assert asset is not None
+    assert asset.ticker == "TESOURO PREFIXADO 2029"
     assert asset.asset_type == AssetType.TESOURO
     assert asset.is_prefixed is True
     assert asset.indexer is None
@@ -281,25 +291,30 @@ def test_add_explicit_no_prefixed_requires_indexer() -> None:
     assert "--indexer é obrigatório para CDB pós-fixado" in result.stderr
 
 
-def test_add_type_and_indexer_are_case_insensitive() -> None:
-    result = run_cli(
-        "add",
-        "TES-IPCA-2035",
-        "--type",
-        "tesouro",
-        "--indexer",
-        "ipca+",
-        "--weight",
-        "0.1",
-        "--rate",
-        "0.065",
-        "--purchase-date",
-        "2026-01-10",
-        "--maturity-date",
-        "2035-05-15",
+def test_add_type_and_indexer_are_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Em processo, com a lista de titulos injetada (o ticker de um TESOURO e conferido, #93).
+    monkeypatch.setattr("bogle.tesouro_title.default_source", FakeTitles)
+    result = CliRunner().invoke(
+        app,
+        [
+            "add",
+            "Tesouro IPCA+ 2035",
+            "--type",
+            "tesouro",
+            "--indexer",
+            "ipca+",
+            "--weight",
+            "0.1",
+            "--rate",
+            "0.065",
+            "--purchase-date",
+            "2026-01-10",
+            "--maturity-date",
+            "2035-05-15",
+        ],
     )
-    assert result.returncode == 0
-    assert "TES-IPCA-2035" in result.stdout
+    assert result.exit_code == 0, result.output
+    assert "TESOURO IPCA+ 2035" in result.stdout
 
 
 def test_add_missing_fields_listed_all_at_once() -> None:

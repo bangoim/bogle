@@ -16,6 +16,7 @@ from bogle.tui import services
 from bogle.tui.screens.assets import AssetFormScreen, AssetsScreen, AssetUpdateScreen
 from bogle.tui.screens.modals import ConfirmModal
 from bogle.tui.widgets.form import Field
+from tests.tesouro_fakes import FakeTitles
 from tests.tui_fakes import (
     ToastSpy,
     make_app,
@@ -140,7 +141,7 @@ class TestList:
     async def test_a_prefixed_instrument_says_so_in_the_indexer_column(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stub_services(monkeypatch)
         prefixed = make_asset(
-            ticker="TESOURO-PRE-2029",
+            ticker="TESOURO PREFIXADO 2029",
             asset_type=AssetType.TESOURO,
             target_weight=Decimal("0.1"),
             rate=Decimal("0.12"),
@@ -431,7 +432,7 @@ class TestRegistering:
             await pilot.pause()
             screen.query_one("#prefixed", Checkbox).value = True
             await pilot.pause()
-            screen.field("ticker").set_value("TESOURO-PRE-2029")
+            screen.field("ticker").set_value("Tesouro Prefixado 2029")
             screen.field("weight").set_value("0.1")
             screen.field("rate").set_value("0.12")
             screen.field("purchase-date").set_value("2026-01-10")
@@ -443,6 +444,71 @@ class TestRegistering:
             written = spy.added[-1]
             assert written["is_prefixed"] is True
             assert written["indexer"] is None
+
+    async def _fill_tesouro(self, pilot: Any, ticker: str) -> AssetFormScreen:
+        screen = await open_screen(pilot, AssetFormScreen())
+        screen.query_one("#asset-type", Select).value = AssetType.TESOURO
+        await pilot.pause()
+        screen.query_one("#prefixed", Checkbox).value = True
+        await pilot.pause()
+        screen.field("ticker").set_value(ticker)
+        screen.field("weight").set_value("0.1")
+        screen.field("rate").set_value("0.12")
+        screen.field("purchase-date").set_value("2026-01-10")
+        screen.field("maturity-date").set_value("2035-05-15")
+        await pilot.press("ctrl+s")
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        return screen
+
+    @pytest.mark.asyncio
+    async def test_a_tesouro_written_by_its_title_name_is_saved_without_a_warning(
+        self, spy: AssetsSpy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("bogle.tesouro_title.default_source", FakeTitles)
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, AssetFormScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await self._fill_tesouro(pilot, "Tesouro IPCA+ 2035")
+            assert spy.added[-1]["ticker"] == "TESOURO IPCA+ 2035"
+            assert toasts.severity_of("cadastrado") == "information"
+            assert [severity for _, severity in toasts.calls] == ["information"]
+
+    @pytest.mark.asyncio
+    async def test_a_tesouro_that_is_not_a_title_is_refused_with_the_titles_of_the_year(
+        self, spy: AssetsSpy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("bogle.tesouro_title.default_source", FakeTitles)
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, AssetFormScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await self._fill_tesouro(pilot, "TESOURO-IPCA-2035")
+            assert spy.added == []
+            assert toasts.calls == [
+                (
+                    "'TESOURO-IPCA-2035' não é um título do Tesouro Transparente. "
+                    "Títulos com vencimento em 2035: Tesouro IPCA+ 2035, Tesouro IPCA+ com Juros Semestrais 2035.",
+                    "error",
+                )
+            ]
+            # Segue no formulario, com o que foi digitado.
+            assert app.screen is screen
+            assert screen.field("ticker").value == "TESOURO-IPCA-2035"
+
+    @pytest.mark.asyncio
+    async def test_a_tesouro_is_saved_with_a_warning_when_the_titles_cannot_be_listed(
+        self, spy: AssetsSpy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, AssetFormScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await self._fill_tesouro(pilot, "TESOURO-IPCA-2035")
+            assert spy.added[-1]["ticker"] == "TESOURO-IPCA-2035"
+            assert toasts.severity_of("não foi possível conferir o nome de 'TESOURO-IPCA-2035'") == "warning"
 
     @pytest.mark.asyncio
     async def test_an_invalid_weight_never_reaches_the_service(self, spy: AssetsSpy) -> None:

@@ -68,6 +68,7 @@ from bogle.settings import (
     set_value,
     unset_setting,
 )
+from bogle.tesouro_title import check_tesouro_title as _check_tesouro_title
 
 _ZERO = Decimal("0")
 
@@ -522,6 +523,17 @@ def add_asset(
         )
     finally:
         conn.close()
+
+
+def check_tesouro_title(ticker: str, maturity_date: datetime) -> str | None:
+    """Refuse a TESOURO ticker that is not a published title; a warning when unchecked.
+
+    The same check ``bogle add`` runs (:func:`bogle.tesouro_title.check_tesouro_title`).
+    It is a service of its own, called by the form before :func:`add_asset`, so the
+    warning of an unchecked name reaches the screen without changing what
+    ``add_asset`` returns.
+    """
+    return _check_tesouro_title(ticker, maturity_date)
 
 
 def update_asset(*, ticker: str, target_weight: Decimal | None = None, asset_type: AssetType | None = None) -> Asset:
