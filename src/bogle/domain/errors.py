@@ -144,6 +144,19 @@ class BackupError(BogleError):
     says which."""
 
 
+class ImportFileError(BogleError):
+    """A file ``bogle import`` cannot read: not an xlsx, or not a B3 statement it
+    knows. Raised before any row is read, so nothing was planned or written."""
+
+
+class ImportStaleError(BogleError):
+    """The ledger changed between the preview and the write: the plan shown is no
+    longer what would be written, so nothing is."""
+
+    def __init__(self) -> None:
+        super().__init__("o ledger mudou desde a prévia: nada foi gravado.")
+
+
 class MarketDataError(BogleError):
     """Base for failures fetching market data from an external provider.
 
