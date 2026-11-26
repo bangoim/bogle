@@ -9,6 +9,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Two frontends** — `bogle` with no arguments opens an interactive full-screen interface covering every command (guided forms, tables and charts); `bogle <command>` runs the same operations non-interactively. See [Interactive mode](#interactive-mode).
 - **Portfolio registry** — assets with target weights; the total can never exceed 100%.
 - **Transaction ledger** — buys, sells and income (dividends, JCP, FII distributions, interest), with fees and tax withheld.
+- **B3 import** — `bogle import` reads the purchases and sales of the B3's Negociação statement (the `.xlsx` as downloaded), previews them and writes them all or nothing, skipping what the ledger already has. See [Importing B3 statements](#importing-b3-statements).
 - **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker, plus the portfolio totals, the month profit and income received (12m).
 - **No-sell rebalancing** — `bogle suggest` splits a contribution across the laggards (whole shares for variable income, exact values for fixed income); `bogle status` tracks the evaluation cycle (6 or 12 months).
 - **Reports** — `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
@@ -123,7 +124,7 @@ interface, since a full-screen interface needs a real terminal.
  ╰─────────────────────────────────────────────────────────────────────────────╯
  ╭─ Menu ──────────────────────────────────────────────────────────────────────╮
  │ 1  Posição     preços ao vivo, pesos e drift                                │
- │ 2  Registrar   compra, venda ou provento                                    │
+ │ 2  Registrar   compra, venda, provento ou importação                        │
  │ 3  Transações  listar e remover lançamentos                                 │
  │ 4  Aporte      como dividir para reduzir o drift                            │
  │ 5  Relatórios  rentabilidade, histórico, proventos                          │
@@ -149,7 +150,7 @@ arrives as a notification here instead of a line on stderr.
 | Screen | What it covers | Equivalent commands |
 |--------|----------------|---------------------|
 | Posição | Priced table (average price, quote, weight, drift, PnL, TWR) + totals; `r` refetches, `p` toggles the no-prices view | `bogle position` |
-| Registrar | Guided forms for buy, sell and income, with a confirmation summary; a sale starts from the list of open positions and can be zeroed with `Vender tudo` | `bogle buy` / `sell` / `income` |
+| Registrar | Guided forms for buy, sell and income, with a confirmation summary; a sale starts from the list of open positions and can be zeroed with `Vender tudo`; `Importar` previews and imports a B3 statement | `bogle buy` / `sell` / `income` / `import` |
 | Transações | Ledger with a ticker filter; `d` removes the selected row after confirming | `bogle transactions`, `bogle transaction remove` |
 | Aporte | Amount → suggested split; `p` sets the price of a limit order, `q` pins a ticker's purchase; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
 | Relatórios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
@@ -300,6 +301,102 @@ equal to the invested amount. A full redemption is a SELL with
 bogle buy CDB-XP-2027 --shares 1 --price 5000 --date 2026-04-01
 bogle sell CDB-XP-2027 --all --price 5310 --date 2027-04-01   # resgate total
 ```
+
+### Importing B3 statements
+
+`bogle import` reads the purchases and sales of the B3's **Negociação**
+statement into the ledger, dated on the trade date (midnight, America/Sao_Paulo).
+
+```bash
+bogle import ~/Downloads/negociacao.xlsx --dry-run          # the report only, nothing written
+bogle import ~/Downloads/negociacao.xlsx                    # the report, then "Importar N operações? [s/N]"
+bogle import ~/Downloads/negociacao.xlsx --fee-rate 0.00032 # fees per execution, see below
+bogle import ~/Downloads/negociacao.xlsx --replace         # swap days whose value differs for the B3's rows
+```
+
+**Where to get the file:** [investidor.b3.com.br](https://www.investidor.b3.com.br)
+→ Extratos → Negociação → pick the period → download → Excel. Import the `.xlsx`
+exactly as downloaded: no spreadsheet program is needed, and a `.csv`, an old
+`.xls` or any other file is refused before a single row is read, by its content
+and not by its name. A file opened and saved again in Excel still works (dates
+become serial numbers, numbers pick up float noise, and both are read back). The
+Movimentação statement is recognized by its header and refused for now: income
+and corporate events have their own import coming (#92).
+
+The report comes before anything is written, and is the same with `--dry-run`:
+
+```text
+Atenção:
+1. Novas: 13 (AUVP11 2, B5P211 7, MUND11 2, NB1011 2)
+2. Total do dia diverge do ledger: VWRA11 (2026-01-09 compra: arquivo 72 × ledger 70)
+3. Posição zerada com target: AUVP11 20,00% (bogle update AUVP11 --weight 0 tira do plano)
+4. 13 operações importadas sem taxas
+5. 2 vendas importadas sem IR retido
+```
+
+**What goes in:** every `Compra`/`Venda` row of `Mercado à Vista` and of `Renda
+Fixa` (fixed-income ETFs come under that market), one transaction per execution,
+with the quantity and the price of the file. Everything is written in **one
+transaction**, so a failure halfway leaves the ledger as it was; and if the
+ledger changed between the report and the `s`, nothing is written either.
+
+**Importing twice is safe.** Rows and ledger are compared by the **total
+quantity of each day**, per ticker and per purchase/sale: a day the ledger
+already has is a duplicate, whether it came from an earlier import or was typed
+by hand — including an order you recorded as one line of 18 that the B3 lists as
+two executions of 5 and 13. A day the ledger does not have goes in.
+
+**Same quantity, another value.** When that consolidated order was typed with a
+rounded average price (18 at 106,68 against 5 at 106,70 + 13 at 106,67), the
+day's value differs by a few cents. It still counts as a duplicate, and the
+report names it (`Valor do dia difere do ledger: VWRA11 (2026-01-09 compra:
+arquivo 1.920,21 × ledger 1.920,24)`). With `--replace` the ledger rows of that
+day are removed and the B3's executions written in their place, in the same
+transaction as the rest and after the same single confirmation. The fees and the
+tax withheld you had recorded for the day are split by the value of each
+execution, rounded to the cent with the remainder on the last one (0,63 becomes
+0,18 + 0,45), so the day's totals do not change; `--fee-rate` does not apply to
+these rows. The report says what was swapped (`Substituídas: 1 (VWRA11
+2026-01-09 compra: 1 → 2 lançamentos)`), and importing again afterwards finds
+nothing new. A day whose *quantity* differs is never replaced.
+
+**A ticker goes in whole or not at all**, and the report says why one stayed out:
+
+- **not registered** — the type decides the income tax and cannot be guessed from
+  the ticker, so register it first (`bogle add XXXX11 --type ETF --weight 0.1`)
+  and import again;
+- **the day's total differs from the ledger** — the file and what you typed
+  disagree, and only you know which is right: fix the ledger (`bogle
+  transaction remove`, then `buy`/`sell`) and import again;
+- **a sale larger than the position of its day** — the history before the
+  statement is missing. The Negociação statement only goes back to November
+  2019: record the opening position with `bogle buy ... --date` and import again;
+- **a row that could not be read** — reported with its row number in the file.
+
+**What stays out:** rows of any other market (`Mercado Fracionário`, options,
+forward), counted by market in the report. Fractional trades come with a ticker
+suffix that a real export has not confirmed yet; if you traded there, the sale
+check names the ticker whose sale is left uncovered. Tesouro Direto and fixed
+income outside the exchange are not in this statement at all.
+
+**Fees and taxes:** the statement has neither brokerage nor B3 fees, so rows go
+in with **zero fees** and the report says so once. `--fee-rate` charges each
+execution `quantity × price × rate`, rounded up to the cent — the same rule as
+the B3 fee estimate in `bogle suggest`; `0.00032` is the auction rate it uses.
+Fees are part of the average cost, so prefer the real numbers of the brokerage
+note when you have them. Sales go in with no income tax withheld, also said in
+the report.
+
+**Targets are never changed.** A sale that empties a position does not clear its
+target here (the same file may buy the ticker again later); the tickers this
+import leaves at zero with a target are listed, with the command that takes them
+out of the plan.
+
+In [interactive mode](#interactive-mode) the same import is **Registrar → 4
+Importar**: type (or drag from the Finder) the path, optionally the fee rate,
+check `Substituir divergentes` for what `--replace` does, press `Enter` for the
+preview — a table with one row per ticker and the same
+report — and then `Importar`.
 
 ### Viewing your position
 
