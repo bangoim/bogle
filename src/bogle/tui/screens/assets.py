@@ -184,6 +184,11 @@ class AssetFormScreen(WriteScreen[Asset]):
     CONFIRM_LABEL = "Cadastrar"
     WRITING_MESSAGE = "cadastrando o ativo; um instante."
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._notice: str | None = None
+        """Warning about the last write (a TESOURO name that could not be checked)."""
+
     @override
     def compose(self) -> ComposeResult:
         yield Header()
@@ -344,6 +349,12 @@ class AssetFormScreen(WriteScreen[Asset]):
 
     @override
     def write(self, entry: Entry) -> Asset:
+        self._notice = None
+        # O ticker de um TESOURO e o nome do titulo: so assim a Posicao o precifica
+        # (#93). Recusado, nada e gravado e o formulario segue preenchido. O
+        # vencimento ja e obrigatorio para TESOURO, entao `collect` o trouxe.
+        if entry["asset_type"] is AssetType.TESOURO:
+            self._notice = services.check_tesouro_title(entry["ticker"], entry["maturity_date"])
         return services.add_asset(**entry)
 
     @override
@@ -353,6 +364,8 @@ class AssetFormScreen(WriteScreen[Asset]):
             title="pronto",
             markup=False,
         )
+        if self._notice is not None:
+            self.notify(self._notice, title="aviso", severity="warning", timeout=12, markup=False)
         self.dismiss()
 
 

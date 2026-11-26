@@ -36,6 +36,7 @@ from bogle.reports.valuation import PatrimonyPoint
 from bogle.settings import SETTINGS, SettingEntry
 from bogle.tui import services
 from bogle.tui.app import BogleApp
+from tests.tesouro_fakes import OfflineTitles
 
 TODAY = date(2026, 8, 12)
 AS_OF = date(2026, 8, 11)
@@ -75,6 +76,10 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "add_asset", lambda **kwargs: make_asset(**kwargs))
     monkeypatch.setattr(services, "update_asset", lambda **kwargs: make_asset(**kwargs))
     monkeypatch.setattr(services, "remove_asset", lambda ticker: None)
+    # O nome de um TESOURO e conferido na lista do Tesouro Transparente (#93): sem
+    # rede nos testes, a lista nao vem e o cadastro segue com aviso. Quem testa o
+    # nome troca por `FakeTitles`.
+    monkeypatch.setattr("bogle.tesouro_title.default_source", OfflineTitles)
     monkeypatch.setattr(
         services,
         "load_suggestion",

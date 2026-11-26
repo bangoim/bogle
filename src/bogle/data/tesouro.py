@@ -75,7 +75,7 @@ def _title_name(bond_type: str, maturity: date) -> str:
     return f"{bond_type} {maturity.year}"
 
 
-def _normalize(name: str) -> str:
+def normalize_title(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
@@ -164,9 +164,9 @@ class TesouroClient:
         Matching ignores case and extra whitespace. Raises
         :class:`QuoteNotFoundError` if no current title matches.
         """
-        target = _normalize(title)
+        target = normalize_title(title)
         for entry in self._snapshot():
-            if _normalize(entry["title"]) == target:
+            if normalize_title(entry["title"]) == target:
                 return self._to_quote(entry)
         raise QuoteNotFoundError(title, provider=_PROVIDER)
 
