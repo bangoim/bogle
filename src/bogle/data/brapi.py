@@ -239,12 +239,20 @@ class BrapiClient:
         )
 
     def _parse_hist_point(self, point: dict[str, Any]) -> HistPoint:
+        """One bar that has a close (the caller drops the ones that do not).
+
+        The API sends ``null`` for ``open`` on some tickers, with the close filled
+        in (B5P211 and NB1011, every bar of the range, seen live 2026-11-11). The
+        close is the only field the app reads, so a missing open/high/low repeats
+        it, the same convention the dispatcher uses for stored closes.
+        """
+        close = _dec(point["close"])
         return HistPoint(
             date=datetime.fromtimestamp(int(point["date"]), tz=UTC),
-            open=_dec(point["open"]),
-            high=_dec(point["high"]),
-            low=_dec(point["low"]),
-            close=_dec(point["close"]),
+            open=_dec_opt(point.get("open")) or close,
+            high=_dec_opt(point.get("high")) or close,
+            low=_dec_opt(point.get("low")) or close,
+            close=close,
             volume=int(point.get("volume") or 0),
             adjusted_close=_dec_opt(point.get("adjustedClose")),
         )
