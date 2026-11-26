@@ -243,6 +243,50 @@ class TestGetHistory:
         assert len(points) == 1
         assert points[0].close == Decimal("41.15")
 
+    @respx.mock
+    def test_bar_without_open_keeps_its_close(self) -> None:
+        # Seen live 2026-11-11 for B5P211 and NB1011: every bar of the range with
+        # a null "open" and the other fields filled in.
+        body = {
+            "results": [
+                {
+                    "requestedSymbol": "B5P211",
+                    "symbol": "B5P211",
+                    "changed": False,
+                    "data": {
+                        "historicalDataPrice": [
+                            {
+                                "date": 1794279600,
+                                "open": None,
+                                "high": 114.86,
+                                "low": 114.5,
+                                "close": 114.66,
+                                "volume": 150860,
+                                "adjustedClose": 114.66,
+                            },
+                            {
+                                "date": 1794193200,
+                                "open": None,
+                                "high": None,
+                                "close": 114.49,
+                                "volume": 95690,
+                                "adjustedClose": 114.49,
+                            },
+                        ]
+                    },
+                }
+            ]
+        }
+        respx.get(HISTORY_URL).mock(return_value=Response(200, json=body))
+        with client() as c:
+            points = c.get_history("B5P211")
+        assert [p.close for p in points] == [Decimal("114.49"), Decimal("114.66")]
+        newest = points[-1]
+        assert newest.open == Decimal("114.66")
+        assert (newest.high, newest.low) == (Decimal("114.86"), Decimal("114.5"))
+        oldest = points[0]
+        assert (oldest.open, oldest.high, oldest.low) == (Decimal("114.49"),) * 3
+
 
 class TestRenamedTicker:
     @respx.mock
