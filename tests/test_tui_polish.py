@@ -29,6 +29,7 @@ from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.help import HelpModal, shortcuts_of
 from bogle.tui.screens.history import HistoryScreen
 from bogle.tui.screens.home import HomeScreen
+from bogle.tui.screens.import_ import ImportScreen
 from bogle.tui.screens.income import IncomeScreen
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.profit import ProfitScreen
@@ -61,6 +62,7 @@ SCREENS: dict[str, Callable[[], Screen[None]]] = {
     "escolher venda": SellPickerScreen,
     "venda": lambda: TradeFormScreen(kind=TransactionType.SELL, position=sale_position()),
     "provento": IncomeFormScreen,
+    "importar": ImportScreen,
     "transações": TransactionsScreen,
     "aporte": SuggestScreen,
     "relatórios": ReportsScreen,
