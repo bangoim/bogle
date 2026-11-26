@@ -31,6 +31,8 @@ from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
+from bogle.imports.b3 import read_statement
+from bogle.imports.plan import ImportPlan, apply_import, plan_import
 from bogle.position import Position, get_allocation_summary, get_portfolio_summary
 from bogle.rebalancing import AporteSuggestion, next_evaluation_date, overdue_notice, suggest_allocation
 from bogle.reports.compare import CompareReport, compute_compare
@@ -289,6 +291,34 @@ def record_income(
         if income_type is TransactionType.INTEREST:
             return repo.add_interest(ticker, when, amount, tax_withheld=tax)
         raise ValueError(f"tipo de provento inválido: {income_type}")
+    finally:
+        conn.close()
+
+
+def preview_import(path: Path, *, fee_rate: Decimal | None = None, replace: bool = False) -> ImportPlan:
+    """``bogle import --dry-run``: the B3 statement read and planned, nothing written.
+
+    The file is read before connecting, as in the command: a file that is not a
+    statement is refused without a database. ``replace`` is ``--replace``.
+    """
+    statement = read_statement(path)
+    conn = get_connection()
+    try:
+        return plan_import(conn, statement, fee_rate=fee_rate, replace=replace)
+    finally:
+        conn.close()
+
+
+def run_import(plan: ImportPlan) -> ImportPlan:
+    """Write a previewed plan, all or nothing, and hand it back for the report.
+
+    Refused (:class:`~bogle.domain.errors.ImportStaleError`) when the ledger
+    changed since the preview: what was confirmed is the plan that was shown.
+    """
+    conn = get_connection()
+    try:
+        apply_import(conn, plan)
+        return plan
     finally:
         conn.close()
 

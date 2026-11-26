@@ -161,22 +161,30 @@ class ClearedTargetModal(ButtonRowModal[bool]):
 
 
 class NextStepModal(ButtonRowModal[str]):
-    """After recording: another entry of the same kind, or back to Home."""
+    """After recording: another entry of the same kind, or back to Home.
+
+    ``title`` and ``again_label`` name what was recorded, for a screen that does
+    not record one *lançamento* (an import writes a whole statement).
+    """
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "home", "Voltar à Home")]
 
-    def __init__(self, recorded: str) -> None:
+    def __init__(
+        self, recorded: str, *, title: str = "Lançamento registrado", again_label: str = "Novo lançamento"
+    ) -> None:
         super().__init__()
         self.recorded = recorded
+        self.dialog_title = title
+        self.again_label = again_label
 
     @override
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label("Lançamento registrado", id="dialog-title")
+            yield Label(self.dialog_title, id="dialog-title", markup=False)
             yield Label(self.recorded, id="dialog-body", markup=False)
             yield Label("O que fazer agora?", id="dialog-question")
             with Horizontal(id="dialog-buttons"):
-                yield Button("Novo lançamento", id=NEW_ENTRY, variant="primary")
+                yield Button(self.again_label, id=NEW_ENTRY, variant="primary")
                 yield Button("Voltar à Home", id=GO_HOME)
 
     def on_mount(self) -> None:

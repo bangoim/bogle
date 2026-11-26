@@ -47,6 +47,7 @@ from bogle.tui import cells, services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.navigation import back_to_home
 from bogle.tui.screens.data import DataScreen
+from bogle.tui.screens.import_ import ImportScreen
 from bogle.tui.screens.menu import Entries, MenuScreen, items_of
 from bogle.tui.screens.modals import GO_HOME, ClearedTargetModal, NextStepModal
 from bogle.tui.screens.write import Entry, WriteScreen
@@ -110,6 +111,7 @@ _ENTRIES: Entries = (
         lambda: SellPickerScreen(),
     ),
     (MenuItem("3", "income", "Provento", "dividendo, JCP, rendimento ou juros"), lambda: IncomeFormScreen()),
+    (MenuItem("4", "import", "Importar", "extrato de negociação da B3 (.xlsx)"), lambda: ImportScreen()),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)

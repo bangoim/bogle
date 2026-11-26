@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from decimal import ROUND_DOWN, Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from rich.text import Text
 from textual.screen import Screen
@@ -20,6 +21,8 @@ from textual.widgets import DataTable
 from bogle.closeout import ClearedTarget
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.imports.b3 import RowError, Statement, Trade
+from bogle.imports.plan import ImportPlan, build_plan
 from bogle.position import PortfolioSummary, Position
 from bogle.rebalancing import AporteSuggestion, TickerSuggestion
 from bogle.reports.compare import CompareReport, CompareSeries
@@ -91,6 +94,9 @@ def stub_services(monkeypatch: Any) -> None:
         "record_income",
         lambda **kwargs: make_transaction(kwargs.pop("income_type"), **kwargs),
     )
+    # Importar (issue #34).
+    monkeypatch.setattr(services, "preview_import", lambda path, **kwargs: make_import_plan(**kwargs))
+    monkeypatch.setattr(services, "run_import", lambda plan: plan)
 
 
 async def settle(pilot: Any) -> None:
@@ -564,6 +570,76 @@ def make_ledger() -> list[Transaction]:
             tax_withheld=Decimal("0.01"),
         ),
     ]
+
+
+def make_import_plan(*, fee_rate: Decimal | None = None, replace: bool = False, new: bool = True) -> ImportPlan:
+    """A preview with one ticker of each kind the table shows.
+
+    AUVP11 goes in (two purchases and the sale that zeroes it, target still at
+    30%), VWRA11 differs from the ledger on 2026-01-09, XPTO11 is not registered
+    and NB1011 has a row that could not be read. MUND11 has the ledger's quantity
+    on 2026-01-09 but another value (18 at 106.68 against 5 + 13), which
+    ``replace`` swaps. ``new=False`` puts AUVP11 in the ledger already, so the plan
+    adds nothing new.
+    """
+    zone = ZoneInfo("America/Sao_Paulo")
+
+    def at(month: int, day: int) -> datetime:
+        return datetime(2026, month, day, tzinfo=zone)
+
+    def trade(
+        row: int,
+        ticker: str,
+        when: datetime,
+        shares: str,
+        kind: TransactionType = TransactionType.BUY,
+        price: str = "100",
+    ) -> Trade:
+        return Trade(row=row, when=when, kind=kind, ticker=ticker, shares=Decimal(shares), unit_price=Decimal(price))
+
+    statement = Statement(
+        trades=(
+            trade(2, "AUVP11", at(9, 2), "9", TransactionType.SELL),
+            trade(3, "AUVP11", at(3, 10), "4"),
+            trade(4, "AUVP11", at(3, 10), "5"),
+            trade(5, "VWRA11", at(1, 9), "72"),
+            trade(6, "XPTO11", at(1, 9), "1"),
+            trade(9, "MUND11", at(1, 9), "5", price="106.70"),
+            trade(10, "MUND11", at(1, 9), "13", price="106.67"),
+        ),
+        ignored_markets=(("Mercado Fracionário", 1),),
+        errors=(RowError(8, "NB1011", "quantidade não numérica"),),
+        rows=9,
+    )
+    hundred = Decimal("100")
+    ledger = [
+        make_transaction(TransactionType.BUY, ticker="VWRA11", when=at(1, 9), shares=Decimal("70")),
+        make_transaction(
+            TransactionType.BUY,
+            id=8,
+            ticker="MUND11",
+            when=at(1, 9),
+            shares=Decimal("18"),
+            unit_price=Decimal("106.68"),
+            fees=Decimal("0.63"),
+        ),
+    ]
+    if not new:
+        ledger += [
+            make_transaction(
+                TransactionType.BUY, ticker="AUVP11", when=at(3, 10), shares=Decimal("9"), unit_price=hundred
+            ),
+            make_transaction(
+                TransactionType.SELL, ticker="AUVP11", when=at(9, 2), shares=Decimal("9"), unit_price=hundred
+            ),
+        ]
+    assets = [
+        Asset("AUVP11", Decimal("0.3"), AssetType.ETF),
+        Asset("MUND11", Decimal("0"), AssetType.ETF),
+        Asset("NB1011", Decimal("0.2"), AssetType.ETF),
+        Asset("VWRA11", Decimal("0.5"), AssetType.ETF),
+    ]
+    return build_plan(statement, assets=assets, ledger=ledger, fee_rate=fee_rate, replace=replace)
 
 
 class ToastSpy:

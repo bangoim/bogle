@@ -23,6 +23,8 @@ from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import (
     AssetHasTransactionsError,
     AssetNotFoundError,
+    ImportFileError,
+    ImportStaleError,
     InsufficientSharesError,
     TransactionNotFoundError,
     UncoveredSaleError,
@@ -812,3 +814,67 @@ class TestBackup:
         assert result.path.parent == tmp_path / "bogle" / "backups"
         assert result.format is DumpFormat.CUSTOM
         assert result.rows == {"assets": 0, "transactions": 0, "user_settings": 0, "price_history": 0}
+
+
+class TestImport:
+    FIXTURE = Path(__file__).parent / "fixtures" / "b3_negociacao.xlsx"
+
+    @pytest.fixture
+    def portfolio(self, conn: psycopg.Connection[DictRow]) -> None:
+        repo = AssetRepository(conn)
+        for ticker in ("AUVP11", "B5P211", "MUND11", "NB1011", "VWRA11"):
+            repo.add(ticker, Decimal("0.2"), asset_type=AssetType.ETF)
+
+    def test_the_preview_writes_nothing(self, portfolio: None) -> None:
+        plan = services.preview_import(self.FIXTURE, fee_rate=Decimal("0.00032"))
+        assert len(plan.inserts) == 21
+        assert sum((t.fees for t in plan.inserts), Decimal("0")) == Decimal("54.67")
+        assert services.load_transactions() == []
+
+    def test_run_writes_the_previewed_plan(self, portfolio: None) -> None:
+        plan = services.preview_import(self.FIXTURE)
+        assert services.run_import(plan) is plan
+        assert len(services.load_transactions()) == 21
+
+    def test_replace_reaches_the_plan(self, portfolio: None) -> None:
+        # VWRA11 de 09/01 digitado consolidado: 72 cotas, outro valor que 20 + 52.
+        services.record_buy(
+            ticker="VWRA11",
+            when=datetime(2026, 1, 9, 12, tzinfo=UTC),
+            shares=Decimal("72"),
+            unit_price=Decimal("117.40"),
+            fees=Decimal("2.71"),
+        )
+        assert len(services.preview_import(self.FIXTURE).mismatched) == 1
+        plan = services.preview_import(self.FIXTURE, replace=True)
+        assert len(plan.removals) == 1
+        services.run_import(plan)
+        day = [t for t in services.load_transactions() if t.ticker == "VWRA11" and t.date.date() == date(2026, 1, 9)]
+        assert sorted(t.shares for t in day) == [Decimal("20"), Decimal("52")]
+        assert sum((t.fees for t in day), Decimal("0")) == Decimal("2.71")
+
+    def test_a_ledger_changed_since_the_preview_is_refused(self, portfolio: None) -> None:
+        plan = services.preview_import(self.FIXTURE)
+        # O mesmo dia e tipo de uma linha do arquivo: a linha deixaria de ser nova.
+        services.record_buy(
+            ticker="MUND11",
+            when=datetime(2026, 10, 6, 12, tzinfo=UTC),
+            shares=Decimal("81"),
+            unit_price=Decimal("95.27"),
+            fees=Decimal("0"),
+        )
+        with pytest.raises(ImportStaleError):
+            services.run_import(plan)
+        assert len(services.load_transactions()) == 1
+
+    def test_a_file_that_is_not_a_statement_is_refused_before_connecting(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def no_database() -> None:
+            raise AssertionError("conectou")
+
+        monkeypatch.setattr(services, "get_connection", no_database)
+        path = tmp_path / "negociacao.csv"
+        path.write_text("a;b\n", encoding="utf-8")
+        with pytest.raises(ImportFileError, match="não é um"):
+            services.preview_import(path)

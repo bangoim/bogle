@@ -13,9 +13,8 @@ import typer
 
 from bogle import format as fmt
 from bogle.backup import DumpFormat, RestorePlan, create_backup, describe_rows, plan_restore, restore
+from bogle.cli.prompts import confirmed
 from bogle.db import migrated_notice
-
-_YES = ("s", "sim", "y", "yes")
 
 
 def backup(
@@ -69,12 +68,7 @@ def restore_(
 
 def _confirmed(plan: RestorePlan) -> bool:
     typer.echo(_question(plan))
-    try:
-        answer = typer.prompt("Continuar? [s/N]", default="", show_default=False, prompt_suffix=" ")
-    except typer.Abort:  # stdin fechado (EOF) ou ctrl+c: e um nao
-        typer.echo("")
-        return False
-    return answer.strip().casefold() in _YES
+    return confirmed("Continuar? [s/N]")
 
 
 def _question(plan: RestorePlan) -> str:

@@ -245,6 +245,33 @@ Input:ansi.field-input.-invalid {
     margin-right: 2;
 }
 
+/* Importar: os campos, a caixa e os botoes em cima, a previa embaixo. Em 80x24
+   sobram 11 linhas para a tabela (4 no minimo) e a nota (7 no maximo, rolando
+   quando o relatorio passa disso); num terminal maior, a tabela cresce. */
+#import {
+    padding: 0 2;
+    margin: 0 1;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+#import #form-buttons {
+    margin-top: 0;
+    margin-bottom: 1;
+}
+
+#import-preview {
+    height: 1fr;
+    min-height: 4;
+}
+
+#import-note {
+    height: auto;
+    max-height: 7;
+    overflow-y: auto;
+}
+
 /* -------------------------------------------------------------- Modais */
 
 ConfirmModal, NextStepModal, EditModal, HelpModal {

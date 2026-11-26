@@ -158,6 +158,15 @@ de negociacao.
 """
 
 
+def b3_fee(gross: Decimal, rate: Decimal = B3_FEE_RATE) -> Decimal:
+    """The B3 fee on one trade of ``gross`` reais, rounded up to the cent as the note does.
+
+    Per trade, never over a sum: rounding the total once loses the cent each line
+    rounds up. The import's ``--fee-rate`` (issue #34) uses the same rule.
+    """
+    return (gross * rate).quantize(_CENT, rounding=ROUND_UP)
+
+
 @dataclass(frozen=True, slots=True)
 class TickerSuggestion:
     ticker: str
@@ -477,7 +486,7 @@ def suggest_allocation(
     # que diz se o dinheiro cobre as compras com a taxa. Por ticker, como na nota:
     # arredondar a soma uma vez so perde o centavo que cada linha arredonda para cima.
     estimated_fees = sum(
-        ((line.cost * B3_FEE_RATE).quantize(_CENT, rounding=ROUND_UP) for line in lines if line.is_variable_income),
+        (b3_fee(line.cost) for line in lines if line.is_variable_income),
         Decimal("0"),
     )
     items = [

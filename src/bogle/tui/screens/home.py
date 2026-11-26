@@ -54,7 +54,7 @@ LOGO = r"""
 # em terminais de altura normal.
 _ENTRIES: Entries = (
     (MenuItem("1", "position", "Posição", "preços ao vivo, pesos e drift"), PositionScreen),
-    (MenuItem("2", "register", "Registrar", "compra, venda ou provento"), RegisterScreen),
+    (MenuItem("2", "register", "Registrar", "compra, venda, provento ou importação"), RegisterScreen),
     (MenuItem("3", "transactions", "Transações", "listar e remover lançamentos"), TransactionsScreen),
     (MenuItem("4", "suggest", "Aporte", "como dividir para reduzir o drift"), SuggestScreen),
     (MenuItem("5", "reports", "Relatórios", "rentabilidade, histórico, proventos"), ReportsScreen),
