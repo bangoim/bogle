@@ -23,8 +23,8 @@ from bogle.alerts import CHECK_FAILED, CheckResult, listing, notification_text, 
 from bogle.data import default_dispatcher
 from bogle.db import get_connection, migrate_if_pending, migrated_notice
 from bogle.domain.errors import BogleError
+from bogle.error_messages import message_for
 from bogle.reports.overview import PortfolioOverview, compute_current_overview
-from bogle.tui.errors import message_for
 
 NOTIFY_SCRIPT = (
     "on run argv",

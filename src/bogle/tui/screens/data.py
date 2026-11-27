@@ -24,7 +24,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 from textual.worker import get_current_worker
 
-from bogle.tui.errors import HANDLED, message_for
+from bogle.error_messages import HANDLED, message_for
 
 
 class DataScreen[R](Screen[None]):

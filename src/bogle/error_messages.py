@@ -1,9 +1,10 @@
 """Turning exceptions into messages the user can act on (issue #73).
 
-The CLI's ``_run`` shim maps two failures to friendly one-liners and lets real
-bugs surface as a traceback. The TUI needs the same mapping, only routed to a
-toast (or an inline message) instead of stderr — the whole point of the
-interface is that a mistake keeps you on the screen, ready to fix it.
+Shared by the frontends, so it depends on neither: the CLI's ``_run`` shim maps
+the same failures to one-liners on stderr, ``bogle check`` puts them in its
+output and in the notification (issue #108), and the TUI routes them to a toast
+(or an inline message) — the whole point of the interface is that a mistake
+keeps you on the screen, ready to fix it. Real bugs surface as a traceback.
 
 Database errors are handled as a family, not just ``OperationalError``: a schema
 that never got its migrations raises ``UndefinedTable``, which is a foreseeable

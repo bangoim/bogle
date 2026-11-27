@@ -21,9 +21,9 @@ from textual.binding import Binding, BindingType
 from textual.screen import Screen
 
 from bogle import format as fmt
+from bogle.error_messages import HANDLED, message_for
 from bogle.settings import DECIMAL_SEPARATOR, DEFAULT_THEME, HIDE_VALUES, THEME
 from bogle.tui import services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.help import HelpModal, help_notes_of, shortcuts_of
 from bogle.tui.screens.home import HomeScreen

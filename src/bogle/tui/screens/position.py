@@ -23,12 +23,12 @@ from textual.widgets import DataTable, Footer, Header, Static
 from textual.worker import get_current_worker
 
 from bogle import format as fmt
+from bogle.error_messages import HANDLED, message_for
 from bogle.glide_path import marked_target
 from bogle.position import price_provenance
 from bogle.reports.snapshot import PortfolioSnapshot
 from bogle.reports.valuation import with_reasons
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 
 _COLUMNS = (
     "Ticker",

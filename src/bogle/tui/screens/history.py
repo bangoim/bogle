@@ -25,10 +25,10 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from bogle import format as fmt
 from bogle.charts import Series
+from bogle.error_messages import HANDLED, message_for
 from bogle.reports.history import HistoryReport
 from bogle.reports.valuation import with_reasons
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import PeriodScreen
 from bogle.tui.widgets.chart import LineChart
 

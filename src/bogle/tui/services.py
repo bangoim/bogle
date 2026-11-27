@@ -33,6 +33,7 @@ from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
+from bogle.error_messages import message_for
 from bogle.glide_path import (
     GlideEdit,
     GlideView,
@@ -88,7 +89,6 @@ from bogle.settings import (
     unset_setting,
 )
 from bogle.tesouro_title import check_tesouro_title as _check_tesouro_title
-from bogle.tui.errors import message_for
 from bogle.withdrawal import plan_withdrawal
 
 _ZERO = Decimal("0")

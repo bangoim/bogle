@@ -26,6 +26,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Static
 from bogle import format as fmt
 from bogle.cli.parsing import parse_weight
 from bogle.domain.errors import ValidationError
+from bogle.error_messages import HANDLED, message_for
 from bogle.glide_path import (
     MAX_AGE,
     GlideEdit,
@@ -36,7 +37,6 @@ from bogle.glide_path import (
     step_notice,
 )
 from bogle.tui import services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import DataScreen
 from bogle.tui.screens.modals import ConfirmModal, EditModal
 from bogle.tui.screens.write import Entry, WriteScreen

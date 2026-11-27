@@ -18,10 +18,10 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Footer, Header, Static
 
 from bogle.charts import Series
+from bogle.error_messages import HANDLED, message_for
 from bogle.reports.compare import CompareReport
 from bogle.reports.valuation import with_reasons
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import PeriodScreen
 from bogle.tui.widgets.chart import LineChart
 from bogle.tui.widgets.indices import IndicesInput

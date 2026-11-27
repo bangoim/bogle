@@ -18,7 +18,7 @@ from textual.binding import Binding, BindingType
 from textual.screen import Screen
 from textual.widgets import Button, Input
 
-from bogle.tui.errors import HANDLED, message_for
+from bogle.error_messages import HANDLED, message_for
 from bogle.tui.navigation import ARROW_FOCUS
 from bogle.tui.screens.modals import ConfirmModal
 from bogle.tui.widgets.form import Field

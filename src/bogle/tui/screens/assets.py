@@ -39,9 +39,9 @@ from bogle.domain.assets import (
     AssetType,
     Indexer,
 )
+from bogle.error_messages import HANDLED, message_for
 from bogle.rebalancing import weight_sum_notice
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import DataScreen
 from bogle.tui.screens.modals import ConfirmModal
 from bogle.tui.screens.write import Entry, WriteScreen
