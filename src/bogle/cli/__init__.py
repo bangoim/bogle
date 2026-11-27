@@ -8,6 +8,7 @@ import typer
 from dotenv import load_dotenv
 
 from bogle import format as fmt
+from bogle.annual_rebalance import load_annual_state
 from bogle.cli import assets as assets_cli
 from bogle.cli import backup as backup_cli
 from bogle.cli import compare as compare_cli
@@ -18,6 +19,7 @@ from bogle.cli import history as history_cli
 from bogle.cli import import_ as import_cli
 from bogle.cli import position as position_cli
 from bogle.cli import profit as profit_cli
+from bogle.cli import rebalance as rebalance_cli
 from bogle.cli import returns as returns_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
@@ -26,7 +28,7 @@ from bogle.cli import withdraw as withdraw_cli
 from bogle.db import get_connection, migrate_if_pending, migrated_notice
 from bogle.domain.errors import BogleError
 from bogle.glide_path import application_notice, apply_glide_path_if_due, failure_notice
-from bogle.rebalancing import overdue_notice
+from bogle.rebalancing import annual_rebalance_notice, overdue_notice
 from bogle.settings import (
     DECIMAL_SEPARATOR,
     DEFAULT_DECIMAL_SEPARATOR,
@@ -58,6 +60,9 @@ app.command("position", help="Posição atual: tabela por ativo + totais, lucro 
 app.command("suggest", help="Sugerir a divisão de um aporte para reduzir o drift.")(suggest_cli.suggest)
 app.command("withdraw", help="Sugerir de quais ativos sacar na aposentadoria (só sugere, não vende).")(
     withdraw_cli.withdraw
+)
+app.command("rebalance", help="Plano da venda anual de rebalanceamento na aposentadoria (só mostra; --done registra).")(
+    rebalance_cli.rebalance
 )
 app.command("status", help="Mostrar em que pé está o ciclo de avaliação de rebalanceamento.")(status_cli.status)
 app.command("dividends", help="Proventos recebidos, por mês ou por ticker.")(dividends_cli.dividends)
@@ -100,24 +105,27 @@ glide_app.command("clear", help="Apagar a trajetória; os alvos atuais ficam com
 app.add_typer(glide_app, name="glide")
 
 
-def _read_preferences() -> tuple[str, str | None]:
-    """The display separator and the overdue-cycle reminder, in one round trip.
+def _read_preferences() -> tuple[str, str | None, str | None]:
+    """The display separator, the overdue-cycle reminder and the annual-rebalance
+    reminder (issue #81), in one connection.
 
     Best-effort by design: any failure (database down, migrations pending) leaves
     the default number format and no reminder, instead of breaking the command
     that follows.
     """
+    today = date.today()
     try:
         conn = get_connection()
         try:
             separator = get_setting(conn, DECIMAL_SEPARATOR)
             period = get_setting(conn, REBALANCE_PERIOD_MONTHS)
             last = get_setting(conn, LAST_REBALANCE_DATE)
+            annual = load_annual_state(conn, today)
         finally:
             conn.close()
     except Exception:
-        return DEFAULT_DECIMAL_SEPARATOR, None
-    return separator, overdue_notice(last, period, today=date.today())
+        return DEFAULT_DECIMAL_SEPARATOR, None, None
+    return separator, overdue_notice(last, period, today=today), annual_rebalance_notice(annual)
 
 
 def _update_schema() -> None:
@@ -183,11 +191,11 @@ def _main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand in _AS_IS:
         # So o formato dos numeros: o lembrete de ciclo vencido seria ruido aqui,
         # e migrar e justamente o que estes dois nao podem fazer antes de rodar.
-        separator, _ = _read_preferences()
+        separator, _, _ = _read_preferences()
         fmt.configure(separator)
         return
     _update_schema()
-    separator, notice = _read_preferences()
+    separator, notice, annual = _read_preferences()
     fmt.configure(separator)
     # Depois do schema (a tabela da trajetoria pode ter acabado de chegar) e do
     # separador (o aviso tem percentuais).
@@ -195,6 +203,10 @@ def _main(ctx: typer.Context) -> None:
     # `status` ja reporta o ciclo por inteiro; avisar de novo seria ruido.
     if notice is not None and ctx.invoked_subcommand != "status":
         typer.echo(f"aviso: {notice}", err=True)
+    # Idem para o rebalanceamento anual, e o proprio `rebalance` e a pendencia:
+    # avisar antes do `--done` que acabou de resolve-la diria o contrario.
+    if annual is not None and ctx.invoked_subcommand not in ("status", "rebalance"):
+        typer.echo(f"aviso: {annual}", err=True)
 
 
 def _run() -> None:
