@@ -15,6 +15,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Reports** — `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
 - **Glide path** — `bogle glide` sets target weights by age (a few points, a straight line between them), applied on their own every 01/01. See [Glide path](#glide-path).
 - **Withdrawal in retirement** — `bogle withdraw` suggests which tickers to sell for a withdrawal (the ones the glide path is taking out first), with the estimated income tax of each sale. See [Withdrawal in retirement](#withdrawal-in-retirement).
+- **Annual rebalance in retirement** — `bogle rebalance` plans the once-a-year sale of what drifted out of the band, with its income tax, and the purchases made with the net; a reminder shows up every year until `--done`. See [Annual rebalance in retirement](#annual-rebalance-in-retirement).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
 - **Backup and restore** — `bogle backup` writes the whole database to a file outside the repository; `bogle restore` puts it back, all or nothing, after a safety backup. See [Backup and restore](#backup-and-restore).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices and daily history from Tesouro Transparente, cached on disk and in the database. Private fixed income is marked to present value.
@@ -104,8 +105,8 @@ bogle --help      # still the help
 
 The interface covers **every command** — registering operations without
 memorizing flags (guided forms with validation as you type), the position,
-reports with charts, assets, contributions, withdrawals, the rebalance cycle, the
-settings and the backup. Use the direct commands for one-shot answers and for scripting
+reports with charts, assets, contributions, withdrawals, the annual rebalance, the
+rebalance cycle, the settings and the backup. Use the direct commands for one-shot answers and for scripting
 (`--json`, which is CLI-only). `bogle restore` is CLI-only too: the interface
 runs on the database a restore replaces.
 
@@ -125,21 +126,23 @@ interface, since a full-screen interface needs a real terminal.
  │ Rentabilidade em TWR: exclui o efeito de aportes e retiradas e considera...  │
  ╰─────────────────────────────────────────────────────────────────────────────╯
  ╭─ Menu ──────────────────────────────────────────────────────────────────────╮
- │ 1  Posição     preços ao vivo, pesos e drift                                │
- │ 2  Registrar   compra, venda, provento ou importação                        │
- │ 3  Transações  listar e remover lançamentos                                 │
- │ 4  Aporte      como dividir para reduzir o drift                            │
- │ 5  Relatórios  rentabilidade, histórico, proventos                          │
- │ 6  Ativos      cadastrar, atualizar e remover                               │
- │ 7  Trajetória  alvos por idade, ano a ano                                   │
- │ 8  Saque       o que vender na aposentadoria                                │
+ │ 1  Posição      preços ao vivo, pesos e drift                               │
+ │ 2  Registrar    compra, venda, provento ou importação                       │
+ │ 3  Transações   listar e remover lançamentos                                │
+ │ 4  Aporte       como dividir para reduzir o drift                           │
+ │ 5  Relatórios   rentabilidade, histórico, proventos                         │
+ │ 6  Ativos       cadastrar, atualizar e remover                              │
+ │ 7  Trajetória   alvos por idade, ano a ano                                  │
+ │ 8  Saque        o que vender na aposentadoria                               │
+ │ 9  Rebalancear  venda anual na aposentadoria                                │
  ╰─────────────────────────────────────────────────────────────────────────────╯
  q Sair  r Atualizar  s Status  c Config  h Valores  f1 Ajuda
 ```
 
-On a wide terminal (108 columns or more) the menu splits into two columns (four
+On a wide terminal (108 columns or more) the menu splits into two columns (five
 and four), so the summary and the logo fit without scrolling on a normal-height
-window; the side arrows move between the columns.
+window; the side arrows move between the columns. At 80x24 the menu is a single
+column and the whole home screen still fits without scrolling.
 
 The home screen opens on **today's quote (D-0)**: the price history comes from
 the database (see [Market data & sources](#market-data--sources)), and brapi's
@@ -148,8 +151,9 @@ stored. The panel title says the time of the quote, since brapi's free plan
 refreshes every 30 minutes. Before the session opens, on weekends and holidays,
 or with brapi down, the summary is the **previous close (D-1)**; in the last case
 a note says which tickers had no quote. Returns are TWR (time-weighted), which
-removes the effect of contributions and withdrawals and credits income. If the rebalance evaluation cycle is overdue, the reminder
-arrives as a notification here instead of a line on stderr.
+removes the effect of contributions and withdrawals and credits income. If the rebalance evaluation cycle is overdue, or the
+[annual rebalance](#annual-rebalance-in-retirement) of the year is pending, the
+reminder arrives as a notification here instead of a line on stderr.
 
 | Screen | What it covers | Equivalent commands |
 |--------|----------------|---------------------|
@@ -161,7 +165,8 @@ arrives as a notification here instead of a line on stderr.
 | Ativos | List with the fixed-income metadata + forms; `a` registers, `u` changes weight/type, `d` removes | `bogle list` / `add` / `update` / `remove` |
 | Trajetória | Targets by age, year by year; `a` adds a point, `u` edits the selected year, `d` removes a point, `l` clears | `bogle glide show` / `set` / `remove` / `clear` |
 | Saque | Gross amount → which tickers to sell, with the estimated IR and the net of each sale; only suggests | `bogle withdraw` |
-| Status (`s`) | The rebalance cycle: period, last and next evaluation | `bogle status` |
+| Rebalancear | The year's annual rebalance in retirement: what to sell (with the estimated IR), what to buy with the net; `f` records it as done | `bogle rebalance` / `--done` |
+| Status (`s`) | The rebalance cycle: period, last and next evaluation; in retirement, whether the annual rebalance is pending | `bogle status` |
 | Config (`c`) | Every setting, editable in place (`e`) or back to its default (`d`); `b` writes a backup | `bogle config list` / `set` / `unset`, `bogle backup` |
 
 The last two are footer shortcuts instead of menu items — they are the screens
@@ -448,7 +453,9 @@ Live B3 quotes need a brapi token — see [Setup step 5](#5-optional-brapi-token
 ### Rebalancing by contribution (no-sell)
 
 Boglehead policy: nothing is ever sold to rebalance — overweight positions are
-held, and fresh money goes to whatever lagged behind. `bogle suggest` splits a
+held, and fresh money goes to whatever lagged behind. The one exception is the
+[annual rebalance in retirement](#annual-rebalance-in-retirement), when there are
+no contributions left to do the job. `bogle suggest` splits a
 contribution so every ticker approaches its target weight of the *future*
 patrimony (portfolio + contribution), never pushing a receiver past its target:
 
@@ -585,6 +592,65 @@ Before it the suggestion still comes, with a warning that the policy of the
 accumulation phase is not to sell; without `birth_year` it is treated the same
 way. The Saque screen (menu `8`) does all of the above.
 
+### Annual rebalance in retirement
+
+After retirement the targets keep moving towards the end of the
+[glide path](#glide-path) — about 2 p.p. a year — and the withdrawal alone does
+not follow them. So once a year there is a rebalance **with sales**, the one
+exception to the [no-sell policy](#rebalancing-by-contribution-no-sell):
+
+```bash
+bogle rebalance          # the plan of the year: only shows, writes nothing
+bogle rebalance --json
+bogle rebalance --done   # records the year as done; the reminder goes away
+```
+
+It starts on the first 01/01 **after** retirement: the year in which
+`current year - birth_year > retirement_age` (with `birth_year` 2000 and
+`retirement_age` 60, that is 2061). The withdrawal keeps its own rule (`>=`):
+retirement starts in the year of the age, and the first annual sale on the next
+01/01. Outside that phase, or without `birth_year`, the command refuses.
+
+With the targets of the year already written by the glide path:
+
+1. a ticker **on its way out** (target 0 at the last point of the trajectory, or
+   out of it) above its target sells **down to the target of the year**, with no
+   tolerance;
+2. any other ticker sells only when its drift is **above
+   `weight_drift_threshold`** (default 5 p.p.), and only down to
+   `target + threshold` — the smallest sale that brings it back to the band;
+3. the net of the sales — gross minus the estimated income tax, which stays put
+   aside for the DARF — is split across the tickers **below target** exactly as
+   [`bogle suggest`](#rebalancing-by-contribution-no-sell) splits a contribution:
+   whole shares rounded down, the B3 fee estimated on top, and **no purchase past
+   any target**. A ticker that sells buys nothing back.
+
+Whether a ticker sells is today's drift, the one `bogle position` shows. How much
+it sells is measured against the patrimony **after** the plan, today's minus the
+estimated income tax; since the tax depends on the sales, they are recomputed
+until it stops moving (two or three passes), so a ticker sold to the edge of the
+band really ends inside it. Variable income sells whole shares **rounded up** —
+rounding down would leave it a fraction of a share outside the band — never more
+than the shares held; fixed income sells exact values, rounded up to the cent.
+The income tax of each sale is the one of the
+[withdrawal](#withdrawal-in-retirement) (average cost, R$ 20.000 monthly stock
+exemption, regressive table for fixed income), per sale and in total.
+
+The table lists every ticker — `Vender`, `Comprar` or `Manter` — with its
+weight now, its target and its weight after the plan; the footer adds up the
+sales, the income tax, what is left for purchases, the purchases, the B3 fee and
+the leftover cash. The trades themselves are registered afterwards with
+`bogle sell` / `bogle buy` (or the Registrar forms).
+
+**The reminder.** While the year's rebalance is pending, every command prints
+`aviso: rebalanceamento anual de 2061 pendente (bogle rebalance)` on stderr, in the
+style of the evaluation-cycle reminder; the interface shows it as a notification
+on the home screen. `bogle status` (and the Status screen) shows the pendency
+instead of the warning, and `bogle rebalance` itself does not repeat it. Looking
+at the plan does not count as doing it: `bogle rebalance --done` (or `f` on the
+Rebalancear screen, menu `9`) records `last_annual_rebalance_year`, and the
+reminder is back on the next 01/01.
+
 ### Reports
 
 Every report takes `--period` with a shared vocabulary (`12m`, `2y`, `5y`,
@@ -669,7 +735,7 @@ the Config screen applies it immediately instead of waiting for the next session
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `rebalance_period_months` | int | `12` | Evaluation cycle (6 or 12 months) |
-| `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY |
+| `weight_drift_threshold` | decimal | `0.05` | Drift (fraction) beyond which a ticker turns BUY; in retirement, the tolerance of the [annual rebalance](#annual-rebalance-in-retirement) |
 | `default_compare_indices` | list[str] | `IBOV,CDI` | Indices for future `bogle compare` without `--index` |
 | `decimal_separator` | str | `,` | Decimal separator on screen (`,` or `.`); the other character groups thousands |
 | `hide_values` | bool | `false` | Amounts masked in the interactive interface (`h` toggles and remembers) |
@@ -678,6 +744,7 @@ the Config screen applies it immediately instead of waiting for the next session
 | `birth_year` | int | — | Year of birth; sets the age of the [glide path](#glide-path) |
 | `retirement_age` | int | `70` | Age at which retirement starts; before it, [`bogle withdraw`](#withdrawal-in-retirement) warns that the policy is not to sell |
 | `glide_path_applied_year` | int | — | Set automatically when the glide path writes a year's targets |
+| `last_annual_rebalance_year` | int | — | Set by `bogle rebalance --done` (or `f` on the Rebalancear screen); silences the year's reminder |
 
 ### Number format
 

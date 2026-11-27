@@ -22,6 +22,7 @@ from tempfile import gettempdir
 
 import psycopg
 
+from bogle import annual_rebalance as annual
 from bogle import charts
 from bogle import glide_path as glide
 from bogle.backup import BackupResult, create_backup
@@ -44,8 +45,11 @@ from bogle.imports.b3 import read_statement
 from bogle.imports.plan import ImportPlan, apply_import, plan_import
 from bogle.position import Position, get_allocation_summary, get_portfolio_summary
 from bogle.rebalancing import (
+    AnnualRebalance,
+    AnnualRebalanceState,
     AporteSuggestion,
     WithdrawalSuggestion,
+    annual_rebalance_notice,
     next_evaluation_date,
     overdue_notice,
     suggest_allocation,
@@ -378,6 +382,26 @@ def rebalance_notice(*, today: date | None = None) -> str | None:
     except Exception:
         return None
     return overdue_notice(last, period, today=_today(today))
+
+
+ANNUAL_REBALANCE_WHERE = "menu 9"
+"""Onde fica o plano na TUI: o lembrete aponta para a tela, nao para o comando."""
+
+
+def annual_notice(*, today: date | None = None) -> str | None:
+    """The pending annual-rebalance reminder (issue #81), or ``None``.
+
+    Best-effort, like :func:`rebalance_notice`.
+    """
+    try:
+        conn = get_connection()
+        try:
+            state = annual.load_annual_state(conn, _today(today))
+        finally:
+            conn.close()
+    except Exception:
+        return None
+    return annual_rebalance_notice(state, where=ANNUAL_REBALANCE_WHERE)
 
 
 # ------------------------------------------------------------------ relatorios
@@ -724,6 +748,33 @@ def load_withdrawal(amount: Decimal, *, refresh: bool = False, today: date | Non
         conn.close()
 
 
+# ------------------------------------------------------- rebalanceamento anual
+
+
+def load_annual_rebalance(*, refresh: bool = False, today: date | None = None) -> AnnualRebalance:
+    """The plan of the year's annual rebalance: what ``bogle rebalance`` shows.
+
+    Reads only — seeing the plan is not doing it; :func:`record_annual_rebalance`
+    is. Refused outside the retirement phase. ``refresh`` skips the quote cache,
+    as in :func:`load_snapshot`.
+    """
+    dispatcher = default_dispatcher(ignore_cached_quotes=refresh)
+    conn = get_connection()
+    try:
+        return annual.plan_annual_rebalance(conn, dispatcher, today=_today(today))
+    finally:
+        conn.close()
+
+
+def record_annual_rebalance(*, today: date | None = None) -> int:
+    """``bogle rebalance --done``: the year recorded as done, and the reminder gone."""
+    conn = get_connection()
+    try:
+        return annual.record_annual_rebalance(conn, today=_today(today))
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------- status
 
 
@@ -737,23 +788,30 @@ class CycleStatus:
     next_evaluation: date | None
     days: int | None
     """Days until the next evaluation; negative means overdue."""
+    annual: AnnualRebalanceState | None = None
+    """The annual rebalance of the retirement phase (issue #81); ``None`` without ``birth_year``."""
 
 
 def load_cycle(*, today: date | None = None) -> CycleStatus:
+    now = _today(today)
     conn = get_connection()
     try:
         period = get_setting(conn, REBALANCE_PERIOD_MONTHS)
         last = get_setting(conn, LAST_REBALANCE_DATE)
+        annual_state = annual.load_annual_state(conn, now)
     finally:
         conn.close()
     if last is None:
-        return CycleStatus(period_months=period, last_evaluation=None, next_evaluation=None, days=None)
+        return CycleStatus(
+            period_months=period, last_evaluation=None, next_evaluation=None, days=None, annual=annual_state
+        )
     next_evaluation = next_evaluation_date(last, period)
     return CycleStatus(
         period_months=period,
         last_evaluation=last,
         next_evaluation=next_evaluation,
-        days=(next_evaluation - _today(today)).days,
+        days=(next_evaluation - now).days,
+        annual=annual_state,
     )
 
 

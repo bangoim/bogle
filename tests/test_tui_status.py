@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from bogle.rebalancing import AnnualRebalanceState
 from bogle.tui import services
 from bogle.tui.screens.status import StatusScreen
 from tests.tui_fakes import ToastSpy, make_app, make_cycle, open_screen, stub_services
@@ -59,6 +60,59 @@ class TestPanel:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, StatusScreen())
             assert "Ciclo de avaliação 6 meses" in screen.panel
+
+
+class TestAnnualRebalance:
+    """A pendencia do rebalanceamento anual (issue #81), como no `bogle status`."""
+
+    @pytest.mark.asyncio
+    async def test_pending_points_at_the_menu(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        serve(monkeypatch, annual=AnnualRebalanceState(year=2061, in_phase=True, done=False))
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, StatusScreen())
+            assert screen.panel.splitlines()[-1] == "Rebalanceamento anual 2061 pendente (menu 9)"
+
+    @pytest.mark.asyncio
+    async def test_done(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        serve(monkeypatch, annual=AnnualRebalanceState(year=2061, in_phase=True, done=True))
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, StatusScreen())
+            assert screen.panel.splitlines()[-1] == "Rebalanceamento anual 2061 feito"
+
+    @pytest.mark.asyncio
+    async def test_before_the_phase_it_says_when_it_starts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        serve(monkeypatch, annual=AnnualRebalanceState(year=2061, in_phase=False, done=False))
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, StatusScreen())
+            assert screen.panel.splitlines()[-1] == "Rebalanceamento anual a partir de 2061"
+
+    @pytest.mark.asyncio
+    async def test_shown_even_when_the_cycle_was_never_evaluated(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        serve(
+            monkeypatch,
+            last_evaluation=None,
+            next_evaluation=None,
+            days=None,
+            annual=AnnualRebalanceState(year=2061, in_phase=True, done=False),
+        )
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, StatusScreen())
+            assert screen.panel.splitlines() == [
+                "Ciclo de avaliação 12 meses",
+                "",
+                "Rebalanceamento anual 2061 pendente (menu 9)",
+            ]
+
+    @pytest.mark.asyncio
+    async def test_without_birth_year_there_is_no_line(self) -> None:
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_screen(pilot, StatusScreen())
+            assert "Rebalanceamento anual" not in screen.panel
 
 
 class TestFailures:

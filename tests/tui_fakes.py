@@ -26,7 +26,11 @@ from bogle.imports.b3 import RowError, Statement, Trade
 from bogle.imports.plan import ImportPlan, build_plan
 from bogle.position import PortfolioSummary, Position
 from bogle.rebalancing import (
+    AnnualRebalance,
     AporteSuggestion,
+    RebalanceItem,
+    Recommendation,
+    SaleReason,
     TickerSuggestion,
     TickerWithdrawal,
     WithdrawalStage,
@@ -62,6 +66,7 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "load_overview", lambda **_: make_overview())
     monkeypatch.setattr(services, "load_snapshot", lambda **_: make_snapshot())
     monkeypatch.setattr(services, "rebalance_notice", lambda **_: None)
+    monkeypatch.setattr(services, "annual_notice", lambda **_: None)
     # Preferencias: os testes nao escrevem em user_settings sem pedir.
     monkeypatch.setattr(services, "load_preferences", services.Preferences)
     monkeypatch.setattr(services, "save_hide_amounts", lambda hidden: None)
@@ -115,6 +120,9 @@ def stub_services(monkeypatch: Any) -> None:
     monkeypatch.setattr(services, "save_glide_point", lambda age, weights, **_: GlideEdit(None, True, 3))
     monkeypatch.setattr(services, "remove_glide_point", lambda age, **_: GlideEdit(None, True, 2))
     monkeypatch.setattr(services, "clear_glide_path", lambda: 3)
+    # Rebalanceamento anual (issue #81).
+    monkeypatch.setattr(services, "load_annual_rebalance", lambda **_: make_annual_rebalance())
+    monkeypatch.setattr(services, "record_annual_rebalance", lambda **_: 2061)
 
 
 async def settle(pilot: Any) -> None:
@@ -537,6 +545,82 @@ def make_withdrawal(*, amount: Decimal | None = None, **overrides: Any) -> Withd
     }
     fields.update(overrides)
     return WithdrawalSuggestion(**fields)
+
+
+def make_annual_rebalance(**overrides: Any) -> AnnualRebalance:
+    """An annual rebalance for the screen tests: NB1011 on its way out sells, the CDB
+    sells above the band, B5P211 buys and MUND11 holds.
+
+    The numbers are the engine's business (``tests/test_annual_rebalance.py``); here
+    they only have to be something the screen can be checked against.
+    """
+    fields: dict[str, Any] = {
+        "year": 2061,
+        "threshold": Decimal("0.05"),
+        "items": [
+            RebalanceItem(
+                ticker="NB1011",
+                asset_type=AssetType.ETF,
+                recommendation=Recommendation.SELL,
+                price=Decimal("98.40"),
+                quantity=Decimal("46"),
+                value=Decimal("4526.40"),
+                income_tax=Decimal("120.96"),
+                target_weight=Decimal("0.1"),
+                current_weight=Decimal("0.1520"),
+                weight_after=Decimal("0.1000"),
+                sale_reason=SaleReason.EXITING,
+                price_source="brapi",
+                as_of=QUOTE_TIME,
+            ),
+            RebalanceItem(
+                ticker="CDB-XP-2027",
+                asset_type=AssetType.CDB,
+                recommendation=Recommendation.SELL,
+                price=Decimal("811.20"),
+                quantity=None,  # renda fixa sai por valor, nao por cota
+                value=Decimal("500.00"),
+                income_tax=Decimal("15.30"),
+                target_weight=Decimal("0.1"),
+                current_weight=Decimal("0.1600"),
+                weight_after=Decimal("0.1500"),
+                sale_reason=SaleReason.DRIFT,
+                price_source="calculado",
+            ),
+            RebalanceItem(
+                ticker="B5P211",
+                asset_type=AssetType.ETF,
+                recommendation=Recommendation.BUY,
+                price=Decimal("101.50"),
+                quantity=Decimal("47"),
+                value=Decimal("4770.50"),
+                income_tax=None,
+                target_weight=Decimal("0.5"),
+                current_weight=Decimal("0.4380"),
+                weight_after=Decimal("0.4870"),
+                price_source="brapi",
+                as_of=QUOTE_TIME,
+            ),
+            RebalanceItem(
+                ticker="MUND11",
+                asset_type=AssetType.ETF,
+                recommendation=Recommendation.HOLD,
+                price=Decimal("120.00"),
+                quantity=None,
+                value=Decimal("0"),
+                income_tax=None,
+                target_weight=Decimal("0.3"),
+                current_weight=Decimal("0.2500"),
+                weight_after=Decimal("0.2630"),
+                price_source="brapi",
+                as_of=QUOTE_TIME,
+            ),
+        ],
+        "estimated_fees": Decimal("1.53"),
+        "warnings": ["NB1011 em saída na trajetória: vendido até o alvo"],
+    }
+    fields.update(overrides)
+    return AnnualRebalance(**fields)
 
 
 def make_cycle(**overrides: Any) -> services.CycleStatus:

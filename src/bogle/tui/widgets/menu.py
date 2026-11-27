@@ -50,9 +50,11 @@ def menu_bindings(items: Sequence[MenuItem]) -> list[Binding]:
 class Menu(OptionList):
     """Navigable list of :class:`MenuItem`."""
 
-    def __init__(self, items: Sequence[MenuItem], *, id: str | None = None) -> None:
+    def __init__(self, items: Sequence[MenuItem], *, id: str | None = None, label_width: int | None = None) -> None:
         # A coluna acompanha o rotulo mais largo do proprio menu: com largura
         # fixa, um rotulo maior que ela (por exemplo "Rentabilidade") encostava na
-        # descricao e as duas viravam uma palavra so.
-        width = max((len(item.label) for item in items), default=0) + _LABEL_GAP
+        # descricao e as duas viravam uma palavra so. `label_width` e para um menu
+        # partido em duas listas (a Home): as duas medem pelo rotulo mais largo de
+        # todas, ou as descricoes desalinham quando as listas empilham.
+        width = (label_width or max((len(item.label) for item in items), default=0)) + _LABEL_GAP
         super().__init__(*(Option(_prompt(item, width), id=item.id) for item in items), id=id)

@@ -438,7 +438,7 @@ class TestCommandStartup:
             raise BackupError("parou no backup")
 
         monkeypatch.setattr(cli_mod, "_apply_glide_path", never)
-        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", None))
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", None, None))
         monkeypatch.setattr("bogle.cli.backup.create_backup", stop_here)
         result = CliRunner().invoke(app, ["backup"])
         assert isinstance(result.exception, BackupError)
