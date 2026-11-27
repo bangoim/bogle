@@ -13,7 +13,7 @@ from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
 from bogle.repositories.transactions import TransactionRepository
 
-TEST_DATABASE_URL = "postgresql://localhost/bogle_test"
+TEST_DATABASE_URL = os.environ.get("BOGLE_TEST_DATABASE_URL", "postgresql://localhost/bogle_test")
 
 assert "_test" in TEST_DATABASE_URL, (
     "Recusando rodar testes contra um DB sem '_test' no nome — risco de truncar produção."
