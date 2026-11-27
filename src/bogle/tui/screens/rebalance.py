@@ -25,10 +25,10 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from bogle import format as fmt
 from bogle.cli.rebalance import OPERATIONS, recorded_message
+from bogle.error_messages import HANDLED, message_for
 from bogle.position import price_provenance
 from bogle.rebalancing import AnnualRebalance, RebalanceItem, Recommendation
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import DataScreen
 
 _COLUMNS = (

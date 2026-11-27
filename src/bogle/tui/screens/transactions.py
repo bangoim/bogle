@@ -22,8 +22,8 @@ from textual.worker import get_current_worker
 
 from bogle import format as fmt
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.error_messages import HANDLED, message_for
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.modals import ConfirmModal
 
 _COLUMNS = ("ID", "Data", "Tipo", "Ticker", "Qtd", "Preço", "Valor", "Fees", "IR")

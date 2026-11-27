@@ -28,9 +28,9 @@ from textual.worker import get_current_worker
 
 from bogle import format as fmt
 from bogle.cli.parsing import parse_fee_rate
+from bogle.error_messages import HANDLED, message_for
 from bogle.imports.plan import ImportPlan, report_lines, summary, ticker_outcomes
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.navigation import back_to_home
 from bogle.tui.screens.modals import GO_HOME, NextStepModal
 from bogle.tui.screens.write import Entry, WriteScreen

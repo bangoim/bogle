@@ -42,9 +42,9 @@ from bogle.cli.parsing import parse_date, parse_decimal
 from bogle.closeout import ClearedTarget, cleared_notice
 from bogle.db import DEFAULT_TIMEZONE
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.error_messages import HANDLED, message_for
 from bogle.position import Position
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.navigation import back_to_home
 from bogle.tui.screens.data import DataScreen
 from bogle.tui.screens.import_ import ImportScreen

@@ -223,7 +223,7 @@ def _run() -> None:
     absence, and any other ``psycopg.Error`` — a constraint the schema still
     enforces, a migration that did not apply — is a database state to explain, not
     a bug to dump as a traceback. Anything else *is* a bug and keeps its traceback.
-    Same mapping as the TUI's :func:`bogle.tui.errors.message_for`.
+    Same mapping as :func:`bogle.error_messages.message_for`.
     """
     load_dotenv()  # picks up BRAPI_TOKEN (and future secrets) from a local .env
     try:

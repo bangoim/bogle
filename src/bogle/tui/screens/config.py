@@ -31,9 +31,9 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from bogle import format as fmt
 from bogle.backup import BackupResult
+from bogle.error_messages import HANDLED, message_for
 from bogle.settings import SettingEntry, format_value
 from bogle.tui import cells, services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.data import DataScreen
 from bogle.tui.screens.modals import EditModal
 

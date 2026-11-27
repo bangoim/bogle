@@ -23,10 +23,10 @@ from textual.widgets import Footer, Header, Static
 from textual.worker import get_current_worker
 
 from bogle import format as fmt
+from bogle.error_messages import HANDLED, message_for
 from bogle.reports.overview import PortfolioOverview
 from bogle.reports.valuation import RETRIABLE, with_reasons
 from bogle.tui import services
-from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.assets import AssetsScreen
 from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.glide import GlidePathScreen
