@@ -678,7 +678,9 @@ class TestCli:
         with psycopg.connect(url) as probe:
             user = probe.info.user
         # O pg_hba local e `trust`: a senha e ignorada, e por isso pode ser falsa.
-        with_password = url.replace("postgresql://", f"postgresql://{user}:S3CRET-pw@")
+        # A URL pode ja trazer credenciais (no CI traz): troca, em vez de prefixar.
+        host_and_db = url.split("://", 1)[1].rsplit("@", 1)[-1]
+        with_password = f"postgresql://{user}:S3CRET-pw@{host_and_db}"
         backup = run_cli("backup", url=with_password, data_home=tmp_path / "data")
         assert backup.returncode == 0, backup.stderr
         [written] = list((tmp_path / "data" / "bogle" / "backups").iterdir())
