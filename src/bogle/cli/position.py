@@ -25,6 +25,7 @@ from rich.table import Table
 from bogle.data import default_dispatcher
 from bogle.db import get_connection
 from bogle.format import DASH, exact, exact_or_none, money, pct, signed
+from bogle.glide_path import marked_target
 from bogle.position import PortfolioSummary, Position, price_provenance
 from bogle.reports.snapshot import compute_snapshot
 from bogle.reports.valuation import with_reasons
@@ -83,6 +84,7 @@ def _render(
     excluded: Sequence[str] = (),
     excluded_reasons: Mapping[str, str] | None = None,
     has_prices: bool = True,
+    glide_tickers: frozenset[str] = frozenset(),
 ) -> None:
     table = Table(title="Posição", title_style="bold")
     table.add_column("Ticker", style="cyan", no_wrap=True)
@@ -98,7 +100,7 @@ def _render(
             money(p.price),
             money(p.market_value),
             pct(p.current_weight),
-            pct(p.target_weight),
+            marked_target(p.target_weight, p.ticker, glide_tickers),
             signed(p.drift, percent=True),
             signed(p.pnl, percent=False),
             signed(p.pnl_percent, percent=True),
@@ -159,4 +161,5 @@ def position(
         excluded=snapshot.excluded,
         excluded_reasons=snapshot.excluded_reasons,
         has_prices=snapshot.has_prices,
+        glide_tickers=snapshot.glide_tickers,
     )
