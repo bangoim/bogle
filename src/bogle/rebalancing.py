@@ -35,18 +35,25 @@ does move the split, on purpose: the pinned ticker leaves it, and whatever the
 contribution still has is divided among the others the usual way, so the aporte
 keeps adding up.
 
-**Withdrawals** (issue #80) are the one place the engine sells: in retirement
-there are no contributions left, and living off the portfolio is how it keeps
-following the targets. :func:`suggest_withdrawal` decides *which* tickers pay for
-it — the ones the glide path is taking out first, then whatever is above its
+**Withdrawals** (issue #80) are one of the two places the engine sells: in
+retirement there are no contributions left, and living off the portfolio is how it
+keeps following the targets. :func:`suggest_withdrawal` decides *which* tickers pay
+for it — the ones the glide path is taking out first, then whatever is above its
 target, and only then everyone by weight.
+
+**The annual rebalance** (issue #81) is the other: after retirement the targets
+keep moving towards the end of the glide path and the withdrawal alone does not
+follow them, so once a year :func:`suggest_annual_rebalance` sells what is out of
+the band and buys what is below target with the net. It is the only place
+:attr:`Recommendation.SELL` exists — :func:`classify_positions` only emits it when
+told it is the retirement phase.
 """
 
 from __future__ import annotations
 
 from calendar import monthrange
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time
 from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 from enum import StrEnum
@@ -69,6 +76,8 @@ DEFAULT_THRESHOLD = Decimal("0.05")  # 5 pontos percentuais
 class Recommendation(StrEnum):
     BUY = "BUY"
     HOLD = "HOLD"
+    SELL = "SELL"
+    """So na fase de aposentadoria (issue #81): na acumulacao a politica e nao vender."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +105,7 @@ def _pp(value: Decimal) -> str:
     return f"{scaled}"
 
 
-def _reason(drift: Decimal, current: Decimal, target: Decimal, threshold: Decimal) -> str:
+def _reason(drift: Decimal, current: Decimal, target: Decimal, threshold: Decimal, *, retired: bool = False) -> str:
     if drift < -threshold:
         return f"Peso atual {_pct(current)} está {_pp(drift)} p.p. abaixo do target de {_pct(target)}."
     if drift < 0:
@@ -106,7 +115,20 @@ def _reason(drift: Decimal, current: Decimal, target: Decimal, threshold: Decima
         )
     if drift == 0:
         return f"Peso atual {_pct(current)} está no target."
+    if retired:
+        # Na aposentadoria o acima do alvo so fica porque esta dentro da faixa.
+        return (
+            f"Peso atual {_pct(current)} está {_pp(drift)} p.p. acima do target de {_pct(target)}, "
+            f"dentro da tolerância de {_pp(threshold)} p.p."
+        )
     return f"Peso atual {_pct(current)} está {_pp(drift)} p.p. acima do target de {_pct(target)}; política no-sell."
+
+
+def _sell_reason(drift: Decimal, current: Decimal, target: Decimal, threshold: Decimal, *, exiting: bool) -> str:
+    above = f"Peso atual {_pct(current)} está {_pp(drift)} p.p. acima do target de {_pct(target)}"
+    if exiting:
+        return f"{above}; em saída na trajetória, vende até o target."
+    return f"{above}, além da tolerância de {_pp(threshold)} p.p.; vende até {_pct(target + threshold)}."
 
 
 def weight_sum_notice(total: Decimal) -> str | None:
@@ -127,24 +149,45 @@ def weight_sum_notice(total: Decimal) -> str | None:
     return f"faltam {_pct(Decimal('1') - total)} para 100%: o aporte não é distribuído por inteiro"
 
 
-def classify_positions(positions: list[Position], threshold: Decimal = DEFAULT_THRESHOLD) -> list[TickerRecommendation]:
-    """Classify every position as BUY or HOLD (input order preserved)."""
+def classify_positions(
+    positions: list[Position],
+    threshold: Decimal = DEFAULT_THRESHOLD,
+    *,
+    retired: bool = False,
+    exiting: Collection[str] = frozenset(),
+) -> list[TickerRecommendation]:
+    """Classify every position as BUY, HOLD or — in retirement only — SELL (input order preserved).
+
+    Before retirement (the default) nothing is ever SELL: above the target is
+    HOLD, the no-sell policy of the accumulation phase. With ``retired=True`` (the
+    annual rebalance of issue #81, :func:`annual_rebalance_phase`) a ticker is SELL
+    when ``drift > threshold``, or when it is one of the ``exiting`` tickers (the
+    glide path takes it to 0) and is above its target at all — no tolerance.
+    """
     missing = [p.ticker for p in positions if p.current_weight is None or p.drift is None]
     if missing:
         raise MissingPriceError(missing)
 
+    exiting_set = {ticker.upper() for ticker in exiting} if retired else set()
     recommendations = []
     for p in positions:
         assert p.current_weight is not None and p.drift is not None  # guarded above
-        buy = p.drift < -threshold
+        is_exiting = p.ticker in exiting_set
+        sell = retired and (p.drift > threshold or (is_exiting and p.drift > 0))
+        if sell:
+            recommendation = Recommendation.SELL
+            reason = _sell_reason(p.drift, p.current_weight, p.target_weight, threshold, exiting=is_exiting)
+        else:
+            recommendation = Recommendation.BUY if p.drift < -threshold else Recommendation.HOLD
+            reason = _reason(p.drift, p.current_weight, p.target_weight, threshold, retired=retired)
         recommendations.append(
             TickerRecommendation(
                 ticker=p.ticker,
                 current_weight=p.current_weight,
                 target_weight=p.target_weight,
                 drift=p.drift,
-                recommendation=Recommendation.BUY if buy else Recommendation.HOLD,
-                reason=_reason(p.drift, p.current_weight, p.target_weight, threshold),
+                recommendation=recommendation,
+                reason=reason,
             )
         )
     return recommendations
@@ -847,24 +890,38 @@ def suggest_withdrawal(
         )
     if proportional:
         warnings.append("Excesso sobre os alvos não cobre o saque: o resto sai de todos, pelo peso")
-    no_cost = sorted(item.ticker for item in items if item.income_tax is None)
+    warnings.extend(
+        _sale_notes(
+            sorted(item.ticker for item in items if item.income_tax is None),
+            sorted(item.ticker for item in items if item.asset_type in PRIVATE_FIXED_INCOME_TYPES),
+        )
+    )
+
+    return WithdrawalSuggestion(amount=amount, items=items, retired=retired, warnings=warnings)
+
+
+def _sale_notes(no_cost: list[str], private_fi: list[str]) -> list[str]:
+    """The warnings every suggested sale shares: IR not estimated, liquidity to check.
+
+    Shared by the withdrawal and the annual rebalance (issue #81), which sell the
+    same way.
+    """
+    notes = []
     if no_cost:
-        warnings.append(
+        notes.append(
             _naming(no_cost, "Sem custo médio de {}: IR não estimado", "Sem custo médio de {}: IR não estimado")
         )
-    private_fi = sorted(item.ticker for item in items if item.asset_type in PRIVATE_FIXED_INCOME_TYPES)
     if private_fi:
         # O motor nao sabe a liquidez do contrato: um CDB sem liquidez diaria so
         # sai no vencimento.
-        warnings.append(
+        notes.append(
             _naming(
                 private_fi,
                 "{} é renda fixa privada: confira a liquidez antes de vender",
                 "{} são renda fixa privada: confira a liquidez antes de vender",
             )
         )
-
-    return WithdrawalSuggestion(amount=amount, items=items, retired=retired, warnings=warnings)
+    return notes
 
 
 def _sale_tax(
@@ -903,6 +960,373 @@ def _sale_tax(
         )
         tax = income_tax_on_sale(asset, sale, average * quantity, month_stock_sales)
     return tax.quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+# ---------------------------------------------------------------------------
+# Annual rebalance (issue #81)
+# ---------------------------------------------------------------------------
+
+
+def annual_rebalance_phase(birth_year: int | None, retirement_age: int, year: int) -> bool | None:
+    """Whether ``year`` has an annual rebalance: from the first 01/01 *after* retirement.
+
+    Strict, unlike :func:`retirement_phase` (which the withdrawal keeps): the year
+    of the age is when retirement starts, and the annual sale starts on the next
+    01/01 — ``year - birth_year > retirement_age``. ``None`` without a year of birth.
+    """
+    if birth_year is None:
+        return None
+    return year - birth_year > retirement_age
+
+
+def first_annual_rebalance_year(birth_year: int, retirement_age: int) -> int:
+    """The first year :func:`annual_rebalance_phase` is true."""
+    return birth_year + retirement_age + 1
+
+
+@dataclass(frozen=True, slots=True)
+class AnnualRebalanceState:
+    """Where the annual rebalance stands, as ``bogle status`` and the reminder read it."""
+
+    year: int
+    """O ano corrente na fase de aposentadoria; antes dela, o primeiro ano com rebalanceamento."""
+    in_phase: bool
+    done: bool
+    """``last_annual_rebalance_year`` ja e ``year``."""
+
+    @property
+    def pending(self) -> bool:
+        return self.in_phase and not self.done
+
+
+def annual_rebalance_state(
+    birth_year: int | None, retirement_age: int, last_year: int | None, year: int
+) -> AnnualRebalanceState | None:
+    """The state of the annual rebalance in ``year``; ``None`` without a year of birth."""
+    if birth_year is None:
+        return None
+    if not annual_rebalance_phase(birth_year, retirement_age, year):
+        return AnnualRebalanceState(
+            year=first_annual_rebalance_year(birth_year, retirement_age), in_phase=False, done=False
+        )
+    return AnnualRebalanceState(year=year, in_phase=True, done=last_year is not None and last_year >= year)
+
+
+def annual_rebalance_notice(state: AnnualRebalanceState | None, *, where: str = "bogle rebalance") -> str | None:
+    """The yearly reminder, or ``None`` when nothing is pending.
+
+    In the style of :func:`overdue_notice`: the CLI prints it to stderr before a
+    command, the TUI raises it as a toast on the Home screen. ``where`` is how to
+    get to the plan — the command, or the menu item in the TUI.
+    """
+    if state is None or not state.pending:
+        return None
+    return f"rebalanceamento anual de {state.year} pendente ({where})"
+
+
+def annual_rebalance_refusal(birth_year: int | None, retirement_age: int, year: int) -> str | None:
+    """Why ``year`` has no annual rebalance, in the user's words; ``None`` when it has."""
+    if birth_year is None:
+        return "Sem ano de nascimento (birth_year): o rebalanceamento anual é só da aposentadoria."
+    if not annual_rebalance_phase(birth_year, retirement_age, year):
+        first = first_annual_rebalance_year(birth_year, retirement_age)
+        return f"Antes da aposentadoria: o rebalanceamento anual começa em {first}."
+    return None
+
+
+class SaleReason(StrEnum):
+    """Why the annual rebalance sells a ticker."""
+
+    EXITING = "EXITING"
+    """O alvo final da trajetoria e 0: vende ate o alvo do ano, sem tolerancia."""
+    DRIFT = "DRIFT"
+    """Acima de alvo + tolerancia: vende ate a borda da faixa."""
+
+
+@dataclass(frozen=True, slots=True)
+class RebalanceItem:
+    """One ticker of the annual rebalance: a sale, a purchase or nothing."""
+
+    ticker: str
+    asset_type: AssetType
+    recommendation: Recommendation
+    price: Decimal
+    quantity: Decimal | None
+    """Cotas inteiras vendidas ou compradas (renda variavel); ``None`` na renda fixa,
+    que vai por valor, e no HOLD."""
+    value: Decimal
+    """Bruto da venda, ou custo da compra; zero no HOLD."""
+    income_tax: Decimal | None
+    """IR estimado da venda; ``None`` fora dela, e na venda sem custo medio."""
+    target_weight: Decimal
+    current_weight: Decimal | None
+    weight_after: Decimal
+    """Peso sobre o patrimonio depois do plano: o de hoje menos o IR reservado."""
+    sale_reason: SaleReason | None = None
+    price_source: str | None = None
+    as_of: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AnnualRebalance:
+    year: int
+    threshold: Decimal
+    items: list[RebalanceItem]
+    """Vendas (maior primeiro), compras (maior primeiro), e os demais por ticker."""
+    estimated_fees: Decimal
+    """Tarifa da B3 estimada sobre as compras de renda variavel, como no aporte."""
+    warnings: list[str]
+
+    @property
+    def sales(self) -> list[RebalanceItem]:
+        return [item for item in self.items if item.recommendation is Recommendation.SELL]
+
+    @property
+    def purchases(self) -> list[RebalanceItem]:
+        return [item for item in self.items if item.recommendation is Recommendation.BUY]
+
+    @property
+    def total_sold(self) -> Decimal:
+        return sum((item.value for item in self.sales), Decimal("0"))
+
+    @property
+    def total_tax(self) -> Decimal:
+        """IR estimado das vendas com custo medio (as outras ficam num aviso)."""
+        return sum((item.income_tax for item in self.sales if item.income_tax is not None), Decimal("0"))
+
+    @property
+    def available(self) -> Decimal:
+        """O que vai para as compras: as vendas menos o IR, que fica reservado para o DARF."""
+        return self.total_sold - self.total_tax
+
+    @property
+    def total_bought(self) -> Decimal:
+        return sum((item.value for item in self.purchases), Decimal("0"))
+
+    @property
+    def leftover(self) -> Decimal:
+        """O que sobra em caixa depois das compras e da taxa; negativo quando a taxa nao cabe."""
+        return self.available - self.total_bought - self.estimated_fees
+
+
+_MAX_PASSES = 50
+"""Teto das passadas de :func:`suggest_annual_rebalance` ate o IR parar de mudar.
+Cada passada so aumenta as vendas, em cotas ou centavos, e o IR e uma fracao do
+ganho: na pratica fecha em duas ou tres."""
+
+
+@dataclass(frozen=True, slots=True)
+class _RebalanceSale:
+    position: Position
+    reason: SaleReason
+    quantity: Decimal | None
+    gross: Decimal
+
+
+def suggest_annual_rebalance(
+    summary: PortfolioSummary,
+    exiting: Collection[str] = frozenset(),
+    *,
+    year: int,
+    threshold: Decimal = DEFAULT_THRESHOLD,
+    month_stock_sales: Decimal = Decimal("0"),
+    held_since: Mapping[str, date] | None = None,
+    today: date | None = None,
+) -> AnnualRebalance:
+    """The annual rebalance of the retirement phase: what to sell, and what to buy with the net.
+
+    The targets are the year's, already written by the glide path. Which tickers
+    sell is :func:`classify_positions` with ``retired=True``:
+
+    - an ``exiting`` ticker (target 0 at the last point of the trajectory) above
+      its target sells down to the target of the year, with no tolerance;
+    - any other sells only when ``drift > threshold``, and only down to
+      ``target + threshold`` — the smallest sale that brings it back to the band.
+
+    The trigger is today's drift, the one ``bogle position`` shows. The amount is
+    measured against the patrimony *after* the plan: today's minus the estimated
+    IR, which leaves for the DARF. That patrimony depends on the IR, and the IR on
+    the sales, so the sales are recomputed until the IR stops moving (each pass can
+    only sell more; see :data:`_MAX_PASSES`) — and a ticker sold to the edge of the
+    band ends inside it once the IR is gone.
+
+    Variable income sells whole shares, rounded **up**: rounding down would leave
+    the ticker a fraction of a share above the band (or above the target of the
+    year), and the point of the sale is to bring it back. Never more than the
+    shares held, so a ticker sold to 0 sells exactly what it has. Fixed income sells
+    exact values, rounded up to the cent, never more than the position.
+
+    The IR of each sale is :func:`suggest_withdrawal`'s (:func:`_sale_tax`), with
+    the R$20k stock exemption over ``month_stock_sales`` plus the stock sales of
+    this plan. The net — the sales minus the IR — is split across the tickers
+    below target by :func:`suggest_allocation` itself, over the patrimony after the
+    sales: the same whole shares, the same B3 fee, and no purchase past a target.
+    A ticker that sells buys nothing back.
+
+    Pure: the phase (:func:`annual_rebalance_phase`) is the caller's to check.
+    """
+    open_positions = [p for p in summary.positions if p.quantity > 0]
+    if not open_positions:
+        raise ValidationError("Nenhuma posição aberta para rebalancear.")
+    missing = [p.ticker for p in open_positions if p.market_value is None or p.price is None]
+    if missing:
+        raise MissingPriceError(missing)
+    total = sum((p.market_value for p in open_positions if p.market_value is not None), Decimal("0"))
+    if total <= 0:
+        raise ValidationError("Nenhuma posição aberta para rebalancear.")
+    day = today if today is not None else date.today()
+    since = held_since or {}
+
+    by_ticker = {p.ticker: p for p in open_positions}
+    exiting_set = {ticker.upper() for ticker in exiting}
+    sellers = [
+        (by_ticker[rec.ticker], SaleReason.EXITING if rec.ticker in exiting_set else SaleReason.DRIFT)
+        for rec in classify_positions(open_positions, threshold, retired=True, exiting=exiting_set)
+        if rec.recommendation is Recommendation.SELL
+    ]
+
+    def sales_at(base: Decimal) -> list[_RebalanceSale]:
+        sales = []
+        for p, reason in sellers:
+            assert p.price is not None and p.market_value is not None  # guarded above
+            limit = p.target_weight if reason is SaleReason.EXITING else p.target_weight + threshold
+            excess = p.market_value - limit * base
+            if excess <= 0:
+                continue
+            if p.asset_type in VARIABLE_INCOME_TYPES:
+                # Para cima: e o que garante a volta para a faixa (ou para o alvo).
+                quantity = min((excess / p.price).to_integral_value(rounding=ROUND_UP), p.quantity)
+                sales.append(_RebalanceSale(p, reason, quantity, quantity * p.price))
+            else:
+                gross = min(excess.quantize(_CENT, rounding=ROUND_UP), p.market_value)
+                sales.append(_RebalanceSale(p, reason, None, gross))
+        return sales
+
+    def taxes_of(sales: list[_RebalanceSale]) -> list[Decimal | None]:
+        stock_month = month_stock_sales + sum(
+            (sale.gross for sale in sales if sale.position.asset_type is AssetType.STOCK), Decimal("0")
+        )
+        return [
+            _sale_tax(sale.position, sale.quantity, sale.gross, stock_month, since.get(sale.position.ticker), day)
+            for sale in sales
+        ]
+
+    def known(taxes: list[Decimal | None]) -> Decimal:
+        return sum((tax for tax in taxes if tax is not None), Decimal("0"))
+
+    sales = sales_at(total)
+    taxes = taxes_of(sales)
+    for _ in range(_MAX_PASSES):
+        again = sales_at(total - known(taxes))
+        if [(s.position.ticker, s.gross) for s in again] == [(s.position.ticker, s.gross) for s in sales]:
+            break
+        sales, taxes = again, taxes_of(again)
+    base = total - known(taxes)
+
+    sold = {sale.position.ticker for sale in sales}
+    gross_total = sum((sale.gross for sale in sales), Decimal("0"))
+    available = gross_total - known(taxes)
+    candidates = [p for p in summary.positions if p.ticker not in sold]
+    purchase = None
+    if available > 0 and candidates:
+        # O patrimonio depois das vendas, e o liquido como "aporte": o futuro do
+        # aporte (total + aporte) e entao o de hoje menos o IR, a mesma base das vendas.
+        after_sales = replace(summary, positions=candidates, total_value=total - gross_total)
+        purchase = suggest_allocation(after_sales, available)
+    bought = {item.ticker: item for item in purchase.items} if purchase is not None else {}
+
+    sale_items = [
+        RebalanceItem(
+            ticker=sale.position.ticker,
+            asset_type=sale.position.asset_type,
+            recommendation=Recommendation.SELL,
+            price=sale.position.price or Decimal("0"),
+            quantity=sale.quantity,
+            value=sale.gross,
+            income_tax=tax,
+            target_weight=sale.position.target_weight,
+            current_weight=sale.position.current_weight,
+            weight_after=((sale.position.market_value or Decimal("0")) - sale.gross) / base,
+            sale_reason=sale.reason,
+            price_source=sale.position.price_source,
+            as_of=sale.position.as_of,
+        )
+        for sale, tax in zip(sales, taxes, strict=True)
+    ]
+    purchase_items: list[RebalanceItem] = []
+    hold_items: list[RebalanceItem] = []
+    for p in candidates:
+        suggestion = bought.get(p.ticker)
+        if suggestion is not None and suggestion.effective_cost > 0:
+            purchase_items.append(
+                RebalanceItem(
+                    ticker=p.ticker,
+                    asset_type=p.asset_type,
+                    recommendation=Recommendation.BUY,
+                    price=suggestion.price,
+                    quantity=suggestion.quantity,
+                    value=suggestion.effective_cost,
+                    income_tax=None,
+                    target_weight=p.target_weight,
+                    current_weight=p.current_weight,
+                    weight_after=suggestion.weight_after,
+                    price_source=p.price_source,
+                    as_of=p.as_of,
+                )
+            )
+        elif p.price is not None:
+            # Sem preco so fica um alvo sem posicao: o aviso "Sem cotação" ja o nomeia.
+            hold_items.append(
+                RebalanceItem(
+                    ticker=p.ticker,
+                    asset_type=p.asset_type,
+                    recommendation=Recommendation.HOLD,
+                    price=p.price,
+                    quantity=None,
+                    value=Decimal("0"),
+                    income_tax=None,
+                    target_weight=p.target_weight,
+                    current_weight=p.current_weight,
+                    weight_after=(p.market_value or Decimal("0")) / base,
+                    price_source=p.price_source,
+                    as_of=p.as_of,
+                )
+            )
+    items = [
+        *sorted(sale_items, key=lambda item: (-item.value, item.ticker)),
+        *sorted(purchase_items, key=lambda item: (-item.value, item.ticker)),
+        *sorted(hold_items, key=lambda item: item.ticker),
+    ]
+
+    warnings = []
+    # Curtos de proposito, como os do saque: o porque esta no README.
+    if not sales:
+        warnings.append("Nada a vender: nenhum ticker acima da faixa")
+    sold_exiting = sorted(item.ticker for item in sale_items if item.sale_reason is SaleReason.EXITING)
+    if sold_exiting:
+        warnings.append(
+            _naming(
+                sold_exiting,
+                "{} em saída na trajetória: vendido até o alvo",
+                "{} em saída na trajetória: vendidos até o alvo",
+            )
+        )
+    warnings.extend(
+        _sale_notes(
+            sorted(item.ticker for item in sale_items if item.income_tax is None),
+            sorted(item.ticker for item in sale_items if item.asset_type in PRIVATE_FIXED_INCOME_TYPES),
+        )
+    )
+    if purchase is not None:
+        warnings.extend(purchase.warnings)
+
+    return AnnualRebalance(
+        year=year,
+        threshold=threshold,
+        items=items,
+        estimated_fees=purchase.estimated_fees if purchase is not None else Decimal("0"),
+        warnings=warnings,
+    )
 
 
 # ---------------------------------------------------------------------------

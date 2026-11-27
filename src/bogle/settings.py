@@ -31,6 +31,7 @@ THEME = "theme"
 BIRTH_YEAR = "birth_year"
 RETIREMENT_AGE = "retirement_age"
 GLIDE_PATH_APPLIED_YEAR = "glide_path_applied_year"
+LAST_ANNUAL_REBALANCE_YEAR = "last_annual_rebalance_year"
 
 DEFAULT_THEME = "textual-dark"
 
@@ -176,7 +177,7 @@ SETTINGS: dict[str, SettingSpec] = {
         SettingSpec(
             key=WEIGHT_DRIFT_THRESHOLD,
             type_name="decimal",
-            description="Drift (em fração) a partir do qual um ativo vira BUY.",
+            description="Drift (em fração) a partir do qual um ativo vira BUY; na aposentadoria, a tolerância da venda anual.",
             default=Decimal("0.05"),
             parse=_parse_threshold,
             to_json=str,
@@ -240,6 +241,15 @@ SETTINGS: dict[str, SettingSpec] = {
             key=GLIDE_PATH_APPLIED_YEAR,
             type_name="int",
             description="Último ano em que os alvos da trajetória foram aplicados (atualizado em 01/01).",
+            default=None,
+            parse=_parse_year,
+            to_json=int,
+            from_json=int,
+        ),
+        SettingSpec(
+            key=LAST_ANNUAL_REBALANCE_YEAR,
+            type_name="int",
+            description="Último ano em que o rebalanceamento anual da aposentadoria foi feito ('bogle rebalance --done').",
             default=None,
             parse=_parse_year,
             to_json=int,
