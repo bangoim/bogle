@@ -13,6 +13,12 @@ HomeScreen #home {
     align-horizontal: center;
 }
 
+/* Menu em uma coluna (abaixo de -wide): sem a linha em branco sobre o rodape, os
+   oito itens cabem em 80x24 com o logo e sem scroll. */
+HomeScreen.-normal #home, HomeScreen.-narrow #home {
+    padding: 1 2 0 2;
+}
+
 #logo {
     width: auto;
     color: $primary;
@@ -431,6 +437,26 @@ ConfirmModal, NextStepModal, EditModal, HelpModal {
 }
 
 #suggest-totals, #suggest-note {
+    height: auto;
+}
+
+/* -------------------------------------------------------------- Saque */
+
+#withdraw {
+    padding: 0 1;
+}
+
+#withdraw-amount {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#sales {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#withdraw-totals, #withdraw-note {
     height: auto;
 }
 

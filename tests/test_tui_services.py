@@ -709,6 +709,46 @@ class TestSuggestion:
         assert get_setting(conn, LAST_REBALANCE_DATE) is None
 
 
+class TestWithdrawal:
+    @pytest.fixture
+    def priced(self, seeded: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The same injected portfolio as :class:`TestSuggestion`: PETR4 alone."""
+        summary = PortfolioSummary(
+            positions=[
+                Position(
+                    ticker="PETR4",
+                    asset_type=AssetType.STOCK,
+                    quantity=Decimal("10"),
+                    total_invested=Decimal("300"),
+                    target_weight=Decimal("0.4"),
+                    dividends=Decimal("0"),
+                    average_price=Decimal("30"),
+                    price=Decimal("32"),
+                    market_value=Decimal("320"),
+                    current_weight=Decimal("1"),
+                    drift=Decimal("0.6"),
+                )
+            ],
+            total_value=Decimal("320"),
+            total_invested=Decimal("300"),
+            total_pnl=Decimal("20"),
+            total_dividends=Decimal("0"),
+        )
+        self.built: list[dict[str, Any]] = []
+        monkeypatch.setattr(services, "default_dispatcher", lambda **kwargs: self.built.append(kwargs))
+        monkeypatch.setattr("bogle.withdrawal.get_portfolio_summary", lambda conn, dispatcher, **_: summary)
+
+    def test_suggests_the_sale_and_records_nothing(self, priced: None, conn: psycopg.Connection[DictRow]) -> None:
+        # Ao contrario do aporte, o saque nao e a avaliacao do ciclo.
+        suggestion = services.load_withdrawal(Decimal("100"), today=date(2026, 3, 20))
+        assert [(item.ticker, item.quantity) for item in suggestion.items] == [("PETR4", Decimal("4"))]
+        assert get_setting(conn, LAST_REBALANCE_DATE) is None
+
+    def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(self, priced: None) -> None:
+        services.load_withdrawal(Decimal("100"), refresh=True, today=date(2026, 3, 20))
+        assert self.built[-1] == {"ignore_cached_quotes": True}
+
+
 class TestReportLoaders:
     """The report wrappers: thin, but a wrong keyword here would only show up at
     runtime — every screen test patches this module out."""

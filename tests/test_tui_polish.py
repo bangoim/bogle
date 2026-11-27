@@ -41,6 +41,7 @@ from bogle.tui.screens.returns import ReturnsScreen
 from bogle.tui.screens.status import StatusScreen
 from bogle.tui.screens.suggest import SuggestScreen
 from bogle.tui.screens.transactions import TransactionsScreen
+from bogle.tui.screens.withdraw import WithdrawScreen
 from bogle.tui.widgets.menu import Menu
 from tests.tui_fakes import (
     GLIDE_POINTS,
@@ -79,6 +80,7 @@ SCREENS: dict[str, Callable[[], Screen[None]]] = {
     "alterar ativo": lambda: AssetUpdateScreen(make_assets()[1]),
     "trajetória": GlidePathScreen,
     "ponto da trajetória": lambda: GlidePointScreen(GLIDE_TICKERS, points=GLIDE_POINTS),
+    "saque": WithdrawScreen,
     "status": StatusScreen,
     "config": ConfigScreen,
 }

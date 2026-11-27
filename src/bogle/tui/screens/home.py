@@ -37,6 +37,7 @@ from bogle.tui.screens.reports import ReportsScreen
 from bogle.tui.screens.status import StatusScreen
 from bogle.tui.screens.suggest import SuggestScreen
 from bogle.tui.screens.transactions import TransactionsScreen
+from bogle.tui.screens.withdraw import WithdrawScreen
 from bogle.tui.widgets.menu import Menu, MenuItem, menu_bindings
 from bogle.tui.widgets.metric import Metric
 
@@ -52,8 +53,9 @@ LOGO = r"""
 # Status e Config viraram atalhos do rodape (`s` e `c`): sao as duas telas que se
 # consulta de vez em quando, e o menu e o que decide a altura da Home — com elas
 # dentro, o resumo empurrava o logo para fora do scroll em terminais de altura
-# normal. A Trajetoria (#79) entrou como setimo item: com ela a Home ainda cabe
-# em 80x24 sem scroll.
+# normal. A Trajetoria (#79) entrou como setimo item e o Saque (#80) como oitavo:
+# em duas colunas sao quatro linhas, e com eles a Home ainda cabe em 80x24 sem
+# scroll (ali o menu e uma coluna so, e o logo sai abaixo de 24 linhas).
 _ENTRIES: Entries = (
     (MenuItem("1", "position", "Posição", "preços ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda, provento ou importação"), RegisterScreen),
@@ -62,6 +64,7 @@ _ENTRIES: Entries = (
     (MenuItem("5", "reports", "Relatórios", "rentabilidade, histórico, proventos"), ReportsScreen),
     (MenuItem("6", "assets", "Ativos", "cadastrar, atualizar e remover"), AssetsScreen),
     (MenuItem("7", "glide", "Trajetória", "alvos por idade, ano a ano"), GlidePathScreen),
+    (MenuItem("8", "withdraw", "Saque", "o que vender na aposentadoria"), WithdrawScreen),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)
