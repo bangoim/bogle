@@ -12,6 +12,7 @@ from typing import Any
 import psycopg
 import pytest
 from psycopg import errors as pg_errors
+from textual.containers import VerticalScroll
 
 from bogle import format as fmt
 from bogle.domain.errors import MarketDataError
@@ -598,7 +599,7 @@ class TestNavigation:
 
     @pytest.mark.asyncio
     async def test_the_menu_splits_in_two_columns_on_a_wide_terminal(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Sete itens em quatro linhas: e o que faz o resumo e o logo caberem sem
+        # Oito itens em quatro linhas: e o que faz o resumo e o logo caberem sem
         # scroll num terminal de altura normal.
         use_overview(monkeypatch, make_overview())
         app = make_app()
@@ -608,7 +609,7 @@ class TestNavigation:
             assert isinstance(home, HomeScreen)
             assert home.has_class("-wide")
             assert home.query_one("#menu").size.height == 4  # quatro linhas de itens
-            assert [menu.option_count for menu in home.query(Menu)] == [4, 3]
+            assert [menu.option_count for menu in home.query(Menu)] == [4, 4]
 
     @pytest.mark.asyncio
     async def test_a_narrower_terminal_keeps_the_single_column(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -621,7 +622,22 @@ class TestNavigation:
             home = app.screen
             assert isinstance(home, HomeScreen)
             assert not home.has_class("-wide")
-            assert home.query_one("#menu").size.height == 7  # os sete itens, um por linha
+            assert home.query_one("#menu").size.height == 8  # os oito itens, um por linha
+
+    @pytest.mark.asyncio
+    async def test_eighty_by_twenty_four_fits_the_logo_the_summary_and_the_menu(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Em 80 colunas o menu e uma coluna so, oito linhas: e o tamanho em que
+        # o oitavo item (Saque) mais aperta, e ainda nao pode pedir scroll.
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test(size=(80, 24)) as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            assert home.query_one("#logo").display
+            assert home.query_one("#home", VerticalScroll).max_scroll_y == 0
 
     @pytest.mark.asyncio
     async def test_the_side_arrows_move_between_the_columns_keeping_the_row(

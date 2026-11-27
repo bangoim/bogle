@@ -153,6 +153,20 @@ class ActiveGlidePath:
         return glide_targets(self.points, age_in(year, self.birth_year))
 
 
+def exiting_tickers(glide: ActiveGlidePath | None, tickers: Iterable[str]) -> frozenset[str]:
+    """The ``tickers`` the trajectory is taking out: a target of 0 at its last point.
+
+    The withdrawal sells them first (issue #80). A ticker left out of the last
+    point weighs 0 there, and one outside the trajectory weighs 0 at every point
+    (the yearly application writes 0 to it), so both are on their way out.
+    Without a trajectory in force no ticker is.
+    """
+    if glide is None:
+        return frozenset()
+    last = glide.points[max(glide.points)]
+    return frozenset(ticker for ticker in tickers if last.get(ticker, _ZERO) == _ZERO)
+
+
 def active_glide_path(conn: psycopg.Connection[DictRow]) -> ActiveGlidePath | None:
     """The trajectory in force, or ``None`` without points or without ``birth_year``."""
     birth_year = get_setting(conn, BIRTH_YEAR)

@@ -25,7 +25,13 @@ from bogle.glide_path import ActiveGlidePath, GlideEdit, GlideView, glide_schedu
 from bogle.imports.b3 import RowError, Statement, Trade
 from bogle.imports.plan import ImportPlan, build_plan
 from bogle.position import PortfolioSummary, Position
-from bogle.rebalancing import AporteSuggestion, TickerSuggestion
+from bogle.rebalancing import (
+    AporteSuggestion,
+    TickerSuggestion,
+    TickerWithdrawal,
+    WithdrawalStage,
+    WithdrawalSuggestion,
+)
 from bogle.reports.compare import CompareReport, CompareSeries
 from bogle.reports.dividends import MonthlyIncome, TickerIncome
 from bogle.reports.history import HistoryReport
@@ -88,6 +94,7 @@ def stub_services(monkeypatch: Any) -> None:
             amount=amount, prices=kwargs.get("prices"), quantities=kwargs.get("quantities"), values=kwargs.get("values")
         ),
     )
+    monkeypatch.setattr(services, "load_withdrawal", lambda amount, **_: make_withdrawal(amount=amount))
     monkeypatch.setattr(services, "load_cycle", lambda **_: make_cycle())
     monkeypatch.setattr(services, "load_settings", make_settings)
     monkeypatch.setattr(services, "save_setting", lambda key, raw: raw)
@@ -484,6 +491,52 @@ def make_suggestion(
     }
     fields.update(overrides)
     return AporteSuggestion(**fields)
+
+
+def make_withdrawal(*, amount: Decimal | None = None, **overrides: Any) -> WithdrawalSuggestion:
+    """A withdrawal for the screen tests: NB1011 on its way out, then the CDB by value.
+
+    The order and the numbers are the engine's business (``tests/test_withdraw.py``);
+    here they only have to be something the screen can be checked against.
+    """
+    fields: dict[str, Any] = {
+        "amount": amount if amount is not None else Decimal("5000"),
+        "items": [
+            TickerWithdrawal(
+                ticker="NB1011",
+                asset_type=AssetType.ETF,
+                price=Decimal("98.40"),
+                allocation=Decimal("4500.00"),
+                quantity=Decimal("46"),
+                gross=Decimal("4526.40"),
+                income_tax=Decimal("120.96"),
+                target_weight=Decimal("0.1"),
+                current_weight=Decimal("0.1520"),
+                weight_after=Decimal("0.1280"),
+                stages=(WithdrawalStage.EXITING,),
+                price_source="brapi",
+                as_of=QUOTE_TIME,
+            ),
+            TickerWithdrawal(
+                ticker="CDB-XP-2027",
+                asset_type=AssetType.CDB,
+                price=Decimal("811.20"),
+                allocation=Decimal("500.00"),
+                quantity=None,  # renda fixa sai por valor, nao por cota
+                gross=Decimal("500.00"),
+                income_tax=Decimal("15.30"),
+                target_weight=Decimal("0.1"),
+                current_weight=Decimal("0.1100"),
+                weight_after=Decimal("0.1050"),
+                stages=(WithdrawalStage.EXCESS,),
+                price_source="calculado",
+            ),
+        ],
+        "retired": True,
+        "warnings": ["NB1011 em saída na trajetória: vendido primeiro"],
+    }
+    fields.update(overrides)
+    return WithdrawalSuggestion(**fields)
 
 
 def make_cycle(**overrides: Any) -> services.CycleStatus:

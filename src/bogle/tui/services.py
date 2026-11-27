@@ -43,7 +43,13 @@ from bogle.glide_path import (
 from bogle.imports.b3 import read_statement
 from bogle.imports.plan import ImportPlan, apply_import, plan_import
 from bogle.position import Position, get_allocation_summary, get_portfolio_summary
-from bogle.rebalancing import AporteSuggestion, next_evaluation_date, overdue_notice, suggest_allocation
+from bogle.rebalancing import (
+    AporteSuggestion,
+    WithdrawalSuggestion,
+    next_evaluation_date,
+    overdue_notice,
+    suggest_allocation,
+)
 from bogle.reports.compare import CompareReport, compute_compare
 from bogle.reports.dividends import (
     MonthlyIncome,
@@ -79,6 +85,7 @@ from bogle.settings import (
 )
 from bogle.tesouro_title import check_tesouro_title as _check_tesouro_title
 from bogle.tui.errors import message_for
+from bogle.withdrawal import plan_withdrawal
 
 _ZERO = Decimal("0")
 
@@ -695,6 +702,24 @@ def load_suggestion(
         suggestion = suggest_allocation(summary, amount, prices=prices, quantities=quantities, values=values)
         set_value(conn, LAST_REBALANCE_DATE, _today(today))
         return suggestion
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------------------------- saque
+
+
+def load_withdrawal(amount: Decimal, *, refresh: bool = False, today: date | None = None) -> WithdrawalSuggestion:
+    """Which tickers to sell for ``amount`` (gross): what ``bogle withdraw`` shows.
+
+    Reads only — unlike :func:`load_suggestion`, nothing is recorded: the sale is
+    registered afterwards, and a withdrawal is not the cycle's evaluation.
+    ``refresh`` skips the quote cache, as in :func:`load_snapshot`.
+    """
+    dispatcher = default_dispatcher(ignore_cached_quotes=refresh)
+    conn = get_connection()
+    try:
+        return plan_withdrawal(conn, dispatcher, amount, today=_today(today))
     finally:
         conn.close()
 

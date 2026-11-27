@@ -34,20 +34,34 @@ knows what they will buy of it (a round lot, or nothing at all this time). That 
 does move the split, on purpose: the pinned ticker leaves it, and whatever the
 contribution still has is divided among the others the usual way, so the aporte
 keeps adding up.
+
+**Withdrawals** (issue #80) are the one place the engine sells: in retirement
+there are no contributions left, and living off the portfolio is how it keeps
+following the targets. :func:`suggest_withdrawal` decides *which* tickers pay for
+it — the ones the glide path is taking out first, then whatever is above its
+target, and only then everyone by weight.
 """
 
 from __future__ import annotations
 
 from calendar import monthrange
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 from enum import StrEnum
 
-from bogle.domain.assets import PRIVATE_FIXED_INCOME_TYPES, VARIABLE_INCOME_TYPES, AssetType
+from bogle.domain.assets import (
+    FIXED_INCOME_TYPES,
+    PRIVATE_FIXED_INCOME_TYPES,
+    VARIABLE_INCOME_TYPES,
+    Asset,
+    AssetType,
+)
 from bogle.domain.errors import MissingPriceError, ValidationError
+from bogle.domain.transactions import Transaction, TransactionType
 from bogle.position import PortfolioSummary, Position
+from bogle.tax.income_tax import income_tax_on_fixed_income, income_tax_on_sale
 
 DEFAULT_THRESHOLD = Decimal("0.05")  # 5 pontos percentuais
 
@@ -567,6 +581,328 @@ def suggest_allocation(
 def _naming(tickers: list[str], one: str, many: str) -> str:
     """``one`` or ``many`` with the tickers in place of ``{}``, agreeing in number."""
     return (one if len(tickers) == 1 else many).format(", ".join(tickers))
+
+
+# ---------------------------------------------------------------------------
+# Withdrawal suggestion (issue #80)
+# ---------------------------------------------------------------------------
+
+
+class WithdrawalStage(StrEnum):
+    """Why a ticker was sold: the three steps of :func:`suggest_withdrawal`, in order."""
+
+    EXITING = "EXITING"
+    """Etapa 1: o alvo final da trajetoria e 0."""
+    EXCESS = "EXCESS"
+    """Etapa 2: acima do alvo do ano."""
+    PROPORTIONAL = "PROPORTIONAL"
+    """Etapa 3: o excesso nao cobriu o saque, e o resto saiu de todos pelo peso."""
+
+
+@dataclass(frozen=True, slots=True)
+class TickerWithdrawal:
+    ticker: str
+    asset_type: AssetType
+    price: Decimal
+    allocation: Decimal
+    """Valor que a ordem de venda pediu ao ticker, antes do arredondamento em cotas."""
+    quantity: Decimal | None
+    """Cotas inteiras a vender (renda variavel); ``None`` para renda fixa, que sai por valor."""
+    gross: Decimal
+    """Valor bruto da venda: cotas vezes preco, ou o valor exato na renda fixa."""
+    income_tax: Decimal | None
+    """IR estimado sobre o ganho, pelo custo medio; ``None`` sem custo medio."""
+    target_weight: Decimal
+    current_weight: Decimal | None
+    weight_after: Decimal | None
+    """Peso depois do saque; ``None`` quando o saque leva a carteira inteira."""
+    stages: tuple[WithdrawalStage, ...]
+    """As etapas em que o ticker vendeu, na ordem: um ticker em excesso pode
+    voltar na etapa 3."""
+    price_source: str | None = None
+    as_of: datetime | None = None
+
+    @property
+    def net(self) -> Decimal | None:
+        """O que a venda deixa depois do IR estimado."""
+        return self.gross - self.income_tax if self.income_tax is not None else None
+
+
+@dataclass(frozen=True, slots=True)
+class WithdrawalSuggestion:
+    amount: Decimal
+    """O saque pedido, bruto: as vendas cobrem este valor."""
+    items: list[TickerWithdrawal]
+    """Na ordem de venda: etapa 1, etapa 2 (maior excesso primeiro), etapa 3."""
+    retired: bool | None
+    """Fase de aposentadoria; ``None`` sem ``birth_year``."""
+    warnings: list[str]
+
+    @property
+    def total_gross(self) -> Decimal:
+        return sum((item.gross for item in self.items), Decimal("0"))
+
+    @property
+    def total_tax(self) -> Decimal:
+        """IR estimado das vendas com custo medio (as outras ficam num aviso)."""
+        return sum((item.income_tax for item in self.items if item.income_tax is not None), Decimal("0"))
+
+    @property
+    def total_net(self) -> Decimal:
+        return self.total_gross - self.total_tax
+
+    @property
+    def residual(self) -> Decimal:
+        """O que as cotas inteiras, arredondadas para cima, venderam alem do pedido."""
+        return self.total_gross - self.amount
+
+    @property
+    def net_vs_amount(self) -> Decimal:
+        """Liquido menos o pedido: negativo quando o IR come mais que o residuo."""
+        return self.total_net - self.amount
+
+
+def retirement_phase(birth_year: int | None, retirement_age: int, year: int) -> bool | None:
+    """Whether ``year`` is in retirement: the age of the year reached ``retirement_age``.
+
+    ``None`` without a year of birth — there is no age to compare, and the
+    withdrawal treats it as the accumulation phase (with its own warning).
+    """
+    if birth_year is None:
+        return None
+    return year - birth_year >= retirement_age
+
+
+@dataclass(slots=True)
+class _Sale:
+    position: Position
+    value: Decimal
+    allocation: Decimal = Decimal("0")
+    stages: list[WithdrawalStage] = field(default_factory=list)
+
+    @property
+    def remaining(self) -> Decimal:
+        return self.value - self.allocation
+
+    def take(self, amount: Decimal, stage: WithdrawalStage) -> None:
+        self.allocation += amount
+        if stage not in self.stages:
+            self.stages.append(stage)
+
+
+def suggest_withdrawal(
+    summary: PortfolioSummary,
+    amount: Decimal,
+    exiting: Collection[str] = frozenset(),
+    *,
+    retired: bool | None = True,
+    month_stock_sales: Decimal = Decimal("0"),
+    held_since: Mapping[str, date] | None = None,
+    today: date | None = None,
+) -> WithdrawalSuggestion:
+    """Which tickers to sell to withdraw ``amount`` (gross), and what is left after IR.
+
+    The order of sale:
+
+    1. the ``exiting`` tickers (the glide path takes them to 0), down to the
+       target of the year;
+    2. every other ticker above its target, the largest excess first, never
+       below the target;
+    3. only if the excess did not cover the withdrawal, every ticker in
+       proportion to its weight — which keeps the weights where steps 1 and 2
+       left them, so no ticker crosses its target on the way.
+
+    Targets are measured against the patrimony *after* the withdrawal
+    (``total_value - amount``), the mirror of the future patrimony
+    :func:`suggest_allocation` measures needs against: the excess is
+    ``value - target_weight * (total_value - amount)``, and a ticker sold down to
+    it ends exactly at its target weight. A ticker below its target today can
+    have an excess too — the withdrawal shrinks the patrimony under it — and is
+    sold in step 2 like any other.
+
+    Step 3 is a safeguard. With targets that add up to at most 100%, the excesses
+    add up to at least ``amount`` (``amount + (1 - targets) * (total - amount)``),
+    so steps 1 and 2 always cover it; only targets above 100%, which the
+    repository refuses, get there.
+
+    Variable income sells whole shares, rounded **up** so the sales cover the
+    amount (``residual`` is what that sold beyond it); fixed income sells exact
+    values, as in :func:`suggest_allocation`.
+
+    The IR of each sale is estimated on the average cost of the position
+    (:attr:`~bogle.position.Position.average_price`, the sequential replay of
+    #68): :func:`~bogle.tax.income_tax.income_tax_on_sale` for variable income,
+    with the R$20k stock exemption measured over ``month_stock_sales`` (the stock
+    sales already registered this month) plus the stock sales suggested here;
+    :func:`~bogle.tax.income_tax.income_tax_on_fixed_income` for fixed income,
+    counting the days from ``held_since`` (the oldest lot still held) to ``today``.
+
+    ``retired`` is :func:`retirement_phase`: outside retirement the suggestion is
+    still made, with a warning that the policy of the accumulation phase is not
+    to sell. Nothing here writes anything.
+    """
+    if amount <= 0:
+        raise ValidationError(f"Valor do saque deve ser positivo, recebido {amount}.")
+    positions = [p for p in summary.positions if p.quantity > 0]
+    if not positions:
+        raise ValidationError("Nenhuma posição aberta para sacar.")
+    missing = [p.ticker for p in positions if p.market_value is None or p.price is None]
+    if missing:
+        raise MissingPriceError(missing)
+    total = sum((p.market_value for p in positions if p.market_value is not None), Decimal("0"))
+    if amount > total:
+        raise ValidationError(f"Saque de {amount} maior que o patrimônio de {total.quantize(_CENT)}.")
+    day = today if today is not None else date.today()
+
+    sales = {p.ticker: _Sale(position=p, value=p.market_value or Decimal("0")) for p in positions}
+    order: list[_Sale] = []
+    remaining = amount
+
+    after = total - amount
+
+    def excess(sale: _Sale) -> Decimal:
+        return max(Decimal("0"), sale.value - sale.position.target_weight * after)
+
+    def by_excess(candidates: list[_Sale]) -> list[_Sale]:
+        return sorted(candidates, key=lambda sale: (-excess(sale), sale.position.ticker))
+
+    exiting_set = {ticker.upper() for ticker in exiting}
+    first = by_excess([sale for ticker, sale in sales.items() if ticker in exiting_set])
+    second = by_excess([sale for ticker, sale in sales.items() if ticker not in exiting_set])
+    for stage, candidates in ((WithdrawalStage.EXITING, first), (WithdrawalStage.EXCESS, second)):
+        for sale in candidates:
+            taken = min(excess(sale), remaining)
+            if taken <= 0:
+                continue
+            sale.take(taken, stage)
+            order.append(sale)
+            remaining -= taken
+
+    proportional = remaining > 0
+    if proportional:
+        # Pelo peso do que ficou depois das etapas 1 e 2: vender todos na mesma
+        # proporcao mantem os pesos onde estavam, e ninguem cruza o alvo.
+        base = sum((sale.remaining for sale in sales.values()), Decimal("0"))
+        third = sorted(
+            (sale for sale in sales.values() if sale.remaining > 0),
+            key=lambda sale: (-sale.remaining, sale.position.ticker),
+        )
+        sold = {sale.position.ticker for sale in order}
+        for sale in third:
+            sale.take(remaining * sale.remaining / base, WithdrawalStage.PROPORTIONAL)
+            if sale.position.ticker not in sold:
+                order.append(sale)
+
+    lines: list[tuple[_Sale, Decimal | None, Decimal]] = []
+    for sale in order:
+        p = sale.position
+        assert p.price is not None  # guarded above
+        if p.asset_type in VARIABLE_INCOME_TYPES:
+            # Para cima, para cobrir o pedido; nunca alem do que se tem.
+            quantity = min((sale.allocation / p.price).to_integral_value(rounding=ROUND_UP), p.quantity)
+            gross = quantity * p.price
+            lines.append((sale, quantity, gross))
+        else:
+            lines.append((sale, None, min(sale.allocation.quantize(_CENT, rounding=ROUND_UP), sale.value)))
+
+    total_gross = sum((gross for _, _, gross in lines), Decimal("0"))
+    stock_month = month_stock_sales + sum(
+        (gross for sale, _, gross in lines if sale.position.asset_type is AssetType.STOCK), Decimal("0")
+    )
+    since = held_since or {}
+    left = total - total_gross
+    items = [
+        TickerWithdrawal(
+            ticker=sale.position.ticker,
+            asset_type=sale.position.asset_type,
+            price=sale.position.price or Decimal("0"),
+            allocation=sale.allocation.quantize(_CENT, rounding=ROUND_UP),
+            quantity=quantity,
+            gross=gross,
+            income_tax=_sale_tax(sale.position, quantity, gross, stock_month, since.get(sale.position.ticker), day),
+            target_weight=sale.position.target_weight,
+            current_weight=sale.position.current_weight,
+            weight_after=(sale.value - gross) / left if left > 0 else None,
+            stages=tuple(sale.stages),
+            price_source=sale.position.price_source,
+            as_of=sale.position.as_of,
+        )
+        for sale, quantity, gross in lines
+    ]
+
+    warnings = []
+    # Curtos de proposito, como os do aporte: o porque esta no README.
+    if retired is None:
+        warnings.append("Sem ano de nascimento: tratado como acumulação, quando a política é não vender")
+    elif not retired:
+        warnings.append("Antes da aposentadoria: na acumulação a política é não vender")
+    sold_exiting = sorted(item.ticker for item in items if WithdrawalStage.EXITING in item.stages)
+    if sold_exiting:
+        warnings.append(
+            _naming(
+                sold_exiting,
+                "{} em saída na trajetória: vendido primeiro",
+                "{} em saída na trajetória: vendidos primeiro",
+            )
+        )
+    if proportional:
+        warnings.append("Excesso sobre os alvos não cobre o saque: o resto sai de todos, pelo peso")
+    no_cost = sorted(item.ticker for item in items if item.income_tax is None)
+    if no_cost:
+        warnings.append(
+            _naming(no_cost, "Sem custo médio de {}: IR não estimado", "Sem custo médio de {}: IR não estimado")
+        )
+    private_fi = sorted(item.ticker for item in items if item.asset_type in PRIVATE_FIXED_INCOME_TYPES)
+    if private_fi:
+        # O motor nao sabe a liquidez do contrato: um CDB sem liquidez diaria so
+        # sai no vencimento.
+        warnings.append(
+            _naming(
+                private_fi,
+                "{} é renda fixa privada: confira a liquidez antes de vender",
+                "{} são renda fixa privada: confira a liquidez antes de vender",
+            )
+        )
+
+    return WithdrawalSuggestion(amount=amount, items=items, retired=retired, warnings=warnings)
+
+
+def _sale_tax(
+    position: Position,
+    quantity: Decimal | None,
+    gross: Decimal,
+    month_stock_sales: Decimal,
+    held_since: date | None,
+    today: date,
+) -> Decimal | None:
+    """The IR estimated on one suggested sale, to the cent; ``None`` without an average cost."""
+    average = position.average_price
+    if average is None or position.price is None:
+        return None
+    asset = Asset(ticker=position.ticker, target_weight=position.target_weight, asset_type=position.asset_type)
+    on = datetime.combine(today, time())
+    if position.asset_type in FIXED_INCOME_TYPES:
+        # Renda fixa sai por valor: as "cotas" vendidas sao a fracao do valor
+        # unitario, e o custo delas e o custo medio dessa fracao.
+        units = gross / position.price
+        since = datetime.combine(held_since or today, time())
+        tax = income_tax_on_fixed_income(asset, since, on, gross - average * units)
+    else:
+        assert quantity is not None  # renda variavel sempre vende cotas
+        sale = Transaction(
+            id=0,
+            ticker=position.ticker,
+            transaction_type=TransactionType.SELL,
+            date=on,
+            shares=quantity,
+            unit_price=position.price,
+            total_investment=gross,
+            fees=Decimal("0"),
+            total_cost=Decimal("0"),
+            tax_withheld=Decimal("0"),
+        )
+        tax = income_tax_on_sale(asset, sale, average * quantity, month_stock_sales)
+    return tax.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
 # ---------------------------------------------------------------------------

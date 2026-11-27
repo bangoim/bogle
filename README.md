@@ -14,6 +14,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **No-sell rebalancing** — `bogle suggest` splits a contribution across the laggards (whole shares for variable income, exact values for fixed income); `bogle status` tracks the evaluation cycle (6 or 12 months).
 - **Reports** — `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
 - **Glide path** — `bogle glide` sets target weights by age (a few points, a straight line between them), applied on their own every 01/01. See [Glide path](#glide-path).
+- **Withdrawal in retirement** — `bogle withdraw` suggests which tickers to sell for a withdrawal (the ones the glide path is taking out first), with the estimated income tax of each sale. See [Withdrawal in retirement](#withdrawal-in-retirement).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
 - **Backup and restore** — `bogle backup` writes the whole database to a file outside the repository; `bogle restore` puts it back, all or nothing, after a safety backup. See [Backup and restore](#backup-and-restore).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices and daily history from Tesouro Transparente, cached on disk and in the database. Private fixed income is marked to present value.
@@ -103,8 +104,8 @@ bogle --help      # still the help
 
 The interface covers **every command** — registering operations without
 memorizing flags (guided forms with validation as you type), the position,
-reports with charts, assets, contributions, the rebalance cycle, the settings and
-the backup. Use the direct commands for one-shot answers and for scripting
+reports with charts, assets, contributions, withdrawals, the rebalance cycle, the
+settings and the backup. Use the direct commands for one-shot answers and for scripting
 (`--json`, which is CLI-only). `bogle restore` is CLI-only too: the interface
 runs on the database a restore replaces.
 
@@ -131,12 +132,13 @@ interface, since a full-screen interface needs a real terminal.
  │ 5  Relatórios  rentabilidade, histórico, proventos                          │
  │ 6  Ativos      cadastrar, atualizar e remover                               │
  │ 7  Trajetória  alvos por idade, ano a ano                                   │
+ │ 8  Saque       o que vender na aposentadoria                                │
  ╰─────────────────────────────────────────────────────────────────────────────╯
  q Sair  r Atualizar  s Status  c Config  h Valores  f1 Ajuda
 ```
 
 On a wide terminal (108 columns or more) the menu splits into two columns (four
-and three), so the summary and the logo fit without scrolling on a normal-height
+and four), so the summary and the logo fit without scrolling on a normal-height
 window; the side arrows move between the columns.
 
 The home screen opens on **today's quote (D-0)**: the price history comes from
@@ -158,6 +160,7 @@ arrives as a notification here instead of a line on stderr.
 | Relatórios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
 | Ativos | List with the fixed-income metadata + forms; `a` registers, `u` changes weight/type, `d` removes | `bogle list` / `add` / `update` / `remove` |
 | Trajetória | Targets by age, year by year; `a` adds a point, `u` edits the selected year, `d` removes a point, `l` clears | `bogle glide show` / `set` / `remove` / `clear` |
+| Saque | Gross amount → which tickers to sell, with the estimated IR and the net of each sale; only suggests | `bogle withdraw` |
 | Status (`s`) | The rebalance cycle: period, last and next evaluation | `bogle status` |
 | Config (`c`) | Every setting, editable in place (`e`) or back to its default (`d`); `b` writes a backup | `bogle config list` / `set` / `unset`, `bogle backup` |
 
@@ -539,6 +542,49 @@ bogle glide clear                                         # asks first (--yes sk
 - `bogle position` and the Posição screen mark the targets set by the
   trajectory with `↘`; the Trajetória screen (menu `7`) does all of the above.
 
+### Withdrawal in retirement
+
+In retirement there are no contributions left, and withdrawing is how the
+portfolio keeps following its targets. `bogle withdraw` says **which tickers to
+sell** for a withdrawal — it only suggests: nothing is written, and the sale is
+registered afterwards with `bogle sell` (or the `Venda` form).
+
+```bash
+bogle config set retirement_age 65   # default 70
+bogle withdraw 5000                  # gross amount: the sales cover it
+bogle withdraw 5000 --json
+```
+
+The order of sale:
+
+1. the tickers **on their way out** — the ones whose target at the last point of
+   the [glide path](#glide-path) is 0, or that are out of the trajectory — down
+   to this year's target;
+2. every other ticker **above its target**, the largest excess first, never
+   below the target;
+3. if anything were still missing, **every ticker in proportion to its weight**,
+   which keeps the weights where steps 1 and 2 left them. A safeguard: with
+   targets that add up to at most 100% the excess always covers the withdrawal.
+
+Targets are measured against the patrimony **after** the withdrawal — the mirror
+of `bogle suggest`, which measures against the patrimony after the contribution.
+A ticker sold down to its target ends exactly at its target weight, and one that
+is slightly below its target today may still be above it once the patrimony
+shrinks, so it can be sold in step 2.
+
+Variable income sells whole shares, **rounded up** so the sales cover the amount;
+the footer reports the residual. Tesouro and private fixed income sell exact
+values. Each sale shows its estimated income tax, on the average cost of the
+position: 15% on the gain (20% for FIIs), with the R$ 20.000 monthly exemption for
+stocks counting the stock sales already registered this month; the regressive
+table for fixed income, from the oldest lot still held (LCI/LCA exempt). The
+footer compares the net with the amount asked.
+
+Retirement starts in the year when `current year - birth_year >= retirement_age`.
+Before it the suggestion still comes, with a warning that the policy of the
+accumulation phase is not to sell; without `birth_year` it is treated the same
+way. The Saque screen (menu `8`) does all of the above.
+
 ### Reports
 
 Every report takes `--period` with a shared vocabulary (`12m`, `2y`, `5y`,
@@ -630,6 +676,7 @@ the Config screen applies it immediately instead of waiting for the next session
 | `theme` | str | `textual-dark` | Theme of the interactive interface (the command palette also writes here) |
 | `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
 | `birth_year` | int | — | Year of birth; sets the age of the [glide path](#glide-path) |
+| `retirement_age` | int | `70` | Age at which retirement starts; before it, [`bogle withdraw`](#withdrawal-in-retirement) warns that the policy is not to sell |
 | `glide_path_applied_year` | int | — | Set automatically when the glide path writes a year's targets |
 
 ### Number format
