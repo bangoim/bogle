@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import typer
@@ -14,6 +14,7 @@ from bogle.db import get_connection
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError, ValidationError
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
+from bogle.glide_path import check_manual_target
 from bogle.rebalancing import weight_sum_notice
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
@@ -166,6 +167,9 @@ def update(
         asset = repo.get(ticker)
         if asset is None:
             raise AssetNotFoundError(ticker.upper())
+        if weight_dec is not None:
+            # Com trajetoria ativa, o alvo de um ticker dela e da trajetoria.
+            check_manual_target(conn, asset.ticker, weight_dec, date.today())
         # Uma transacao para as duas escritas: metade da alteracao aplicada seria
         # pior que nenhuma (mesma razao que em `services.update_asset`).
         with conn.transaction():

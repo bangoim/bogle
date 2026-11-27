@@ -166,6 +166,7 @@ class TestRunTui:
 
         monkeypatch.setattr("bogle.tui.app.BogleApp", FakeApp)
         monkeypatch.setattr(services, "load_preferences", services.Preferences)
+        monkeypatch.setattr(services, "apply_glide_path", lambda: None)
         return record
 
     def test_an_applied_migration_is_announced_on_open(
@@ -200,3 +201,28 @@ class TestRunTui:
         monkeypatch.setattr(services, "load_preferences", load_preferences)
         run_tui()
         assert order == ["schema", "preferences"]
+
+    def test_the_glide_path_is_applied_after_the_preferences_and_announced(
+        self, launched: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Depois do separador: o aviso tem percentuais, e a Home le os alvos que
+        # a aplicacao deixar.
+        order: list[str] = []
+
+        def load_preferences() -> services.Preferences:
+            order.append("preferences")
+            return services.Preferences()
+
+        def apply_glide_path() -> str:
+            order.append("glide")
+            return "alvo de 2040 aplicado pela trajetória: MUND11 70.00% -> 68.75%."
+
+        monkeypatch.setattr(services, "update_schema", lambda: ["009_glide_path_points"])
+        monkeypatch.setattr(services, "load_preferences", load_preferences)
+        monkeypatch.setattr(services, "apply_glide_path", apply_glide_path)
+        run_tui()
+        assert order == ["preferences", "glide"]
+        assert launched["notices"] == [
+            "banco de dados atualizado: 009_glide_path_points.",
+            "alvo de 2040 aplicado pela trajetória: MUND11 70.00% -> 68.75%.",
+        ]

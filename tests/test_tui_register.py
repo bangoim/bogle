@@ -616,6 +616,22 @@ class TestClosedPosition:
             assert "30.00%" in modal.notice
 
     @pytest.mark.asyncio
+    async def test_a_target_the_glide_path_brings_back_is_said_in_the_dialog(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cleared = ClearedTarget(
+            ticker="MUND11", previous_target=Decimal("0.7"), returns_in=2027, returning_target=Decimal("0.7")
+        )
+        monkeypatch.setattr(services, "record_sell", RecordSpy(TransactionType.SELL, cleared=cleared))
+        app = make_app()
+        async with app.run_test() as pilot:
+            screen = await open_sale(pilot)
+            await self.sell_out(pilot, screen)
+            modal = app.screen
+            assert isinstance(modal, ClearedTargetModal)
+            assert modal.notice.endswith("\nO alvo volta a 70.00% em 01/01/2027 pela trajetória.")
+
+    @pytest.mark.asyncio
     async def test_keeping_it_leaves_the_target_at_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(services, "record_sell", RecordSpy(TransactionType.SELL, cleared=make_cleared_target()))
         updates: list[dict[str, Any]] = []

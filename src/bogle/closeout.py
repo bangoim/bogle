@@ -11,6 +11,10 @@ so — the TUI with a dialog that offers to put it back, the command with the li
 that undoes it. Automatic, and announced: the target is the user's *intention*,
 and software does not get to change an intention silently.
 
+With a glide path in force (:mod:`bogle.glide_path`), the sale still clears the
+target: the trajectory puts it back on the next 01/01 when it gives the ticker a
+target in the coming year, and the notice says so.
+
 The asset row itself is never touched. Deleting it is not even possible while the
 ledger points at it (``AssetHasTransactionsError``), and it should not be: the
 history is what ``bogle profit`` and the tax report are made of. What the asset
@@ -22,13 +26,16 @@ from __future__ import annotations
 
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 import psycopg
 from psycopg.rows import DictRow
 
 from bogle.domain.assets import Asset
+from bogle.domain.errors import GlidePathError
 from bogle.format import pct
+from bogle.glide_path import returning_target
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
 
@@ -42,15 +49,24 @@ class ClearedTarget:
     ticker: str
     previous_target: Decimal
     """What to restore, for the frontend that offers to undo it."""
+    returns_in: int | None = None
+    """The year whose 01/01 gives the target back, when the glide path does."""
+    returning_target: Decimal | None = None
+    """The target it comes back with."""
 
 
-def clear_closed_target(conn: psycopg.Connection[DictRow], ticker: str) -> ClearedTarget | None:
+def clear_closed_target(
+    conn: psycopg.Connection[DictRow], ticker: str, *, today: date | None = None
+) -> ClearedTarget | None:
     """Clear ``ticker``'s target weight if it no longer has a position.
 
     Returns what was cleared, or ``None`` when there was nothing to clear — the
     position is still open (a partial sale), the target was already zero, or the
     asset is gone. Called right after a sale is recorded, so it answers the
     question the sale just raised: is this ticker still part of the plan?
+
+    ``today`` sets which 01/01 is the next one, for a ticker the glide path
+    brings back.
     """
     if HoldingRepository(conn).get(ticker) is not None:
         return None  # venda parcial: a posicao continua aberta
@@ -58,16 +74,31 @@ def clear_closed_target(conn: psycopg.Connection[DictRow], ticker: str) -> Clear
     if asset is None or asset.target_weight <= _ZERO:
         return None
     AssetRepository(conn).update_weight(asset.ticker, _ZERO)
-    return ClearedTarget(ticker=asset.ticker, previous_target=asset.target_weight)
+    today = today if today is not None else date.today()
+    try:
+        returning = returning_target(conn, asset.ticker, today)
+    except GlidePathError:
+        # Uma trajetoria invalida nao pode desfazer a venda (isto roda dentro da
+        # transacao dela); a aplicacao anual e quem reclama disso.
+        returning = None
+    return ClearedTarget(
+        ticker=asset.ticker,
+        previous_target=asset.target_weight,
+        returns_in=today.year + 1 if returning is not None else None,
+        returning_target=returning,
+    )
 
 
 def cleared_notice(cleared: ClearedTarget) -> str:
     """What both frontends tell the user about it, in one voice."""
-    return (
+    notice = (
         f"{cleared.ticker}: a venda zerou a posição, e o target de {pct(cleared.previous_target)} "
         "foi removido — sem isso o próximo aporte mandaria dinheiro para um ativo "
         "que você não tem mais."
     )
+    if cleared.returns_in is None or cleared.returning_target is None:
+        return notice
+    return f"{notice}\nO alvo volta a {pct(cleared.returning_target)} em 01/01/{cleared.returns_in} pela trajetória."
 
 
 @dataclass(frozen=True, slots=True)

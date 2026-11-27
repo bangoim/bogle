@@ -23,6 +23,7 @@ from bogle.cli import suggest as suggest_cli
 from bogle.cli import transactions as transactions_cli
 from bogle.db import get_connection, migrate_if_pending, migrated_notice
 from bogle.domain.errors import BogleError
+from bogle.glide_path import application_notice, apply_glide_path_if_due, failure_notice
 from bogle.rebalancing import overdue_notice
 from bogle.settings import (
     DECIMAL_SEPARATOR,
@@ -121,6 +122,27 @@ def _update_schema() -> None:
         typer.echo(f"aviso: {migrated_notice(applied)}", err=True)
 
 
+def _apply_glide_path() -> None:
+    """Write the year's targets of the glide path on the first run of the year.
+
+    Announced on stderr, like the migrations: it changes the user's targets on the
+    app's own initiative. A failure never stops the command — the year is not
+    recorded, so the next run tries again — but it is said, or the targets would
+    stay last year's in silence.
+    """
+    try:
+        conn = get_connection()
+        try:
+            notice = application_notice(apply_glide_path_if_due(conn, date.today()))
+        finally:
+            conn.close()
+    except Exception as exc:
+        typer.echo(f"aviso: {failure_notice(str(exc))}", err=True)
+        return
+    if notice is not None:
+        typer.echo(f"aviso: {notice}", err=True)
+
+
 def _is_interactive() -> bool:
     """True when both ends are a real terminal, which a full-screen TUI needs.
 
@@ -155,6 +177,9 @@ def _main(ctx: typer.Context) -> None:
     _update_schema()
     separator, notice = _read_preferences()
     fmt.configure(separator)
+    # Depois do schema (a tabela da trajetoria pode ter acabado de chegar) e do
+    # separador (o aviso tem percentuais).
+    _apply_glide_path()
     # `status` ja reporta o ciclo por inteiro; avisar de novo seria ruido.
     if notice is not None and ctx.invoked_subcommand != "status":
         typer.echo(f"aviso: {notice}", err=True)

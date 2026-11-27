@@ -42,6 +42,28 @@ class AssetHasTransactionsError(BogleError):
         super().__init__(f"Ativo '{ticker}' possui transações vinculadas e não pode ser removido.")
 
 
+class AssetInGlidePathError(BogleError):
+    def __init__(self, ticker: str) -> None:
+        self.ticker = ticker
+        super().__init__(f"Ativo '{ticker}' está na trajetória e não pode ser removido.")
+
+
+class GlidePathError(BogleError):
+    """A trajectory the engine cannot use: the weights of an age do not add up to 1."""
+
+
+class GlidePathTargetError(BogleError):
+    """A manual edit of a target the trajectory sets (see :mod:`bogle.glide_path`)."""
+
+    def __init__(self, ticker: str, year: int, target: Decimal) -> None:
+        self.ticker = ticker
+        self.year = year
+        self.target = target
+        super().__init__(
+            f"Alvo de '{ticker}' definido pela trajetória ({fmt.pct(target)} em {year}). Para mudar, use 'bogle glide'."
+        )
+
+
 class InsufficientSharesError(BogleError):
     """A sale asking for more shares than the position had at the close of its day.
 
