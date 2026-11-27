@@ -22,6 +22,7 @@ from bogle.cli import returns as returns_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
 from bogle.cli import transactions as transactions_cli
+from bogle.cli import withdraw as withdraw_cli
 from bogle.db import get_connection, migrate_if_pending, migrated_notice
 from bogle.domain.errors import BogleError
 from bogle.glide_path import application_notice, apply_glide_path_if_due, failure_notice
@@ -55,6 +56,9 @@ app.command("position", help="Posição atual: tabela por ativo + totais, lucro 
     position_cli.position
 )
 app.command("suggest", help="Sugerir a divisão de um aporte para reduzir o drift.")(suggest_cli.suggest)
+app.command("withdraw", help="Sugerir de quais ativos sacar na aposentadoria (só sugere, não vende).")(
+    withdraw_cli.withdraw
+)
 app.command("status", help="Mostrar em que pé está o ciclo de avaliação de rebalanceamento.")(status_cli.status)
 app.command("dividends", help="Proventos recebidos, por mês ou por ticker.")(dividends_cli.dividends)
 app.command("return", help="Rentabilidade da carteira (TWR), opcionalmente vs índices.")(returns_cli.return_)
