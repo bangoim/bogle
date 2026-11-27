@@ -16,6 +16,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Glide path** — `bogle glide` sets target weights by age (a few points, a straight line between them), applied on their own every 01/01. See [Glide path](#glide-path).
 - **Withdrawal in retirement** — `bogle withdraw` suggests which tickers to sell for a withdrawal (the ones the glide path is taking out first), with the estimated income tax of each sale. See [Withdrawal in retirement](#withdrawal-in-retirement).
 - **Annual rebalance in retirement** — `bogle rebalance` plans the once-a-year sale of what drifted out of the band, with its income tax, and the purchases made with the net; a reminder shows up every year until `--done`. See [Annual rebalance in retirement](#annual-rebalance-in-retirement).
+- **Scheduled alerts** — `bogle check` lists what is pending (cycle, annual rebalance, stale prices) for launchd or cron, optionally as a macOS notification. See [Scheduled alerts](#scheduled-alerts).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
 - **Backup and restore** — `bogle backup` writes the whole database to a file outside the repository; `bogle restore` puts it back, all or nothing, after a safety backup. See [Backup and restore](#backup-and-restore).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices and daily history from Tesouro Transparente, cached on disk and in the database. Private fixed income is marked to present value.
@@ -650,6 +651,74 @@ instead of the warning, and `bogle rebalance` itself does not repeat it. Looking
 at the plan does not count as doing it: `bogle rebalance --done` (or `f` on the
 Rebalancear screen, menu `9`) records `last_annual_rebalance_year`, and the
 reminder is back on the next 01/01.
+
+### Scheduled alerts
+
+The reminders above only show up when `bogle` runs. `bogle check` lists what is
+pending — the evaluation cycle that came due, the annual rebalance of the year,
+and prices that fell behind the reference close (the same note as the home
+screen) — and exits `1` when there is something, `0` when there is nothing and
+`3` when the check itself failed (database down, schema migration refused). A
+price provider that fails only hides the price line, not the other two, and
+also exits `3`. With `--notify` the same lines (and the failure, if any) go to
+a macOS notification; nothing is pending, nothing is sent.
+
+```bash
+bogle check
+# 1. Ciclo de rebalanceamento de 12 meses vencido desde 2027-07-22. Rode 'bogle suggest' para avaliar a carteira
+# 2. Rebalanceamento anual de 2061 pendente (bogle rebalance)
+```
+
+Scheduling is up to you. launchd and cron read neither `.env` nor your shell's
+`PATH`: give the executable's absolute path (`which bogle`) and the variables
+explicitly. A launchd agent that checks every day at 09:00 (missed runs fire on
+wake), saved as `~/Library/LaunchAgents/local.bogle.check.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>local.bogle.check</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/dev/bogle/.venv/bin/bogle</string>
+    <string>check</string>
+    <string>--notify</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BOGLE_DATABASE_URL</key>
+    <string>postgresql://localhost/bogle</string>
+    <key>BRAPI_TOKEN</key>
+    <string>your-token-here</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardErrorPath</key>
+  <string>/tmp/bogle-check.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.bogle.check.plist   # bootout to remove
+```
+
+Or with cron (`crontab -e`):
+
+```
+0 9 * * * BOGLE_DATABASE_URL=postgresql://localhost/bogle BRAPI_TOKEN=your-token-here /Users/you/dev/bogle/.venv/bin/bogle check --notify
+```
+
+`bogle check` does not apply the glide path of 01/01: its notice would reach
+nobody, so the next command you run applies it and says so.
 
 ### Reports
 
