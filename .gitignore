@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .*/
+!.github/
 .env
 
 *.md
