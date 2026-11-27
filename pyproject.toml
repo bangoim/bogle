@@ -43,7 +43,7 @@ markers = [
 ]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-m 'not live'"
+addopts = "-m 'not live' -n auto"
 
 [tool.pyright]
 typeCheckingMode = "standard"

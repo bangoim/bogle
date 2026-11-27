@@ -67,4 +67,4 @@ jobs:
       - name: Instalar dependências
         run: uv pip install -e ".[dev]"
       - name: pytest
-        run: pytest -n auto
+        run: pytest
