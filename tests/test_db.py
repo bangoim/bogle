@@ -14,6 +14,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from psycopg import errors as pg_errors
+from psycopg import sql
 from psycopg.rows import DictRow
 from yoyo import read_migrations
 
@@ -23,7 +24,7 @@ from bogle.domain.assets import AssetType
 from bogle.domain.errors import WeightSumExceededError
 from bogle.repositories.assets import AssetRepository
 from bogle.settings import LAST_REBALANCE_DATE, REBALANCE_PERIOD_MONTHS, get_setting, set_value
-from tests.conftest import TEST_DATABASE_URL
+from tests.conftest import TEST_DATABASE_NAME, TEST_DATABASE_URL, with_database
 
 
 def weight_of(ticker: str) -> Decimal | None:
@@ -115,7 +116,7 @@ class TestPendingMigrations:
     """The start-up check: one query, and the apply only when it finds something."""
 
     def test_a_migrated_database_has_nothing_pending(self) -> None:
-        # bogle_test recebeu tudo no conftest.
+        # O banco de teste recebeu tudo no conftest.
         assert pending_migrations(TEST_DATABASE_URL) == []
         assert migrate_if_pending(TEST_DATABASE_URL) == []
 
@@ -137,17 +138,18 @@ class TestPendingMigrations:
 
     def test_a_database_without_the_schema_has_everything_pending(self, conn: psycopg.Connection[DictRow]) -> None:
         # O primeiro `bogle` em um banco recem-criado: nem a tabela do yoyo existe.
-        fresh = "bogle_test_fresh"
+        # Um nome por worker do xdist: dois workers nao disputam o mesmo banco.
+        fresh = f"{TEST_DATABASE_NAME}_fresh"
         try:
-            conn.execute(f"DROP DATABASE IF EXISTS {fresh} WITH (FORCE)")
-            conn.execute(f"CREATE DATABASE {fresh}")
+            conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(fresh)))
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(fresh)))
         except pg_errors.InsufficientPrivilege:
             pytest.skip("precisa de CREATEDB para simular um banco recem-criado")
-        url = TEST_DATABASE_URL.rsplit("/", 1)[0] + "/" + fresh
+        url = with_database(TEST_DATABASE_URL, fresh)
         everything = [migration.id for migration in read_migrations(str(db._migrations_path()))]
         try:
             assert pending_migrations(url) == everything
             assert migrate_if_pending(url) == everything
             assert pending_migrations(url) == []
         finally:
-            conn.execute(f"DROP DATABASE {fresh} WITH (FORCE)")
+            conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(fresh)))

@@ -26,6 +26,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "respx>=0.21",
+    "pytest-xdist>=3.6",
 ]
 
 [project.scripts]
@@ -42,7 +43,7 @@ markers = [
 ]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-m 'not live'"
+addopts = "-m 'not live' -n auto"
 
 [tool.pyright]
 typeCheckingMode = "standard"
