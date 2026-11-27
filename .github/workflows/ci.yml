@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          activate-environment: true
+      - name: Instalar dependências
+        run: uv pip install -e ".[dev]"
+      - name: ruff check
+        run: uvx ruff@0.15.12 check .
+      - name: ruff format
+        run: uvx ruff@0.15.12 format --check .
+      - name: pyright
+        run: uvx --from pyright@1.1.414 pyright
+
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bogle_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BOGLE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bogle_test
+    steps:
+      - uses: actions/checkout@v4
+      # Os testes de backup rodam pg_dump, pg_restore e psql de verdade, com
+      # major igual ou maior que o do servidor; o bogle acha em /usr/lib/postgresql/*/bin.
+      - name: Instalar cliente do PostgreSQL 18
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          activate-environment: true
+      - name: Instalar dependências
+        run: uv pip install -e ".[dev]"
+      - name: pytest
+        run: pytest
