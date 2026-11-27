@@ -23,15 +23,23 @@ from tempfile import gettempdir
 import psycopg
 
 from bogle import charts
+from bogle import glide_path as glide
 from bogle.backup import BackupResult, create_backup
-from bogle.closeout import ClearedTarget, clear_closed_target
+from bogle.closeout import ClearedTarget, clear_closed_target, is_closed
 from bogle.data import default_dispatcher
 from bogle.db import get_connection, migrate_if_pending
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
-from bogle.glide_path import application_notice, apply_glide_path_if_due, check_manual_target, failure_notice
+from bogle.glide_path import (
+    GlideEdit,
+    GlideView,
+    application_notice,
+    apply_glide_path_if_due,
+    check_manual_target,
+    failure_notice,
+)
 from bogle.imports.b3 import read_statement
 from bogle.imports.plan import ImportPlan, apply_import, plan_import
 from bogle.position import Position, get_allocation_summary, get_portfolio_summary
@@ -593,6 +601,64 @@ def remove_asset(ticker: str) -> None:
     conn = get_connection()
     try:
         AssetRepository(conn).remove(ticker)
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------------ trajetoria
+
+
+@dataclass(frozen=True, slots=True)
+class GlideState:
+    """The Trajetoria screen: what ``bogle glide show`` shows, plus the tickers
+    the point form asks a weight for (see :func:`load_glide`)."""
+
+    view: GlideView
+    tickers: tuple[str, ...]
+
+
+def load_glide(*, today: date | None = None) -> GlideState:
+    """The table, and the tickers of the point form: the ones in the plan plus the
+    ones already in a point. A closed asset (no position, no target) stays out
+    unless the trajectory still has it — then it is there to be taken out."""
+    conn = get_connection()
+    try:
+        view = glide.load_glide_view(conn, _today(today))
+        held = {holding.ticker for holding in HoldingRepository(conn).list()}
+        in_points = {ticker for anchor in view.points.values() for ticker in anchor}
+        tickers = tuple(
+            asset.ticker
+            for asset in AssetRepository(conn).list()
+            if asset.ticker in in_points or not is_closed(asset, held)
+        )
+        return GlideState(view=view, tickers=tickers)
+    finally:
+        conn.close()
+
+
+def save_glide_point(age: int, weights: Mapping[str, Decimal], *, today: date | None = None) -> GlideEdit:
+    """``bogle glide set``: create or replace a point, writing this year's targets if it moved them."""
+    conn = get_connection()
+    try:
+        return glide.set_glide_point(conn, age, weights, _today(today))
+    finally:
+        conn.close()
+
+
+def remove_glide_point(age: int, *, today: date | None = None) -> GlideEdit:
+    """``bogle glide remove``."""
+    conn = get_connection()
+    try:
+        return glide.remove_glide_point(conn, age, _today(today))
+    finally:
+        conn.close()
+
+
+def clear_glide_path() -> int:
+    """``bogle glide clear``: every point gone, the targets as they are."""
+    conn = get_connection()
+    try:
+        return glide.clear_glide_path(conn)
     finally:
         conn.close()
 

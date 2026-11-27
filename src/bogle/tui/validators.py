@@ -187,3 +187,27 @@ class KnownTicker(Validator):
             # fechar a tela para fazer o que a tela ao lado faz.
             return self.failure(f"Ativo '{ticker}' não encontrado. Cadastre em Ativos (6) antes de lançar.")
         return self.success()
+
+
+class IntegerField(Validator):
+    """A required whole number within ``[minimum, maximum]`` (an age)."""
+
+    def __init__(self, label: str, *, minimum: int, maximum: int, feminine: bool = False) -> None:
+        super().__init__()
+        self.label = label
+        self.minimum = minimum
+        self.maximum = maximum
+        self.feminine = feminine
+
+    @override
+    def validate(self, value: str) -> ValidationResult:
+        text = value.strip()
+        if not text:
+            return self.failure(f"{self.label} é {_agree('obrigatório', feminine=self.feminine, plural=False)}.")
+        try:
+            number = int(text)
+        except ValueError:
+            return self.failure(f"{self.label} deve ser um número inteiro, recebido {text!r}.")
+        if not self.minimum <= number <= self.maximum:
+            return self.failure(f"{self.label} deve estar entre {self.minimum} e {self.maximum}, recebido {number}.")
+        return self.success()

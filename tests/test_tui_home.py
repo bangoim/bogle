@@ -19,12 +19,12 @@ from bogle.format import MASK
 from bogle.reports.valuation import NOTHING_RETURNED, SHORT_SERIES, UNKNOWN_TITLE, series_starts_at
 from bogle.tui import services
 from bogle.tui.app import BogleApp
+from bogle.tui.screens.assets import AssetsScreen
 from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.help import HelpModal
 from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
-from bogle.tui.screens.reports import ReportsScreen
 from bogle.tui.screens.status import StatusScreen
 from bogle.tui.widgets.menu import Menu
 from bogle.tui.widgets.metric import PLACEHOLDER, Metric
@@ -598,7 +598,7 @@ class TestNavigation:
 
     @pytest.mark.asyncio
     async def test_the_menu_splits_in_two_columns_on_a_wide_terminal(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Seis itens em tres linhas: e o que faz o resumo e o logo caberem sem
+        # Sete itens em quatro linhas: e o que faz o resumo e o logo caberem sem
         # scroll num terminal de altura normal.
         use_overview(monkeypatch, make_overview())
         app = make_app()
@@ -607,8 +607,8 @@ class TestNavigation:
             home = app.screen
             assert isinstance(home, HomeScreen)
             assert home.has_class("-wide")
-            assert home.query_one("#menu").size.height == 3  # tres linhas de itens
-            assert [menu.option_count for menu in home.query(Menu)] == [3, 3]
+            assert home.query_one("#menu").size.height == 4  # quatro linhas de itens
+            assert [menu.option_count for menu in home.query(Menu)] == [4, 3]
 
     @pytest.mark.asyncio
     async def test_a_narrower_terminal_keeps_the_single_column(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -621,7 +621,7 @@ class TestNavigation:
             home = app.screen
             assert isinstance(home, HomeScreen)
             assert not home.has_class("-wide")
-            assert home.query_one("#menu").size.height == 6  # os seis itens, um por linha
+            assert home.query_one("#menu").size.height == 7  # os sete itens, um por linha
 
     @pytest.mark.asyncio
     async def test_the_side_arrows_move_between_the_columns_keeping_the_row(
@@ -640,10 +640,10 @@ class TestNavigation:
             await pilot.press("right")
             await pilot.pause()
             assert right.has_focus
-            assert right.highlighted == 1  # Relatorios, a segunda da direita
+            assert right.highlighted == 1  # Ativos, a segunda da direita
             await pilot.press("enter")
             await settle(pilot)
-            assert isinstance(app.screen, ReportsScreen)
+            assert isinstance(app.screen, AssetsScreen)
 
             await pilot.press("escape")
             await settle(pilot)

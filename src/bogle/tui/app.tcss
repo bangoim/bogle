@@ -462,6 +462,38 @@ ConfirmModal, NextStepModal, EditModal, HelpModal {
     margin-top: 1;
 }
 
+/* ---------------------------------------------------------- Trajetoria */
+
+#glide-screen {
+    padding: 0 1;
+}
+
+#glide {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#glide-note {
+    height: auto;
+}
+
+#glide-sum {
+    height: auto;
+    margin-top: 1;
+}
+
+#glide-sum.complete {
+    color: $success;
+}
+
+#glide-form {
+    padding: 0 2;
+    margin: 1 2;
+    border: round $primary;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
 /* -------------------------------------------------------------- Status */
 
 #status {
