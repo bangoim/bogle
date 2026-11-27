@@ -32,6 +32,7 @@ from bogle.tui.screens.config import ConfigScreen
 from bogle.tui.screens.glide import GlidePathScreen
 from bogle.tui.screens.menu import Entries, MenuScreen, items_of
 from bogle.tui.screens.position import PositionScreen
+from bogle.tui.screens.rebalance import RebalanceScreen
 from bogle.tui.screens.register import RegisterScreen
 from bogle.tui.screens.reports import ReportsScreen
 from bogle.tui.screens.status import StatusScreen
@@ -53,9 +54,10 @@ LOGO = r"""
 # Status e Config viraram atalhos do rodape (`s` e `c`): sao as duas telas que se
 # consulta de vez em quando, e o menu e o que decide a altura da Home — com elas
 # dentro, o resumo empurrava o logo para fora do scroll em terminais de altura
-# normal. A Trajetoria (#79) entrou como setimo item e o Saque (#80) como oitavo:
-# em duas colunas sao quatro linhas, e com eles a Home ainda cabe em 80x24 sem
-# scroll (ali o menu e uma coluna so, e o logo sai abaixo de 24 linhas).
+# normal. A Trajetoria (#79) entrou como setimo item, o Saque (#80) como oitavo e
+# o Rebalancear (#81) como nono: em duas colunas sao cinco linhas, e a Home ainda
+# cabe em 80x24 sem scroll (ali o menu e uma coluna so, de nove linhas, e a linha
+# que ele ganhou saiu da margem de cima, em app.tcss; o logo sai abaixo de 24).
 _ENTRIES: Entries = (
     (MenuItem("1", "position", "Posição", "preços ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda, provento ou importação"), RegisterScreen),
@@ -65,17 +67,22 @@ _ENTRIES: Entries = (
     (MenuItem("6", "assets", "Ativos", "cadastrar, atualizar e remover"), AssetsScreen),
     (MenuItem("7", "glide", "Trajetória", "alvos por idade, ano a ano"), GlidePathScreen),
     (MenuItem("8", "withdraw", "Saque", "o que vender na aposentadoria"), WithdrawScreen),
+    (MenuItem("9", "rebalance", "Rebalancear", "venda anual na aposentadoria"), RebalanceScreen),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)
 
 _COLUMNS = 2
 """O menu e servido em duas colunas: cada item ocupa meia largura e o bloco
-inteiro cabe em quatro linhas. Num terminal estreito as duas empilham (app.tcss),
+inteiro cabe em cinco linhas. Num terminal estreito as duas empilham (app.tcss),
 o que devolve a lista de uma coluna sem mudar nada aqui."""
 
 _LEFT = MENU_ITEMS[: (len(MENU_ITEMS) + 1) // _COLUMNS]
 _RIGHT = MENU_ITEMS[(len(MENU_ITEMS) + 1) // _COLUMNS :]
+
+_LABEL_WIDTH = max(len(item.label) for item in MENU_ITEMS)
+"""A mesma coluna de rotulos nas duas listas: empilhadas (uma coluna so), elas
+leem como um menu, e "Rebalancear" (#81), o mais largo, fica so na da direita."""
 
 _HELP_NOTES = (
     '"Cotação de": preço de hoje (D-0) da brapi, que no plano gratuito atualiza a '
@@ -137,8 +144,8 @@ class HomeScreen(MenuScreen):
                     yield Metric("Rentabilidade total (TWR)", id="twr-total")
                 yield Static(id="summary-note")
             with Horizontal(id="menu"):
-                yield Menu(_LEFT, id="menu-left")
-                yield Menu(_RIGHT, id="menu-right")
+                yield Menu(_LEFT, id="menu-left", label_width=_LABEL_WIDTH)
+                yield Menu(_RIGHT, id="menu-right", label_width=_LABEL_WIDTH)
         yield Footer()
 
     @override
@@ -212,12 +219,13 @@ class HomeScreen(MenuScreen):
 
     @work(thread=True, group="rebalance")
     def _check_rebalance(self) -> None:
-        # O aviso de ciclo vencido virou toast (na CLI e uma linha em stderr).
-        notice = services.rebalance_notice()
-        if notice is not None:
-            self.app.call_from_thread(
-                self.notify, notice, title="rebalanceamento", severity="warning", timeout=12, markup=False
-            )
+        # O aviso de ciclo vencido e o do rebalanceamento anual (#81) viraram
+        # toasts (na CLI sao linhas em stderr).
+        for notice in (services.rebalance_notice(), services.annual_notice()):
+            if notice is not None:
+                self.app.call_from_thread(
+                    self.notify, notice, title="rebalanceamento", severity="warning", timeout=12, markup=False
+                )
 
     def _show_overview(self, overview: PortfolioOverview) -> None:
         self.overview = overview

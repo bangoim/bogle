@@ -13,10 +13,12 @@ HomeScreen #home {
     align-horizontal: center;
 }
 
-/* Menu em uma coluna (abaixo de -wide): sem a linha em branco sobre o rodape, os
-   oito itens cabem em 80x24 com o logo e sem scroll. */
+/* Menu em uma coluna (abaixo de -wide): sem as linhas em branco sob o cabecalho
+   e sobre o rodape, os nove itens cabem em 80x24 com o logo e sem scroll. A de
+   cima saiu com o nono item (#81): a barra do cabecalho ja separa o logo, e as
+   margens entre logo, resumo e menu ficam, que sao elas que separam os blocos. */
 HomeScreen.-normal #home, HomeScreen.-narrow #home {
-    padding: 1 2 0 2;
+    padding: 0 2;
 }
 
 #logo {
@@ -72,7 +74,7 @@ HomeScreen.-narrow #metrics {
 }
 
 /* Uma coluna por padrao; em terminal largo (-wide) o menu vira duas, o que
-   corta o bloco de seis para tres linhas e ocupa o espaco que sobrava a direita
+   corta o bloco de nove para cinco linhas e ocupa o espaco que sobrava a direita
    das descricoes. Abaixo disso as descricoes quebrariam em duas linhas cada e a
    troca sairia pior que a lista simples. */
 #menu {
@@ -457,6 +459,21 @@ ConfirmModal, NextStepModal, EditModal, HelpModal {
 }
 
 #withdraw-totals, #withdraw-note {
+    height: auto;
+}
+
+/* ------------------------------------------------ Rebalanceamento anual */
+
+#rebalance {
+    padding: 0 1;
+}
+
+#trades {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#rebalance-totals, #rebalance-note {
     height: auto;
 }
 
