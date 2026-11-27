@@ -108,6 +108,7 @@ def seed(url: str, *, ticker: str = "PETR4") -> str:
         transactions.add_sale(ticker, WHEN.replace(month=4), shares=Decimal("4"), unit_price=Decimal("35"))
         transactions.add_dividend(ticker, WHEN.replace(month=5), Decimal("12.34"))
         set_value(conn, DECIMAL_SEPARATOR, ",")
+        conn.execute("INSERT INTO glide_path_points (age, ticker, target_weight) VALUES (39, %s, 1)", (ticker,))
         conn.execute(
             "INSERT INTO price_history (symbol, date, close, source, loaded_on) VALUES "
             "(%s, '2026-03-10', 30.10, 'yfinance', '2026-03-11'), (%s, '2026-03-11', 30.55, 'brapi', '2026-03-11')",
@@ -226,8 +227,8 @@ class TestDefaults:
         assert DumpFormat.PLAIN.extension == "sql"
 
     def test_rows_agree_in_number(self) -> None:
-        rows = {"assets": 1, "transactions": 20, "user_settings": 0, "price_history": 773}
-        assert describe_rows(rows) == "1 ativo, 20 transações, 0 configurações, 773 fechamentos"
+        rows = {"assets": 1, "transactions": 20, "user_settings": 0, "price_history": 773, "glide_path_points": 1}
+        assert describe_rows(rows) == "1 ativo, 20 transações, 0 configurações, 773 fechamentos, 1 ponto da trajetória"
 
     def test_rows_skip_the_tables_an_older_database_lacks(self) -> None:
         assert describe_rows({"assets": 2, "transactions": 1}) == "2 ativos, 1 transação"
@@ -309,14 +310,26 @@ class TestBackup:
         assert result.path.stat().st_mode & 0o777 == 0o600
         assert result.format is DumpFormat.CUSTOM
         assert result.size == result.path.stat().st_size > 0
-        assert result.rows == {"assets": 1, "transactions": 3, "user_settings": 1, "price_history": 2}
+        assert result.rows == {
+            "assets": 1,
+            "transactions": 3,
+            "user_settings": 1,
+            "price_history": 2,
+            "glide_path_points": 1,
+        }
         assert result.rows == counts(url)
         assert list(backups.iterdir()) == [result.path]  # nenhum .tmp sobrando
 
     def test_the_custom_archive_lists_both_schemas(self, scratch: Callable[[], str]) -> None:
         result = create_backup(database_url=seed(scratch()))
         listing = subprocess.run(["pg_restore", "--list", str(result.path)], capture_output=True, text=True, check=True)
-        for table in ("public assets", "public transactions", "public user_settings", "public price_history"):
+        for table in (
+            "public assets",
+            "public transactions",
+            "public user_settings",
+            "public price_history",
+            "public glide_path_points",
+        ):
             assert f"TABLE {table}" in listing.stdout
         assert "TABLE migrations yoyo_migration" in listing.stdout
         assert "SEQUENCE SET public transactions_id_seq" in listing.stdout
@@ -446,11 +459,12 @@ class TestRestore:
         dump = create_backup(database_url=source)
         target = seed(scratch())
         conn = get_connection(target)
-        conn.execute("CREATE TABLE public.glide_path_points (age smallint)")
+        conn.execute("CREATE TABLE public.future_table (id smallint)")
         conn.close()
         result = restore(plan_restore(dump.path, database_url=target), safety_backup=False)
-        assert not has_table(target, "public.glide_path_points")
-        assert result.applied == ["007_price_history", "008_price_history_tesouro_source"]  # e aplicam sem colidir
+        assert not has_table(target, "public.future_table")
+        # A 009 cria glide_path_points, que o alvo ja tinha: aplica sem colidir.
+        assert result.applied == ["007_price_history", "008_price_history_tesouro_source", "009_glide_path_points"]
         assert pending_migrations(target) == []
 
     def test_an_older_dump_is_migrated_forward(self, scratch: Callable[[], str], tmp_path: Path) -> None:
@@ -462,9 +476,10 @@ class TestRestore:
         dump = create_backup(database_url=source)
         target = scratch()
         result = restore(plan_restore(dump.path, database_url=target))
-        assert result.applied == ["007_price_history", "008_price_history_tesouro_source"]
+        assert result.applied == ["007_price_history", "008_price_history_tesouro_source", "009_glide_path_points"]
         assert tickers(target) == ["PETR4"]
         assert result.rows["price_history"] == 0
+        assert result.rows["glide_path_points"] == 0
 
     def test_a_dump_of_a_newer_bogle_is_refused_and_nothing_changes(self, scratch: Callable[[], str]) -> None:
         source = seed(scratch())
@@ -611,7 +626,10 @@ class TestCli:
         [written] = list(backups.iterdir())
         assert f"backup gravado em {written}" in result.stdout
         # O banco semeado grava decimal_separator = ",": o tamanho sai com virgula.
-        assert re.search(r"custom, \d+,\d kB: 1 ativo, 3 transações, 1 configuração, 2 fechamentos\.", result.stdout)
+        assert re.search(
+            r"custom, \d+,\d kB: 1 ativo, 3 transações, 1 configuração, 2 fechamentos, 1 ponto da trajetória\.",
+            result.stdout,
+        )
 
     def test_backup_json_is_for_scripts(self, scratch: Callable[[], str], tmp_path: Path) -> None:
         result = run_cli("backup", "--format", "plain", "--json", url=seed(scratch()), data_home=tmp_path / "data")
@@ -620,7 +638,13 @@ class TestCli:
         assert payload["format"] == "plain"
         assert Path(payload["path"]).suffix == ".sql"
         assert payload["bytes"] == Path(payload["path"]).stat().st_size
-        assert payload["rows"] == {"assets": 1, "transactions": 3, "user_settings": 1, "price_history": 2}
+        assert payload["rows"] == {
+            "assets": 1,
+            "transactions": 3,
+            "user_settings": 1,
+            "price_history": 2,
+            "glide_path_points": 1,
+        }
 
     def test_backup_does_not_migrate_first(self, scratch: Callable[[], str], tmp_path: Path) -> None:
         url = scratch()
@@ -635,7 +659,10 @@ class TestCli:
         target = seed(scratch(), ticker="VALE3")
         result = run_cli("restore", str(dump.path), url=target, data_home=tmp_path / "data", stdin="n\n")
         assert result.returncode == 1
-        assert "substituindo 1 ativo, 3 transações, 1 configuração e 2 fechamentos." in result.stdout
+        assert (
+            "substituindo 1 ativo, 3 transações, 1 configuração, 2 fechamentos e 1 ponto da trajetória."
+            in result.stdout
+        )
         assert "nada foi alterado." in result.stderr
         assert tickers(target) == ["VALE3"]
 
@@ -646,7 +673,10 @@ class TestCli:
         result = run_cli("restore", str(dump.path), url=target, data_home=tmp_path / "data", stdin="s\n")
         assert result.returncode == 0, result.stderr
         assert "backup de segurança: " in result.stdout
-        assert "banco restaurado: 1 ativo, 3 transações, 1 configuração, 2 fechamentos." in result.stdout
+        assert (
+            "banco restaurado: 1 ativo, 3 transações, 1 configuração, 2 fechamentos, 1 ponto da trajetória."
+            in result.stdout
+        )
         assert tickers(target) == ["PETR4"]
 
     def test_restore_with_stdin_closed_is_a_no(self, scratch: Callable[[], str], tmp_path: Path) -> None:
@@ -671,7 +701,10 @@ class TestCli:
         result = run_cli("restore", str(dump.path), "--force", url=scratch(), data_home=tmp_path / "data")
         assert result.returncode == 0, result.stderr
         assert result.stderr.count("banco de dados atualizado") == 1
-        assert "aviso: banco de dados atualizado: 007_price_history, 008_price_history_tesouro_source." in result.stderr
+        assert (
+            "aviso: banco de dados atualizado: 007_price_history, 008_price_history_tesouro_source, "
+            "009_glide_path_points." in result.stderr
+        )
 
     def test_the_password_is_never_printed(self, scratch: Callable[[], str], tmp_path: Path) -> None:
         url = seed(scratch())

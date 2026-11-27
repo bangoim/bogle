@@ -79,7 +79,7 @@ def _canonical_number_format() -> Iterator[None]:
 def conn() -> Iterator[psycopg.Connection[DictRow]]:
     c = get_connection(TEST_DATABASE_URL)
     with c.cursor() as cur:
-        cur.execute("TRUNCATE transactions, assets, user_settings, price_history CASCADE")
+        cur.execute("TRUNCATE transactions, glide_path_points, assets, user_settings, price_history CASCADE")
     c.commit()
     yield c
     c.close()
