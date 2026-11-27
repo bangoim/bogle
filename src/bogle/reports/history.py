@@ -2,8 +2,8 @@
 
 Thin orchestration over the foundation (#67): resolve the window, build the
 portfolio valuation and sample it on the period's grid. Fixed income is valued
-by present value through the per-asset valuators; TESOURO (no free history,
-see #17) is excluded and reported.
+by present value through the per-asset valuators; TESOURO by the PU of its
+series from the Tesouro Transparente CSV (#87).
 """
 
 from __future__ import annotations

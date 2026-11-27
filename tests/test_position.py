@@ -72,6 +72,9 @@ class FakeTesouro:
     def get_quote(self, title: str) -> Any:
         raise QuoteNotFoundError(title, provider="tesouro")
 
+    def get_series(self, title: str) -> list[SeriesPoint]:
+        raise QuoteNotFoundError(title, provider="tesouro")
+
 
 class FakeBcb:
     def __init__(self, cdi: Any = ()) -> None:

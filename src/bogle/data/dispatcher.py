@@ -4,7 +4,9 @@
 
 - STOCK/BDR/FII/ETF -> brapi quote (per share), falling back to yfinance (``.SA``
   for B3) when brapi fails.
-- TESOURO -> the redemption unit price (``pu_venda``, mark-to-market).
+- TESOURO -> the redemption unit price (``pu_venda``, mark-to-market). With a store
+  it is the last stored row of the title's series (issue #87), so the Position and
+  the series' last point are the same PU.
 - CDB/RDB/LCI/LCA/CAIXINHA -> the gross corrected value of ``principal`` via the
   fixed-income present-value engine (BCB series fetched for the period).
 
@@ -22,6 +24,12 @@ is the source of truth for everything since the last load (at least the last 30
 sessions, up to the 3 months its free plan serves), once a day, and every other
 read of the day comes from the table. Without a store the history is fetched on
 every call, as before.
+
+The PU of each Tesouro title of the portfolio is kept in the same table (source
+``tesouro``, under the title name). Its first load brings the title's whole series
+from the day's CSV; the next ones add what is after the last stored date. The CSV
+is downloaded at most once a day (see :mod:`bogle.data.tesouro`), and a title that
+was redeemed is final once a load after its maturity has been made.
 
 Today's session is never stored. A caller that wants it (the Home summary) asks
 :meth:`PriceDispatcher.build_historical_pricing` for ``live=True``, which adds
@@ -44,6 +52,7 @@ from bogle.analytics.business_days import is_business_day, previous_business_day
 from bogle.data.cache import DiskCache
 from bogle.data.fixed_income import accumulated_ipca_factor, accumulated_rate_factor, present_value
 from bogle.data.models import HistPoint, Quote, SeriesPoint, StoredClose, StoredSpan, TesouroQuote
+from bogle.data.tesouro import mark_price
 from bogle.db import DEFAULT_TIMEZONE
 
 if TYPE_CHECKING:
@@ -101,6 +110,7 @@ class IndexSource(Protocol):
 
 class TesouroSource(Protocol):
     def get_quote(self, title: str) -> TesouroQuote: ...
+    def get_series(self, title: str) -> list[SeriesPoint]: ...
 
 
 class BrapiLike(HistorySource, IndexSource, Protocol):
@@ -235,6 +245,13 @@ class HistoricalPricing:
     quote_failed: bool = False
     """``live`` was asked on a trading day and brapi did not answer: the series
     stops at the last stored close, and the caller says why."""
+    day_behind: bool = False
+    """The source publishes each session a business day late (Tesouro Direto: the
+    PU of D-1 comes out on D). A series ending on the previous business day is
+    current for it, and is not a stale price."""
+    not_published: bool = False
+    """Without a valuator: the source answered and does not publish this title, as
+    opposed to not answering. Nothing the user does changes the first."""
 
 
 def _price_info_to_cache(info: PriceInfo) -> dict[str, Any]:
@@ -284,7 +301,7 @@ class PriceDispatcher:
         if asset.asset_type in VARIABLE_INCOME_TYPES:
             return self._variable_income_info(asset.ticker)
         if asset.asset_type is AssetType.TESOURO:
-            return self._tesouro_info(asset.ticker)
+            return self._tesouro_info(asset)
         if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
             return PriceInfo(self._fixed_income_value(asset, principal, on_date), "calculado", None)
         raise ValueError(f"tipo de ativo sem preço: {asset.asset_type}")
@@ -303,13 +320,22 @@ class PriceDispatcher:
         self._cache.set(key, _price_info_to_cache(info), self._quote_ttl)
         return info
 
-    def _tesouro_info(self, title: str) -> PriceInfo:
-        quote = self._tesouro.get_quote(title)
-        price = quote.pu_venda or quote.pu_base  # mark-to-market = redemption price
-        if price is None:
-            raise QuoteNotFoundError(title, provider="tesouro")
-        base = quote.base_date
-        return PriceInfo(price, "tesouro", datetime(base.year, base.month, base.day))
+    def _tesouro_info(self, asset: Asset) -> PriceInfo:
+        title = asset.ticker
+        if self._store is None:
+            quote = self._tesouro.get_quote(title)
+            price = mark_price(quote.pu_venda, quote.pu_base)
+            if price is None:
+                raise QuoteNotFoundError(title, provider="tesouro")
+            base = quote.base_date
+            return PriceInfo(price, "tesouro", datetime(base.year, base.month, base.day))
+        # The same load and the same rows the series reads: the Position and the
+        # last point of the series can not disagree on a date's PU.
+        span, failure = self._tesouro_load(asset)
+        if span is None:
+            raise failure if failure is not None else QuoteNotFoundError(title, provider="tesouro")
+        last = self._store.closes(title, span.last, span.last)[0]
+        return PriceInfo(last.close, "tesouro", datetime(last.date.year, last.date.month, last.date.day))
 
     def _fixed_income_value(self, asset: Asset, principal: Decimal | None, on_date: date | None) -> Decimal:
         if principal is None:
@@ -510,9 +536,8 @@ class PriceDispatcher:
 
         Variable income marks to the ticker's historical close (long history via
         yfinance); private fixed income marks to its present value on each date
-        (BCB series fetched once for the whole window). Returns ``None`` for
-        TESOURO — no free historical price series is wired — so the caller reports
-        TWR as unavailable.
+        (BCB series fetched once for the whole window); TESOURO marks to the PU of
+        the title's series (:meth:`_tesouro_history`, issue #87).
 
         ``covering`` is the date the series has to reach back to for the caller to
         be able to use it (usually when the position starts). Given it, a first
@@ -533,6 +558,12 @@ class PriceDispatcher:
             valuator = price_history_valuator({asset.ticker: history}) if history else None
             series_end = _as_date(history[-1].date) if history else None
             return HistoricalPricing(valuator, series_start, series_end, quote_time, quote_failed)
+        if asset.asset_type is AssetType.TESOURO:
+            # No D-0 quote to add: the PU of today is not published before tomorrow.
+            history, series_start, not_published = self._tesouro_history(asset, start, end, covering=covering)
+            valuator = price_history_valuator({asset.ticker: history}) if history else None
+            series_end = _as_date(history[-1].date) if history else None
+            return HistoricalPricing(valuator, series_start, series_end, day_behind=True, not_published=not_published)
         if asset.asset_type in PRIVATE_FIXED_INCOME_TYPES:
             return HistoricalPricing(self._fixed_income_valuator(asset, unit_principal, end))
         return HistoricalPricing(None)
@@ -717,6 +748,72 @@ class PriceDispatcher:
         window = _stored(fallback, "yfinance", start=load_from, before=today)
         if window:
             store.save(name, window, loaded_on=today, confirm=(load_from, yesterday))
+
+    # --- Tesouro Direto history (issue #87) -------------------------------
+
+    def _tesouro_history(
+        self, asset: Asset, start: date, end: date, *, covering: date | None = None
+    ) -> tuple[list[HistPoint], date | None, bool]:
+        """The PU series of a title in ``[start, end]``, the series' start when it is
+        known short of ``covering``, and whether the source does not publish the title.
+
+        With a store, from the table after :meth:`_tesouro_load`; without one,
+        straight from the client. A title that is not in the file, or a file that
+        could not be had, leaves whatever the table already holds.
+        """
+        ticker = asset.ticker
+        if self._store is None:
+            try:
+                series = self._tesouro.get_series(ticker)
+            except MarketDataError as exc:
+                return [], None, isinstance(exc, QuoteNotFoundError)
+            first = series[0].date if series else None
+            rows = [StoredClose(p.date, p.value, "tesouro") for p in series if start <= p.date <= end]
+            short = first if first is not None and covering is not None and first > covering else None
+            return [_as_hist_point(row) for row in rows], short, False
+        span, failure = self._tesouro_load(asset)
+        not_published = isinstance(failure, QuoteNotFoundError)
+        if span is None:
+            return [], None, not_published
+        # From `span.last` at the latest: a title redeemed before the window opens
+        # (still held in the ledger) keeps its last PU instead of vanishing.
+        rows = self._store.closes(ticker, min(start, span.last), end)
+        short = span.first if covering is not None and span.first > covering else None
+        return [_as_hist_point(row) for row in rows], short, not_published
+
+    def _tesouro_load(self, asset: Asset) -> tuple[StoredSpan | None, MarketDataError | None]:
+        """Bring the table up to what the client has, when it can have more.
+
+        The first match decides: nothing stored, the whole series is loaded; a
+        title redeemed and already loaded after its maturity is final; a last
+        stored date of the previous business day or later is all there is to know
+        (the file only gets D-1 on D); otherwise the client is asked. It decides on
+        its own whether that means a download (see :mod:`bogle.data.tesouro`), and
+        what is added is only what comes after the last stored date, add-only.
+
+        Returns the table's span afterwards and the client's failure, if any. A
+        failed ask stamps nothing, so the next screen tries again, and the rows
+        already stored still count.
+        """
+        store = self._store
+        assert store is not None  # so chamado com banco
+        ticker = asset.ticker
+        today = self._today()
+        span = store.span(ticker)
+        if span is not None:
+            maturity = _as_date(asset.maturity_date) if asset.maturity_date is not None else None
+            if maturity is not None and span.loaded_on > maturity:
+                return span, None
+            if span.last >= previous_business_day(today):
+                return span, None
+        try:
+            series = self._tesouro.get_series(ticker)
+        except MarketDataError as exc:
+            return span, exc
+        last = span.last if span is not None else None
+        rows = [StoredClose(p.date, p.value, "tesouro") for p in series if last is None or p.date > last]
+        store.save(ticker, rows, loaded_on=today, confirm=(last, last) if last is not None else None)
+        return store.span(ticker), None
 
     def _history_or_empty(self, symbol: str, *, start: date | None = None, end: date | None = None) -> list[HistPoint]:
         try:

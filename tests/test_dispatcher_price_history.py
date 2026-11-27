@@ -22,9 +22,11 @@ import pytest
 from bogle.analytics.business_days import is_business_day
 from bogle.data.cache import DiskCache
 from bogle.data.dispatcher import PriceDispatcher
-from bogle.data.models import HistPoint, Quote, StoredClose, StoredSpan, TesouroQuote
+from bogle.data.models import HistPoint, Quote, SeriesPoint, StoredClose, StoredSpan, TesouroQuote
 from bogle.domain.assets import Asset, AssetType
 from bogle.domain.errors import MarketDataError, NetworkError, QuoteNotFoundError
+from tests.tesouro_fakes import FakeSeries
+from tests.tesouro_fakes import point as pu_point
 
 TODAY = date(2026, 10, 1)
 YESTERDAY = date(2026, 9, 30)
@@ -161,6 +163,9 @@ class FakeTesouro:
     def get_quote(self, title: str) -> TesouroQuote:
         raise QuoteNotFoundError(title, provider="tesouro")
 
+    def get_series(self, title: str) -> list[SeriesPoint]:
+        raise QuoteNotFoundError(title, provider="tesouro")
+
 
 class FakeBcb:
     def get_cdi(self, start: date | None = None, end: date | None = None) -> list[Any]:
@@ -180,11 +185,12 @@ def make_dispatcher(
     brapi: FakeHistory | None = None,
     store: FakeStore | None = None,
     today: date = TODAY,
+    tesouro: Any = None,
 ) -> PriceDispatcher:
     return PriceDispatcher(
         brapi=brapi or FakeHistory(),
         yfinance=yahoo or FakeHistory(),
-        tesouro=FakeTesouro(),
+        tesouro=tesouro or FakeTesouro(),
         bcb=FakeBcb(),
         quote_cache=DiskCache("quotes", base_dir=tmp_path),
         price_store=store,
@@ -540,3 +546,176 @@ class TestLiveQuote:
             make_dispatcher(tmp_path, yahoo=yahoo, brapi=brapi), "MUND11", start=date(2026, 9, 1), live=True
         )
         assert result.valuator({"MUND11": Decimal("1")}, TODAY) == Decimal("100.32")
+
+
+TITLE = "TESOURO SELIC 2029"
+MATURING = "TESOURO SELIC 2026"
+TWO_DAYS_AGO = date(2026, 9, 29)  # TODAY is Thursday 2026-10-01; D-1 is Wednesday 2026-09-30
+
+
+def title(ticker: str = TITLE, maturity: datetime | None = None) -> Asset:
+    return Asset(
+        ticker=ticker,
+        target_weight=Decimal("0.3"),
+        asset_type=AssetType.TESOURO,
+        maturity_date=maturity or datetime(2029, 3, 1, tzinfo=UTC),
+    )
+
+
+def pus(start: date, end: date, first: int = 17000) -> list[SeriesPoint]:
+    """One PU per business day in ``[start, end]``, rising 1.00 a day from ``first``."""
+    out, value, day = [], first, start
+    while day <= end:
+        if is_business_day(day):
+            out.append(pu_point(day.isoformat(), f"{value}.00"))
+            value += 1
+        day += timedelta(days=1)
+    return out
+
+
+def tesouro_pricing(dispatcher: PriceDispatcher, asset: Asset | None = None, *, start: date = date(2026, 9, 1)) -> Any:
+    return dispatcher.build_historical_pricing(
+        asset or title(), unit_principal=Decimal("0"), start=start, end=TODAY, covering=start
+    )
+
+
+class TestTesouroLoad:
+    def seeded(self, ticker: str = TITLE) -> FakeStore:
+        """Yesterday's run: the PUs up to D-2, loaded yesterday."""
+        store = FakeStore()
+        for p in pus(date(2026, 9, 1), TWO_DAYS_AGO):
+            store.put(ticker, p.date, str(p.value), "tesouro", loaded_on=YESTERDAY)
+        return store
+
+    def test_the_first_load_stores_the_whole_series_as_tesouro(self, tmp_path: Path) -> None:
+        series = pus(date(2026, 8, 3), YESTERDAY)
+        client, store = FakeSeries({TITLE: series}), FakeStore()
+        result = tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client), start=date(2026, 9, 1))
+        assert client.series_calls == [TITLE]
+        assert len(store.rows[TITLE]) == len(series)
+        assert {row[1:] for row in store.rows[TITLE].values()} == {("tesouro", TODAY)}
+        assert result.valuator is not None
+        assert result.series_end == YESTERDAY
+        assert result.day_behind is True and result.not_published is False
+
+    def test_the_next_day_stores_only_what_comes_after_the_last_date(self, tmp_path: Path) -> None:
+        store = self.seeded()
+        # The client disagrees about D-2: what is stored is never corrected.
+        series = [pu_point("2026-09-29", "1.00"), pu_point("2026-09-30", "17022.00")]
+        client = FakeSeries({TITLE: series})
+        result = tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client))
+        assert store.row(TITLE, YESTERDAY) == (Decimal("17022.00"), "tesouro", TODAY)
+        kept = store.row(TITLE, TWO_DAYS_AGO)
+        assert kept is not None and kept[0] != Decimal("1.00")
+        assert result.series_end == YESTERDAY
+
+    def test_nothing_new_still_stamps_the_load(self, tmp_path: Path) -> None:
+        store = self.seeded()
+        client = FakeSeries({TITLE: pus(date(2026, 9, 1), TWO_DAYS_AGO)})  # the file has no D-1 yet
+        tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client))
+        row, span = store.row(TITLE, TWO_DAYS_AGO), store.span(TITLE)
+        assert row is not None and row[2] == TODAY
+        assert span is not None and span.last == TWO_DAYS_AGO
+
+    def test_a_last_date_of_the_previous_business_day_is_only_read(self, tmp_path: Path) -> None:
+        store = self.seeded()
+        store.put(TITLE, YESTERDAY, "17022.00", "tesouro", loaded_on=YESTERDAY)
+        client = FakeSeries({TITLE: pus(date(2026, 9, 1), YESTERDAY)})
+        dispatcher = make_dispatcher(tmp_path, store=store, tesouro=client)
+        assert tesouro_pricing(dispatcher).series_end == YESTERDAY
+        assert dispatcher.get_price_info(title()).price == Decimal("17022.00")
+        assert client.series_calls == []
+
+    def test_a_title_loaded_after_its_maturity_is_final(self, tmp_path: Path) -> None:
+        store = FakeStore()
+        for p in pus(date(2026, 8, 3), date(2026, 8, 14)):
+            store.put(MATURING, p.date, str(p.value), "tesouro", loaded_on=date(2026, 8, 20))
+        client = FakeSeries({MATURING: pus(date(2026, 8, 3), date(2026, 8, 15))})
+        asset = title(MATURING, maturity=datetime(2026, 8, 15, tzinfo=UTC))
+        result = tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client), asset)
+        assert client.series_calls == []
+        # Held in the ledger, redeemed before the window: its last PU is still read.
+        assert result.valuator is not None
+        assert result.series_end == date(2026, 8, 14)
+
+    def test_a_title_last_loaded_before_its_maturity_is_asked_once_more(self, tmp_path: Path) -> None:
+        store = FakeStore()
+        for p in pus(date(2026, 8, 3), date(2026, 8, 13)):
+            store.put(MATURING, p.date, str(p.value), "tesouro", loaded_on=date(2026, 8, 13))
+        client = FakeSeries({MATURING: pus(date(2026, 8, 3), date(2026, 8, 14))})
+        asset = title(MATURING, maturity=datetime(2026, 8, 15, tzinfo=UTC))
+        tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client), asset)
+        assert client.series_calls == [MATURING]
+        span = store.span(MATURING)
+        assert span is not None and span.loaded_on == TODAY  # final from now on
+        tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client), asset)
+        assert client.series_calls == [MATURING]
+
+    def test_a_failure_with_rows_in_the_table_still_prices_and_stamps_nothing(self, tmp_path: Path) -> None:
+        store = self.seeded()
+        client = FakeSeries(fail=NetworkError("tesouro", "fora do ar"))
+        result = tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client))
+        assert result.valuator is not None
+        assert result.series_end == TWO_DAYS_AGO
+        assert result.not_published is False
+        span = store.span(TITLE)
+        assert span is not None and span.loaded_on == YESTERDAY
+
+    def test_a_failure_without_rows_leaves_no_valuator_and_is_not_a_missing_title(self, tmp_path: Path) -> None:
+        client = FakeSeries(fail=NetworkError("tesouro", "fora do ar"))
+        result = tesouro_pricing(make_dispatcher(tmp_path, store=FakeStore(), tesouro=client))
+        assert result.valuator is None
+        assert result.not_published is False
+
+    def test_a_title_the_file_does_not_publish_is_flagged(self, tmp_path: Path) -> None:
+        client = FakeSeries({"TESOURO SELIC 2027": pus(date(2026, 9, 1), YESTERDAY)})
+        result = tesouro_pricing(make_dispatcher(tmp_path, store=FakeStore(), tesouro=client))
+        assert result.valuator is None
+        assert result.not_published is True
+
+    def test_a_series_that_starts_after_the_position_says_where_it_starts(self, tmp_path: Path) -> None:
+        client = FakeSeries({TITLE: pus(date(2026, 9, 15), YESTERDAY)})
+        result = tesouro_pricing(make_dispatcher(tmp_path, store=FakeStore(), tesouro=client), start=date(2026, 9, 1))
+        assert result.valuator is not None
+        assert result.series_start == date(2026, 9, 15)
+
+    def test_the_second_screen_of_the_day_does_not_ask_the_client(self, tmp_path: Path) -> None:
+        client, store = FakeSeries({TITLE: pus(date(2026, 8, 3), YESTERDAY)}), FakeStore()
+        tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client))
+        tesouro_pricing(make_dispatcher(tmp_path, store=store, tesouro=client))
+        assert client.series_calls == [TITLE]
+
+
+class TestTesouroPrice:
+    def test_the_position_price_and_date_are_the_last_point_of_the_series(self, tmp_path: Path) -> None:
+        series = pus(date(2026, 8, 3), YESTERDAY)
+        dispatcher = make_dispatcher(tmp_path, store=FakeStore(), tesouro=FakeSeries({TITLE: series}))
+        info = dispatcher.get_price_info(title())
+        pricing_ = tesouro_pricing(dispatcher)
+        assert (info.price, info.source) == (series[-1].value, "tesouro")
+        assert info.as_of == datetime(2026, 9, 30)
+        assert pricing_.valuator({TITLE: Decimal("2")}, YESTERDAY) == 2 * info.price
+
+    def test_a_download_that_failed_with_nothing_stored_raises(self, tmp_path: Path) -> None:
+        client = FakeSeries(fail=NetworkError("tesouro", "fora do ar"))
+        dispatcher = make_dispatcher(tmp_path, store=FakeStore(), tesouro=client)
+        with pytest.raises(NetworkError):
+            dispatcher.get_price_info(title())
+
+    def test_an_unknown_title_has_no_price(self, tmp_path: Path) -> None:
+        dispatcher = make_dispatcher(tmp_path, store=FakeStore(), tesouro=FakeSeries({}))
+        with pytest.raises(QuoteNotFoundError):
+            dispatcher.get_price_info(title())
+
+    def test_without_a_store_the_snapshot_still_prices(self, tmp_path: Path) -> None:
+        series = pus(date(2026, 8, 3), YESTERDAY)
+        client = FakeSeries({TITLE: series})
+        dispatcher = make_dispatcher(tmp_path, tesouro=client)
+        assert dispatcher.get_price_info(title()).price == series[-1].value
+        assert client.quote_calls == [TITLE]
+
+    def test_without_a_store_the_series_comes_straight_from_the_client_in_the_window(self, tmp_path: Path) -> None:
+        client = FakeSeries({TITLE: pus(date(2026, 8, 3), YESTERDAY)})
+        result = tesouro_pricing(make_dispatcher(tmp_path, tesouro=client), start=date(2026, 9, 1))
+        assert result.series_end == YESTERDAY
+        assert result.valuator({TITLE: Decimal("1")}, date(2026, 9, 1)) == Decimal("17021.00")

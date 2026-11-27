@@ -1,7 +1,7 @@
 """History screen: patrimony over time (issue #75).
 
 Same table and same chart as ``bogle history`` — fixed income valued by present
-value, TESOURO reported as excluded (#17) — with the window on ``t`` and the
+value, TESOURO by the PU of its series (#87) — with the window on ``t`` and the
 interactive HTML export on ``o``.
 
 The chart plots reais, so the privacy mode (``h``) takes it off the screen

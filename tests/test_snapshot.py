@@ -20,7 +20,7 @@ from psycopg.rows import DictRow
 
 from bogle.data.cache import DiskCache
 from bogle.data.dispatcher import PriceDispatcher
-from bogle.data.models import Quote, TesouroQuote
+from bogle.data.models import Quote, SeriesPoint, TesouroQuote
 from bogle.domain.errors import QuoteNotFoundError
 from bogle.reports.snapshot import compute_snapshot
 from bogle.reports.valuation import NOTHING_RETURNED
@@ -67,6 +67,9 @@ class NoTesouro:
     """A Tesouro source that never answers (no Tesouro title in these fixtures)."""
 
     def get_quote(self, title: str) -> TesouroQuote:
+        raise QuoteNotFoundError(title, provider="fake")
+
+    def get_series(self, title: str) -> list[SeriesPoint]:
         raise QuoteNotFoundError(title, provider="fake")
 
 

@@ -17,6 +17,7 @@ from bogle.domain.errors import ValidationError
 from bogle.reports.compare import CompareReport, CompareSeries, compute_compare
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
+from tests.tesouro_fakes import FakeSeries, point
 from tests.test_valuation import FakeBcb, FakeYfinance, bar, make_dispatcher
 
 TODAY = date(2026, 7, 20)
@@ -44,6 +45,24 @@ class TestComputeCompare:
         assert carteira.levels[0] == Decimal("100")
         assert carteira.levels[-1] == Decimal("125")  # 20 -> 25
         assert carteira.accumulated_return == Decimal("0.25")
+
+    def test_a_tesouro_title_with_a_known_series_is_in_the_portfolio_series(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        from bogle.domain.assets import AssetType
+
+        AssetRepository(conn).add("TESOURO SELIC 2029", Decimal("0.5"), asset_type=AssetType.TESOURO)
+        TransactionRepository(conn).add_buy(
+            "TESOURO SELIC 2029",
+            shares=Decimal("1"),
+            unit_price=Decimal("1000"),
+            date=datetime(2026, 6, 22, 12, tzinfo=UTC),
+        )
+        tesouro = FakeSeries({"TESOURO SELIC 2029": [point("2026-06-22", "1000"), point("2026-07-17", "1100")]})
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)), tesouro=tesouro)
+        report = compute_compare(conn, dispatcher, period="1m", indices=(), today=TODAY)
+        assert report.excluded == []
+        assert report.series[0].levels[-1] == Decimal("112.5")  # 200 + 1000 -> 250 + 1100
 
     def test_contribution_mid_window_is_not_performance(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
@@ -103,7 +122,9 @@ class TestComputeCompare:
             date=datetime(2026, 6, 22, 12, tzinfo=UTC),
         )
         # O motivo de cada um, e nao um "sem historico" fixo que nao vale para todos.
-        with pytest.raises(ValidationError, match=r"Fora: TESOURO SELIC 2029 \(sem fonte de histórico gratuita\)\."):
+        with pytest.raises(
+            ValidationError, match=r"Fora: TESOURO SELIC 2029 \(título não encontrado no Tesouro Transparente\)\."
+        ):
             compute_compare(conn, make_dispatcher(tmp_path), period="1m", indices=(), today=TODAY)
 
 

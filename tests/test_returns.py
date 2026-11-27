@@ -13,10 +13,11 @@ from typer.testing import CliRunner
 from bogle.cli import app
 from bogle.domain.errors import ValidationError
 from bogle.reports.returns import PeriodReturn, ReturnsReport, compute_returns
-from bogle.reports.valuation import INCONSISTENT_LEDGER, NO_SOURCE
+from bogle.reports.valuation import INCONSISTENT_LEDGER, NOTHING_RETURNED
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
 from bogle.settings import DECIMAL_SEPARATOR, set_setting
+from tests.tesouro_fakes import FakeSeries, point
 from tests.test_valuation import FakeYfinance, bar, make_dispatcher
 
 TODAY = date(2026, 7, 20)
@@ -54,6 +55,36 @@ class TestComputeReturns:
         assert by_period["12m"].twr == Decimal("25") / Decimal("22") - 1  # 22 -> 25
         assert by_period["1m"].twr == Decimal("25") / Decimal("24") - 1  # 24 -> 25
         assert report.excluded == []
+
+    def test_a_tesouro_title_with_a_known_series_is_in_every_window(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        from bogle.domain.assets import AssetType
+
+        AssetRepository(conn).add("TESOURO SELIC 2029", Decimal("0.5"), asset_type=AssetType.TESOURO)
+        TransactionRepository(conn).add_buy(
+            "TESOURO SELIC 2029",
+            shares=Decimal("1"),
+            unit_price=Decimal("1000"),
+            date=datetime(2025, 1, 6, 12, tzinfo=UTC),
+        )
+        tesouro = FakeSeries(
+            {
+                "TESOURO SELIC 2029": [
+                    point("2025-01-06", "1000"),
+                    point("2025-07-18", "1050"),
+                    point("2026-06-19", "1100"),
+                    point("2026-07-17", "1200"),
+                ]
+            }
+        )
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)), tesouro=tesouro)
+        report = compute_returns(conn, dispatcher, today=TODAY)
+        by_period = {row.period: row for row in report.rows}
+        assert report.excluded == []
+        assert by_period["total"].twr == Decimal("1450") / Decimal("1200") - 1  # 200 + 1000 -> 250 + 1200
+        assert by_period["12m"].twr == Decimal("1450") / Decimal("1270") - 1  # 220 + 1050 -> 250 + 1200
+        assert by_period["1m"].twr == Decimal("1450") / Decimal("1340") - 1  # 240 + 1100 -> 250 + 1200
 
     def test_an_inconsistent_ledger_is_excluded_with_that_reason(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
@@ -120,7 +151,7 @@ class TestCliRendering:
             ],
             excluded=["TESOURO SELIC 2029"],
             index_errors={},
-            excluded_reasons={"TESOURO SELIC 2029": NO_SOURCE},
+            excluded_reasons={"TESOURO SELIC 2029": NOTHING_RETURNED},
         )
         monkeypatch.setattr("bogle.cli.returns.default_dispatcher", lambda: None)
         monkeypatch.setattr(
@@ -138,7 +169,7 @@ class TestCliRendering:
         assert "+17,50 p.p." in result.stdout  # outperform
         assert "-3,10 p.p." in result.stdout  # underperform
         note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
-        assert f"TWR não considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
+        assert f"TWR não considera TESOURO SELIC 2029 ({NOTHING_RETURNED})." in note
 
     def test_the_difference_follows_the_configured_separator(
         self, runner: CliRunner, conn: psycopg.Connection[DictRow]

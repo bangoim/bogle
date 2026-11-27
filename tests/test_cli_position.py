@@ -21,7 +21,7 @@ from rich.console import Console
 from bogle.cli.position import _render, _summary_json
 from bogle.domain.assets import AssetType
 from bogle.position import PortfolioSummary, Position
-from bogle.reports.valuation import NO_SOURCE
+from bogle.reports.valuation import NOTHING_RETURNED
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BOGLE_BIN = PROJECT_ROOT / ".venv" / "bin" / "bogle"
@@ -121,14 +121,14 @@ class TestTableRender:
             month_profit=Decimal("1420.15"),
             income_12m=Decimal("85"),
             excluded=["TESOURO SELIC 2029"],
-            excluded_reasons={"TESOURO SELIC 2029": NO_SOURCE},
+            excluded_reasons={"TESOURO SELIC 2029": NOTHING_RETURNED},
         )
         out = buffer.getvalue()
         assert "Lucro do mês" in out
         assert "+1,420.15" in out
         assert "Proventos (12m)" in out
         assert "+85.00" in out
-        assert f"lucro do mês não considera TESOURO SELIC 2029 ({NO_SOURCE})." in out
+        assert f"lucro do mês não considera TESOURO SELIC 2029 ({NOTHING_RETURNED})." in out
 
 
 class TestEndToEnd:

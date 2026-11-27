@@ -28,7 +28,7 @@ the ledger as it stands today instead would mix in transactions dated after the
 reference date, and a buy registered today would show up as a loss the size of
 the aporte (the money is in the base, the shares are not in the patrimony yet).
 
-Tickers without a historical price source (TESOURO — see #17 — or a ticker whose
+Tickers without a historical price source (a Tesouro title the CSV does not publish, or a ticker whose
 history fetch failed) are excluded from *every* number, so patrimony and
 variation stay comparable; ``excluded`` carries them for the caller to report,
 the same policy as the other historical reports (#67). A caller showing

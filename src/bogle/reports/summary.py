@@ -8,7 +8,7 @@ NOT in it, see #29 for the decomposition).
 "Lucro do mes" is the R$ P&L of the window: the patrimony delta minus what was
 contributed, plus what was withdrawn and received as income — otherwise a fresh
 aporte would read as profit. It is computed over the tickers with a historical
-source (the foundation excludes TESOURO — see #67), so the excluded list must
+source (a Tesouro title counts through the CSV series, #87), so the excluded list must
 be surfaced next to the number.
 """
 

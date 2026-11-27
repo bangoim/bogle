@@ -14,9 +14,10 @@ from typer.testing import CliRunner
 from bogle.cli import app
 from bogle.domain.errors import ValidationError
 from bogle.reports.history import HistoryReport, compute_history
-from bogle.reports.valuation import NO_SOURCE, NOTHING_RETURNED, PatrimonyPoint
+from bogle.reports.valuation import NOTHING_RETURNED, PatrimonyPoint
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
+from tests.tesouro_fakes import FakeSeries, point
 from tests.test_valuation import FakeYfinance, bar, make_dispatcher
 
 TODAY = date(2026, 7, 20)
@@ -44,6 +45,27 @@ class TestComputeHistory:
         by_date = {p.date: p.value for p in report.points}
         assert by_date[date(2026, 6, 28)] == Decimal("200")  # domingo
         assert by_date[TODAY] == Decimal("250")
+
+    def test_a_tesouro_title_with_a_known_series_is_in_the_patrimony(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
+    ) -> None:
+        from bogle.domain.assets import AssetType
+
+        AssetRepository(conn).add("TESOURO SELIC 2029", Decimal("0.5"), asset_type=AssetType.TESOURO)
+        TransactionRepository(conn).add_buy(
+            "TESOURO SELIC 2029",
+            shares=Decimal("1"),
+            unit_price=Decimal("1000"),
+            date=datetime(2026, 6, 22, 12, tzinfo=UTC),
+        )
+        history = {"PETR4.SA": [bar("2026-06-22", "20"), bar("2026-07-17", "25")]}
+        tesouro = FakeSeries({"TESOURO SELIC 2029": [point("2026-06-22", "1000"), point("2026-07-17", "1100")]})
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(history), tesouro=tesouro)
+        report = compute_history(conn, dispatcher, period="12m", today=TODAY)
+        assert report.excluded == []
+        by_date = {p.date: p.value for p in report.points}
+        assert by_date[date(2026, 6, 22)] == Decimal("1200")
+        assert by_date[TODAY] == Decimal("1350")  # 250 + 1100, the PU of Friday carried
 
     def test_all_uses_monthly_granularity(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: object
@@ -116,7 +138,7 @@ class TestCli:
             ],
             granularity="monthly",
             excluded=["TESOURO SELIC 2029"],
-            excluded_reasons={"TESOURO SELIC 2029": NO_SOURCE},
+            excluded_reasons={"TESOURO SELIC 2029": NOTHING_RETURNED},
         )
         monkeypatch.setattr("bogle.cli.history.default_dispatcher", lambda: None)
         monkeypatch.setattr("bogle.cli.history.compute_history", lambda conn, dispatcher, *, period, today: report)
@@ -130,7 +152,7 @@ class TestCli:
         assert "+5,00%" in result.stdout
         assert "+40,00" in result.stdout  # 210 -> 250
         note = " ".join(result.stdout.split())  # a nota quebra na largura do terminal
-        assert f"patrimônio não considera TESOURO SELIC 2029 ({NO_SOURCE})." in note
+        assert f"patrimônio não considera TESOURO SELIC 2029 ({NOTHING_RETURNED})." in note
         assert "sem histórico de preços no período" not in note
 
     def test_chart_renders(self, runner: CliRunner) -> None:
