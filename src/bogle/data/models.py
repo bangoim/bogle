@@ -58,7 +58,8 @@ class StoredClose:
     """One session's close as the database keeps it (issue #82).
 
     ``date`` is the session (a plain date, unlike :class:`HistPoint`); ``source``
-    is the provider that wrote the value (``"yfinance"`` or ``"brapi"``).
+    is the provider that wrote the value (``"yfinance"``, ``"brapi"`` or
+    ``"tesouro"``, the PU of a Tesouro Direto title, issue #87).
     """
 
     date: date

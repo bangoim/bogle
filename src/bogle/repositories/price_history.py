@@ -1,6 +1,6 @@
 """Data access for ``price_history`` (issue #82): the closes the app has already seen.
 
-Two writers with different rights, which is the whole policy of the table:
+Three writers with different rights, which is the whole policy of the table:
 
 - ``replace=False`` only *adds* sessions: Yahoo loading the long history, or
   covering the recent window while brapi is down. A close already stored is never
@@ -8,6 +8,8 @@ Two writers with different rights, which is the whole policy of the table:
 - ``replace=True`` is brapi revalidating the recent window. A value that changed
   is corrected (and the row's ``source`` becomes the new writer); an equal one
   keeps the source it had, since that provider did say the same thing first.
+- The Tesouro Transparente CSV (issue #87) is the third writer, add-only like the
+  first, under the title name as ``symbol``: a published PU is never corrected.
 
 ``confirm`` stamps ``loaded_on`` on every row of a date range, changed or not.
 That is what "this window was checked today" looks like in the table, and what

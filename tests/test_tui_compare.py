@@ -12,7 +12,7 @@ import pytest
 
 from bogle.domain.errors import ValidationError
 from bogle.reports.compare import CompareSeries
-from bogle.reports.valuation import NO_SOURCE
+from bogle.reports.valuation import NOTHING_RETURNED
 from bogle.tui import services
 from bogle.tui.screens.compare import CompareScreen
 from bogle.tui.widgets.chart import LineChart
@@ -101,14 +101,14 @@ class TestTable:
             "load_compare",
             lambda **_: make_compare(
                 excluded=["TESOURO-IPCA-2035"],
-                excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
+                excluded_reasons={"TESOURO-IPCA-2035": NOTHING_RETURNED},
                 index_errors={"IPCA": "sem série"},
             ),
         )
         app = make_app()
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, CompareScreen())
-            assert f"não considera TESOURO-IPCA-2035 ({NO_SOURCE})." in screen.note
+            assert f"não considera TESOURO-IPCA-2035 ({NOTHING_RETURNED})." in screen.note
             assert "IPCA: sem série" in screen.note
 
 

@@ -16,7 +16,7 @@ from psycopg import errors as pg_errors
 from bogle import format as fmt
 from bogle.domain.errors import MarketDataError
 from bogle.format import MASK
-from bogle.reports.valuation import NO_SOURCE, NOTHING_RETURNED, SHORT_SERIES, series_starts_at
+from bogle.reports.valuation import NOTHING_RETURNED, SHORT_SERIES, UNKNOWN_TITLE, series_starts_at
 from bogle.tui import services
 from bogle.tui.app import BogleApp
 from bogle.tui.screens.config import ConfigScreen
@@ -174,7 +174,7 @@ class TestSummary:
             monkeypatch,
             make_overview(
                 excluded=["TESOURO-IPCA-2035"],
-                excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
+                excluded_reasons={"TESOURO-IPCA-2035": NOTHING_RETURNED},
             ),
         )
         app = make_app()
@@ -182,7 +182,7 @@ class TestSummary:
             await settle(pilot)
             note = app.screen.note  # type: ignore[attr-defined]
             assert "TESOURO-IPCA-2035" in note
-            assert NO_SOURCE in note
+            assert NOTHING_RETURNED in note
             assert "fora do patrimônio, da variação e das rentabilidades" in note
 
     @pytest.mark.asyncio
@@ -242,7 +242,7 @@ class TestSummary:
             monkeypatch,
             make_overview(
                 excluded=["TESOURO-IPCA-2035"],
-                excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
+                excluded_reasons={"TESOURO-IPCA-2035": NOTHING_RETURNED},
                 excluded_from_returns=["VWRA11"],
                 returns_reasons={"VWRA11": series_starts_at(date(2026, 7, 20), date(2026, 1, 9))},
             ),
@@ -282,7 +282,7 @@ class TestSummary:
     async def test_a_sold_ticker_alone_still_gets_the_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
         use_overview(
             monkeypatch,
-            make_overview(sold_excluded=["AUVP11"], returns_reasons={"AUVP11": NO_SOURCE}),
+            make_overview(sold_excluded=["AUVP11"], returns_reasons={"AUVP11": NOTHING_RETURNED}),
         )
         app = make_app()
         async with app.run_test() as pilot:
@@ -295,11 +295,11 @@ class TestSummary:
 
     @pytest.mark.asyncio
     async def test_a_permanent_exclusion_does_not_suggest_retrying(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Nada que o usuario faca traz historico de Tesouro (#17): sugerir tentar
-        # de novo seria mandar bater numa porta fechada.
+        # O CSV nao publica o titulo (#87): sugerir tentar de novo seria mandar
+        # bater numa porta fechada.
         use_overview(
             monkeypatch,
-            make_overview(excluded=["TESOURO-IPCA-2035"], excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE}),
+            make_overview(excluded=["TESOURO-IPCA-2035"], excluded_reasons={"TESOURO-IPCA-2035": UNKNOWN_TITLE}),
         )
         app = make_app()
         async with app.run_test() as pilot:
@@ -845,7 +845,7 @@ class TestPendingEntries:
             monkeypatch,
             make_overview(
                 excluded=["TESOURO-IPCA-2035"],
-                excluded_reasons={"TESOURO-IPCA-2035": NO_SOURCE},
+                excluded_reasons={"TESOURO-IPCA-2035": NOTHING_RETURNED},
                 pending_entries=1,
                 pending_invested=Decimal("2103.11"),
             ),

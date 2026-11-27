@@ -23,6 +23,7 @@ from bogle.data.cache import DiskCache
 from bogle.data.dispatcher import PriceDispatcher
 from bogle.domain.errors import ValidationError
 from bogle.repositories.assets import AssetRepository
+from bogle.repositories.price_history import PriceHistoryStore
 from bogle.repositories.transactions import TransactionRepository
 from tests.tesouro_fakes import OfflineTitles
 from tests.test_dispatcher import FakeBcb, FakeQuoteClient
@@ -53,7 +54,7 @@ def test_a_title_added_by_its_name_is_priced_in_the_position(
         ),
     )
     with respx.mock:
-        respx.get(CSV_URL).mock(return_value=Response(200, text=csv_fixture()))
+        route = respx.get(CSV_URL).mock(return_value=Response(200, text=csv_fixture()))
         added = runner.invoke(app, ["add", "Tesouro IPCA+ 2035", *IPCA_2035, *DATES_2035])
         assert added.exit_code == 0, added.output
         assert added.stdout == "asset TESOURO IPCA+ 2035 (TESOURO) adicionado com peso 20.00%.\n"
@@ -72,6 +73,7 @@ def test_a_title_added_by_its_name_is_priced_in_the_position(
     assert row["price"] == "2404.58"
     assert row["price_source"] == "tesouro"
     assert row["market_value"] == "4809.16"
+    assert route.call_count == 1  # the name check and the position share the one download
 
 
 def test_the_prefixed_title_of_the_readme_is_accepted(runner: CliRunner) -> None:
@@ -140,3 +142,45 @@ def test_other_types_never_look_at_the_title_list(
     monkeypatch.setattr("bogle.tesouro_title.default_source", forbidden)
     result = runner.invoke(app, ["add", "VTI", "--weight", "0.4"])
     assert result.exit_code == 0, result.output
+
+
+def test_with_the_database_the_position_and_the_stored_series_share_one_download_and_one_pu(
+    runner: CliRunner, conn: psycopg.Connection[DictRow], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "bogle.cli.position.default_dispatcher",
+        lambda: PriceDispatcher(
+            brapi=FakeQuoteClient(),
+            yfinance=FakeQuoteClient(),
+            tesouro=make_client(tmp_path),
+            bcb=FakeBcb(),
+            quote_cache=DiskCache("quotes", base_dir=tmp_path),
+            price_store=PriceHistoryStore(),
+        ),
+    )
+    with respx.mock:
+        route = respx.get(CSV_URL).mock(return_value=Response(200, text=csv_fixture()))
+        added = runner.invoke(app, ["add", "Tesouro IPCA+ 2035", *IPCA_2035, *DATES_2035])
+        assert added.exit_code == 0, added.output
+        TransactionRepository(conn).add_buy(
+            "TESOURO IPCA+ 2035",
+            datetime(2026, 1, 10, tzinfo=UTC),
+            shares=Decimal("2"),
+            unit_price=Decimal("2300"),
+        )
+        result = runner.invoke(app, ["position", "--json"])
+    assert result.exit_code == 0, result.output
+    assert route.call_count == 1
+    row = json.loads(result.stdout)["positions"][0]
+    assert row["price"] == "2404.58"
+    assert row["price_source"] == "tesouro"
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT date, close, source FROM price_history WHERE symbol = %s ORDER BY date", ("TESOURO IPCA+ 2035",)
+        )
+        stored = cur.fetchall()
+    assert [(r["date"].isoformat(), r["source"]) for r in stored] == [
+        ("2026-07-16", "tesouro"),
+        ("2026-07-17", "tesouro"),
+    ]
+    assert stored[-1]["close"] == Decimal("2404.58")  # the Position's PU is the last point of the series

@@ -11,9 +11,9 @@ made the patrimony of the dates before the sale lose a position that existed
 then. After the sale it holds no shares and is worth zero, with no special rule.
 A ticker sold before the window has no shares in it and stays out, unfetched.
 
-Tickers without a historical source (TESOURO — see #17 — a variable-income ticker
-whose history fetch failed, or one whose series starts after the position does)
-are **excluded**, together with their transactions, and reported in ``excluded``
+Tickers without a historical source (a Tesouro title the CSV does not publish or
+could not be had for, a variable-income ticker whose history fetch failed, or one
+whose series starts after the position does) are **excluded**, together with their transactions, and reported in ``excluded``
 so every consumer can warn the user instead of silently distorting values. So is
 a ticker whose ledger the cost-basis replay refuses (a sale larger than the
 position at the time): its quantities go negative somewhere, and so would its
@@ -35,6 +35,9 @@ portfolio was never priced at, which is exactly how it comes to disagree with a
 live-quote screen. ``series_end`` records how fresh each series really is (it
 comes free from the same fetch) and :func:`stale_at_end` names the ones that fell
 short, so the consumer can disclose it instead of implying a uniform close.
+
+A source that publishes each session a day late (Tesouro Direto) is not stale for
+being a business day behind: :func:`stale_at_end` only names it past that.
 """
 
 from __future__ import annotations
@@ -47,9 +50,9 @@ from decimal import Decimal
 import psycopg
 from psycopg.rows import DictRow
 
+from bogle.analytics.business_days import previous_business_day
 from bogle.analytics.twr import Valuator, compute_twr, shares_held
 from bogle.data.dispatcher import PriceDispatcher
-from bogle.domain.assets import AssetType
 from bogle.domain.cost_basis import replay_by_ticker
 from bogle.domain.errors import BogleError
 from bogle.domain.transactions import Transaction, TransactionType
@@ -59,8 +62,10 @@ from bogle.repositories.transactions import TransactionRepository
 _ZERO = Decimal("0")
 _HISTORY_PAD = timedelta(days=7)  # bar "on or before start" even on weekends/holidays
 
-NO_SOURCE = "sem fonte de histórico gratuita"
-"""TESOURO: nothing is wired, and nothing the user does changes it (see #17)."""
+UNKNOWN_TITLE = "título não encontrado no Tesouro Transparente"
+"""TESOURO: the CSV answered and does not publish the title's name (issue #87).
+
+Not in :data:`RETRIABLE`: asking again returns the same file."""
 
 NOTHING_RETURNED = "o provedor não devolveu histórico"
 """The fetch came back empty (unknown symbol, provider down, network)."""
@@ -172,6 +177,10 @@ class PortfolioValuation:
     quote_failed: list[str] = field(default_factory=list)
     """Tickers whose D-0 quote brapi could not give (``live`` only); they are
     valued at their last stored close instead."""
+    day_behind: frozenset[str] = frozenset()
+    """The tickers in :attr:`series_end` whose source publishes a business day late
+    (Tesouro Direto): their series is current when it reaches the business day
+    before ``end``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +275,7 @@ def build_portfolio_valuation(
     spot_included: set[str] = set()
     spot_reasons: dict[str, str] = {}
     series_end: dict[str, date] = {}
+    day_behind: set[str] = set()
     quote_times: list[datetime] = []
     quote_failed: list[str] = []
     for ticker, since in sorted(window.items()):
@@ -294,7 +304,7 @@ def build_portfolio_valuation(
             quote_failed.append(ticker)
         valuator = pricing.valuator
         if valuator is None:
-            reasons[ticker] = NO_SOURCE if asset.asset_type is AssetType.TESOURO else NOTHING_RETURNED
+            reasons[ticker] = UNKNOWN_TITLE if pricing.not_published else NOTHING_RETURNED
             if held_at_end:
                 spot_reasons[ticker] = reasons[ticker]
             continue
@@ -314,6 +324,8 @@ def build_portfolio_valuation(
             spot_scoped.append(_scoped(valuator, ticker))
             spot_included.add(ticker)
             _record_series_end(series_end, ticker, pricing.series_end)
+            if pricing.day_behind:
+                day_behind.add(ticker)
         else:
             spot_reasons[ticker] = reasons[ticker]
 
@@ -334,6 +346,7 @@ def build_portfolio_valuation(
         series_end=series_end,
         quote_time=max(quote_times, default=None),
         quote_failed=sorted(quote_failed),
+        day_behind=frozenset(day_behind),
     )
 
 
@@ -352,8 +365,17 @@ def stale_at_end(valuation: PortfolioValuation) -> dict[str, date]:
     contributes a stale price to a number labelled with ``end``. Naming it and the
     date it came from is the whole point — "the patrimony is a day old for these
     two" is checkable against a live quote, while a silent difference is not.
+
+    A ``day_behind`` ticker (Tesouro Direto, whose PU of D-1 is the freshest there
+    is on D) is listed only when its last PU is older than the business day
+    before ``end``.
     """
-    return {ticker: when for ticker, when in valuation.series_end.items() if when < valuation.end}
+    day_before = previous_business_day(valuation.end)
+    return {
+        ticker: when
+        for ticker, when in valuation.series_end.items()
+        if when < (day_before if ticker in valuation.day_behind else valuation.end)
+    }
 
 
 def portfolio_twr(valuation: PortfolioValuation) -> Decimal | None:

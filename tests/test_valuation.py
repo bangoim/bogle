@@ -14,13 +14,13 @@ from psycopg.rows import DictRow
 from bogle.data.cache import DiskCache
 from bogle.data.dispatcher import PriceDispatcher
 from bogle.data.models import HistPoint, SeriesPoint
-from bogle.domain.errors import MarketDataError, QuoteNotFoundError
+from bogle.domain.errors import MarketDataError, NetworkError, QuoteNotFoundError
 from bogle.reports.valuation import (
     INCONSISTENT_LEDGER,
-    NO_SOURCE,
     NOTHING_RETURNED,
     RETRIABLE,
     SHORT_SERIES,
+    UNKNOWN_TITLE,
     build_portfolio_valuation,
     date_grid,
     first_transaction_date,
@@ -34,6 +34,7 @@ from bogle.reports.valuation import (
 )
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
+from tests.tesouro_fakes import FakeSeries, point
 
 _ZERO = Decimal("0")
 
@@ -87,12 +88,17 @@ class _Unused:
     def get_history(self, *_args: Any, **_kwargs: Any) -> Any:
         raise QuoteNotFoundError("unused", provider="fake")
 
+    def get_series(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise QuoteNotFoundError("unused", provider="fake")
 
-def make_dispatcher(tmp_path: Any, *, yfinance: Any = None, bcb: FakeBcb | None = None) -> PriceDispatcher:
+
+def make_dispatcher(
+    tmp_path: Any, *, yfinance: Any = None, bcb: FakeBcb | None = None, tesouro: Any = None
+) -> PriceDispatcher:
     return PriceDispatcher(
         brapi=_Unused(),
         yfinance=yfinance if yfinance is not None else FakeYfinance(),
-        tesouro=_Unused(),
+        tesouro=tesouro if tesouro is not None else _Unused(),
         bcb=bcb if bcb is not None else FakeBcb(),
         quote_cache=DiskCache("quotes", base_dir=tmp_path),
     )
@@ -386,11 +392,107 @@ class TestSeriesFreshness:
         assert spot_patrimony(valuation) is not None  # precificado, so nao por barra
 
 
+SELIC_2029 = "TESOURO SELIC 2029"
+
+
+class TestTesouro:
+    """Issue #87: a Tesouro title is valued by the PU of its series, like any ticker."""
+
+    @pytest.fixture
+    def held(self, conn: psycopg.Connection[DictRow]) -> None:
+        from bogle.domain.assets import AssetType
+
+        AssetRepository(conn).add(SELIC_2029, Decimal("0.5"), asset_type=AssetType.TESOURO)
+        TransactionRepository(conn).add_buy(
+            SELIC_2029, shares=Decimal("2"), unit_price=Decimal("1000"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+
+    def value(self, conn: psycopg.Connection[DictRow], tmp_path: Any, tesouro: FakeSeries) -> Any:
+        return build_portfolio_valuation(
+            conn, make_dispatcher(tmp_path, tesouro=tesouro), start=date(2026, 1, 5), end=date(2026, 7, 20)
+        )
+
+    def test_a_known_series_gives_the_twr_and_the_patrimony(
+        self, conn: psycopg.Connection[DictRow], held: None, tmp_path: Any
+    ) -> None:
+        series = FakeSeries({SELIC_2029: [point("2026-01-05", "1000"), point("2026-07-17", "1100")]})
+        valuation = self.value(conn, tmp_path, series)
+        assert valuation.excluded == []
+        assert portfolio_twr(valuation) == Decimal("0.1")
+        assert patrimony_at(valuation, date(2026, 7, 20)) == Decimal("2200")
+        assert spot_patrimony(valuation) == Decimal("2200")
+        assert valuation.series_end == {SELIC_2029: date(2026, 7, 17)}
+        assert valuation.day_behind == {SELIC_2029}
+
+    def test_a_title_redeemed_inside_the_window_counts_until_the_redemption(
+        self, conn: psycopg.Connection[DictRow], held: None, tmp_path: Any
+    ) -> None:
+        TransactionRepository(conn).add_sale(
+            SELIC_2029, shares=Decimal("2"), unit_price=Decimal("1050"), date=datetime(2026, 3, 2, 12, tzinfo=UTC)
+        )
+        series = FakeSeries(
+            {SELIC_2029: [point("2026-01-05", "1000"), point("2026-03-02", "1050"), point("2026-07-17", "1200")]}
+        )
+        valuation = self.value(conn, tmp_path, series)
+        assert valuation.excluded == []
+        assert valuation.sold == [SELIC_2029]
+        assert portfolio_twr(valuation) == Decimal("0.05")
+        assert patrimony_at(valuation, date(2026, 2, 1)) == Decimal("2000")
+        assert patrimony_at(valuation, date(2026, 7, 20)) == Decimal("0")
+        assert spot_patrimony(valuation) is None  # nothing held at the end
+
+    def test_a_failed_download_with_an_empty_table_is_a_reason_worth_retrying(
+        self, conn: psycopg.Connection[DictRow], held: None, tmp_path: Any
+    ) -> None:
+        series = FakeSeries(fail=NetworkError("tesouro", "fora do ar"))
+        valuation = self.value(conn, tmp_path, series)
+        assert valuation.reasons == {SELIC_2029: NOTHING_RETURNED}
+        assert NOTHING_RETURNED in RETRIABLE
+
+    def test_a_title_the_file_does_not_publish_is_not_worth_retrying(
+        self, conn: psycopg.Connection[DictRow], held: None, tmp_path: Any
+    ) -> None:
+        valuation = self.value(conn, tmp_path, FakeSeries({}))
+        assert valuation.reasons == {SELIC_2029: UNKNOWN_TITLE}
+        assert valuation.spot.reasons == {SELIC_2029: UNKNOWN_TITLE}
+        assert UNKNOWN_TITLE not in RETRIABLE
+
+    def test_a_pu_of_the_previous_business_day_is_not_stale(
+        self, conn: psycopg.Connection[DictRow], held: None, tmp_path: Any
+    ) -> None:
+        # end is Monday 2026-07-20: the PU of Friday 07-17 is the freshest there is.
+        series = FakeSeries({SELIC_2029: [point("2026-01-05", "1000"), point("2026-07-17", "1100")]})
+        assert stale_at_end(self.value(conn, tmp_path, series)) == {}
+
+    def test_an_older_pu_is_listed_with_its_date(
+        self, conn: psycopg.Connection[DictRow], held: None, tmp_path: Any
+    ) -> None:
+        series = FakeSeries({SELIC_2029: [point("2026-01-05", "1000"), point("2026-07-16", "1100")]})
+        assert stale_at_end(self.value(conn, tmp_path, series)) == {SELIC_2029: date(2026, 7, 16)}
+
+    def test_variable_income_keeps_its_own_floor_beside_a_title(
+        self, conn: psycopg.Connection[DictRow], held: None, tmp_path: Any
+    ) -> None:
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        TransactionRepository(conn).add_buy(
+            "PETR4", shares=Decimal("10"), unit_price=Decimal("20"), date=datetime(2026, 1, 5, 12, tzinfo=UTC)
+        )
+        yf = FakeYfinance({"PETR4.SA": [bar("2026-01-05", "20"), bar("2026-07-17", "25")]})
+        series = FakeSeries({SELIC_2029: [point("2026-01-05", "1000"), point("2026-07-17", "1100")]})
+        valuation = build_portfolio_valuation(
+            conn,
+            make_dispatcher(tmp_path, yfinance=yf, tesouro=series),
+            start=date(2026, 1, 5),
+            end=date(2026, 7, 20),
+        )
+        assert stale_at_end(valuation) == {"PETR4": date(2026, 7, 17)}
+
+
 class TestWithReasons:
     def test_each_ticker_carries_its_own_reason(self) -> None:
-        reasons = {"VWRA11": NOTHING_RETURNED, "TESOURO SELIC 2029": NO_SOURCE}
+        reasons = {"VWRA11": NOTHING_RETURNED, "TESOURO SELIC 2029": UNKNOWN_TITLE}
         assert with_reasons(["TESOURO SELIC 2029", "VWRA11"], reasons) == (
-            f"TESOURO SELIC 2029 ({NO_SOURCE}), VWRA11 ({NOTHING_RETURNED})"
+            f"TESOURO SELIC 2029 ({UNKNOWN_TITLE}), VWRA11 ({NOTHING_RETURNED})"
         )
 
     def test_a_ticker_without_a_reason_is_listed_bare(self) -> None:
@@ -553,7 +655,7 @@ class TestProviderShortSeries:
             conn, make_dispatcher(tmp_path, yfinance=yf), start=date(2026, 1, 5), end=date(2026, 7, 20)
         )
         assert valuation.reasons["PETR4"] == series_starts_at(date(2026, 7, 1), date(2026, 1, 5))
-        assert valuation.reasons["TESOURO SELIC 2029"] == NO_SOURCE
+        assert valuation.reasons["TESOURO SELIC 2029"] == UNKNOWN_TITLE
         assert sorted(valuation.reasons) == valuation.excluded
 
     def test_an_empty_answer_is_its_own_reason(self, conn: psycopg.Connection[DictRow], tmp_path: Any) -> None:

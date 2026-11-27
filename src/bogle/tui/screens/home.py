@@ -80,7 +80,10 @@ _HELP_NOTES = (
     "TWR: exclui o efeito de aportes e retiradas e considera proventos. Ativos já "
     "vendidos entram pelo tempo em que estiveram na carteira. Com menos de 12 "
     "meses de carteira, a janela de 12m começa na primeira transação, e as duas "
-    "rentabilidades coincidem."
+    "rentabilidades coincidem.\n\n"
+    "Tesouro Direto: PU de venda da manhã publicado pelo Tesouro Transparente, do dia "
+    "útil anterior. Só aparece na nota de preço atrasado quando o último PU é mais "
+    "antigo que isso."
 )
 """Como ler o resumo, na ajuda (f1) e nao embaixo dos numeros: e a mesma
 explicacao toda vez, e no painel ela ocupava as linhas das notas que mudam."""

@@ -14,7 +14,7 @@ from psycopg.rows import DictRow
 
 from bogle.data.cache import DiskCache
 from bogle.data.dispatcher import PriceDispatcher
-from bogle.data.models import HistPoint, Quote, TesouroQuote
+from bogle.data.models import HistPoint, Quote, SeriesPoint, TesouroQuote
 from bogle.domain.assets import AssetType, Indexer
 from bogle.domain.errors import NetworkError, QuoteNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
@@ -22,6 +22,7 @@ from bogle.reports.overview import compute_current_overview, compute_overview, i
 from bogle.reports.valuation import NOTHING_RETURNED
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
+from tests.tesouro_fakes import FakeSeries, point
 from tests.test_valuation import FakeBcb, FakeYfinance, bar, make_dispatcher
 
 AS_OF = date(2026, 7, 20)
@@ -82,11 +83,47 @@ class TestComputeOverview:
         assert overview.patrimony is None
         assert overview.twr_total is None
 
-    def test_ticker_without_history_is_excluded_from_every_number(
+    def test_a_tesouro_title_is_in_every_number(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
     ) -> None:
-        # TESOURO nao tem serie historica gratuita (issue #17): fica fora do
-        # patrimonio E do capital investido, para a variacao seguir comparavel.
+        # Issue #87: the PU series of the title is its history, so the title takes
+        # part in the patrimony, the invested capital and both returns.
+        self.add_title(conn)
+        tesouro = FakeSeries(
+            {
+                "TESOURO-IPCA-2035": [
+                    point("2025-02-03", "5000"),
+                    point("2025-07-18", "5100"),
+                    point("2026-07-17", "5400"),
+                ]
+            }
+        )
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)), tesouro=tesouro)
+        overview = compute_overview(conn, dispatcher, as_of=AS_OF)
+
+        assert overview.excluded == []
+        assert overview.invested == Decimal("5200")  # PETR4 and the title's 5000
+        assert overview.patrimony == Decimal("250") + Decimal("5400")
+        assert overview.variation == Decimal("450")
+        assert overview.twr_total == Decimal("5650") / Decimal("5200") - 1
+        assert overview.twr_12m == Decimal("5650") / Decimal("5320") - 1
+        # The PU of Friday is the freshest there is on Monday: only PETR4 is listed.
+        assert set(overview.stale_prices) == {"PETR4"}
+
+    def test_a_title_the_file_does_not_publish_is_excluded_from_every_number(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # Fora do patrimonio E do capital investido, para a variacao seguir comparavel.
+        self.add_title(conn)
+        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
+        overview = compute_overview(conn, dispatcher, as_of=AS_OF)
+
+        assert overview.excluded == ["TESOURO-IPCA-2035"]
+        assert overview.invested == Decimal("200")  # so PETR4, nao os 5000 do titulo
+        assert overview.patrimony == Decimal("250")
+
+    @staticmethod
+    def add_title(conn: psycopg.Connection[DictRow]) -> None:
         AssetRepository(conn).add(
             "TESOURO-IPCA-2035",
             Decimal("0.3"),
@@ -103,12 +140,6 @@ class TestComputeOverview:
             unit_price=Decimal("5000"),
             date=datetime(2025, 2, 3, 12, tzinfo=UTC),
         )
-        dispatcher = make_dispatcher(tmp_path, yfinance=FakeYfinance(dict(HISTORY)))
-        overview = compute_overview(conn, dispatcher, as_of=AS_OF)
-
-        assert overview.excluded == ["TESOURO-IPCA-2035"]
-        assert overview.invested == Decimal("200")  # so PETR4, nao os 5000 do titulo
-        assert overview.patrimony == Decimal("250")
 
     def test_a_late_series_is_out_of_the_returns_but_inside_the_patrimonio(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
@@ -517,6 +548,9 @@ class NoTesouro:
     def get_quote(self, title: str) -> TesouroQuote:
         raise QuoteNotFoundError(title, provider="fake")
 
+    def get_series(self, title: str) -> list[SeriesPoint]:
+        raise QuoteNotFoundError(title, provider="fake")
+
 
 class TestCurrentOverview:
     """The Home summary: D-0 with brapi's quote of today, or the last close."""
@@ -524,12 +558,18 @@ class TestCurrentOverview:
     TODAY = date(2026, 7, 20)  # segunda-feira; o ultimo fechamento e o de sexta, 17/07
 
     def dispatcher(
-        self, tmp_path: Any, brapi: FakeBrapi, *, today: date | None = None, history: dict[str, Any] | None = None
+        self,
+        tmp_path: Any,
+        brapi: FakeBrapi,
+        *,
+        today: date | None = None,
+        history: dict[str, Any] | None = None,
+        tesouro: Any = None,
     ) -> PriceDispatcher:
         return PriceDispatcher(
             brapi=brapi,
             yfinance=FakeYfinance(history if history is not None else dict(HISTORY)),
-            tesouro=NoTesouro(),
+            tesouro=tesouro or NoTesouro(),
             bcb=FakeBcb(),
             quote_cache=DiskCache("quotes", base_dir=tmp_path),
             clock=lambda: today or self.TODAY,
@@ -551,6 +591,20 @@ class TestCurrentOverview:
         # Horario local: 17:07 UTC sao 14:07 em Sao Paulo.
         assert overview.quote_time is not None and f"{overview.quote_time:%H:%M}" == "14:07"
         assert overview.stale_prices == {}
+
+    def test_a_tesouro_title_beside_a_stock_does_not_make_the_d0_summary_stale(
+        self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any
+    ) -> None:
+        # The PU of D-1 is the freshest there is on D: no "sem cotacao de hoje".
+        TestComputeOverview.add_title(conn)
+        tesouro = FakeSeries({"TESOURO-IPCA-2035": [point("2025-02-03", "5000"), point("2026-07-17", "5400")]})
+        brapi = self.quote("26", datetime(2026, 7, 20, 17, 7, tzinfo=UTC))
+        overview = compute_current_overview(conn, self.dispatcher(tmp_path, brapi, tesouro=tesouro), today=self.TODAY)
+        assert overview.is_live
+        assert overview.excluded == []
+        assert overview.patrimony == Decimal("260") + Decimal("5400")
+        assert overview.stale_prices == {}
+        assert brapi.quote_calls == ["PETR4"]  # the title has no D-0 quote to ask for
 
     def test_a_purchase_made_today_is_inside_a_d0_summary(
         self, conn: psycopg.Connection[DictRow], seeded: None, tmp_path: Any

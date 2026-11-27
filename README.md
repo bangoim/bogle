@@ -15,7 +15,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Reports** — `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
 - **Backup and restore** — `bogle backup` writes the whole database to a file outside the repository; `bogle restore` puts it back, all or nothing, after a safety backup. See [Backup and restore](#backup-and-restore).
-- **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices from Tesouro Transparente, cached on disk. Private fixed income is marked to present value.
+- **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices and daily history from Tesouro Transparente, cached on disk and in the database. Private fixed income is marked to present value.
 - **Brazilian taxes** — income tax per operation and regressive IOF on fixed-income redemptions.
 
 ## Setup
@@ -558,10 +558,9 @@ Semantics worth knowing:
   after a sale recomposes the average over the remaining quantity).
 - The portfolio series in `compare` is the cumulative TWR level (contributions
   are not performance); indices are normalized to base 100 at the window start.
-- **Tesouro Direto has no free price history** (see note above): historical
-  reports (`history`, `compare`, `return`, the month profit in `position`)
-  exclude those positions and say so in a note. IFIX/SMLL/IDIV also lack a free
-  historical source and fail with a friendly message when requested.
+- Tesouro Direto takes part in the historical reports like any other ticker,
+  valued by the PU of its series (see "Market data & sources"). IFIX/SMLL/IDIV
+  lack a free historical source and fail with a friendly message when requested.
 
 ### User settings
 
@@ -692,7 +691,7 @@ failing.
 | [brapi](https://brapi.dev) | Current B3 quotes (stocks, FIIs, ETFs, BDRs) and indices (IBOV, IFIX, …); the reference for the last 30 sessions of history |
 | yfinance | Long price history (`.SA` tickers and IBOV) for TWR, plus a fallback quote |
 | Banco Central (SGS) | CDI / IPCA / SELIC series |
-| [Tesouro Transparente](https://www.tesourotransparente.gov.br) | Tesouro Direto prices (D-1, from the official open-data CSV) |
+| [Tesouro Transparente](https://www.tesourotransparente.gov.br) | Tesouro Direto prices and daily history (PU de venda da manhã, D-1, from the official open-data CSV) |
 
 Private fixed income (CDB/RDB/LCI/LCA/CAIXINHA) has no market price: it is marked
 to its **gross corrected value**, capitalizing the principal from the purchase date
@@ -721,9 +720,28 @@ before, so a portfolio opened yesterday still has at least D-2. Each row records
 which provider wrote it (`source`) and the day it was last loaded or confirmed
 (`loaded_on`).
 
-> **Note:** TWR for Tesouro Direto is shown as N/A — there is no free source of
-> historical Tesouro prices (the direct API is behind a bot challenge; only the
-> current snapshot is available). Variable income and private fixed income do have TWR.
+**Tesouro Direto prices** come from the same table, one series per title of the
+portfolio (`symbol` is the title name, `source` is `tesouro`):
+
+- **First load:** the title's whole series, from the official CSV. Later loads
+  add only the dates after the last stored one, and a stored PU is never
+  corrected.
+- **One download a day:** the CSV (~15 MB, no server-side filter) is downloaded
+  at most once a day and kept in `~/.cache/bogle`, so a title added later in the
+  day, the Position and the reports read the local file. Everything else is read
+  from the table.
+- **The price is the PU de venda da manhã** of each date, D-1 at best (the
+  Position shows the same PU as the last point of the series). The server only
+  publishes D-1 in the afternoon: while the local file has no D-1 yet, a later
+  screen asks the server again, conditionally (`If-None-Match` /
+  `If-Modified-Since`), at most once every 30 minutes. A 304 keeps the file; once
+  it has D-1 there are no more requests that day.
+- **Late price note:** a Tesouro title only appears in the "sem cotação de hoje"
+  note when its last PU is older than the previous business day.
+- **If the download fails**, what is already in the table still counts; with an
+  empty table the title is left out of the historical numbers with a reason worth
+  retrying. A title the CSV does not publish is left out with the reason
+  "título não encontrado no Tesouro Transparente".
 
 ### Backup and restore
 
