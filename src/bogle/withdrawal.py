@@ -19,6 +19,7 @@ is only real once it is registered with ``bogle sell``.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -29,7 +30,7 @@ from bogle.data.dispatcher import PriceDispatcher
 from bogle.domain.assets import FIXED_INCOME_TYPES, AssetType
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.glide_path import active_glide_path, exiting_tickers
-from bogle.position import get_portfolio_summary
+from bogle.position import Position, get_portfolio_summary
 from bogle.rebalancing import WithdrawalSuggestion, retirement_phase, suggest_withdrawal
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.transactions import TransactionRepository
@@ -47,21 +48,28 @@ def plan_withdrawal(
     retired = retirement_phase(get_setting(conn, BIRTH_YEAR), get_setting(conn, RETIREMENT_AGE), today.year)
     transactions = TransactionRepository(conn).list()
     types = {asset.ticker: asset.asset_type for asset in AssetRepository(conn).list()}
-    fixed_income = {p.ticker for p in summary.positions if p.asset_type in FIXED_INCOME_TYPES}
-    held_since = {
-        ticker: since
-        for ticker in fixed_income
-        if (since := oldest_lot([t for t in transactions if t.ticker == ticker])) is not None
-    }
     return suggest_withdrawal(
         summary,
         amount,
         exiting,
         retired=retired,
         month_stock_sales=month_stock_sales(transactions, types, today),
-        held_since=held_since,
+        held_since=fixed_income_held_since(summary.positions, transactions),
         today=today,
     )
+
+
+def fixed_income_held_since(positions: Iterable[Position], transactions: list[Transaction]) -> dict[str, date]:
+    """The oldest lot still held of each fixed-income position, for the regressive IR table.
+
+    Shared with the annual rebalance (issue #81), which sells the same way.
+    """
+    fixed_income = {p.ticker for p in positions if p.asset_type in FIXED_INCOME_TYPES}
+    return {
+        ticker: since
+        for ticker in fixed_income
+        if (since := oldest_lot([t for t in transactions if t.ticker == ticker])) is not None
+    }
 
 
 def _day(value: datetime | date) -> date:
