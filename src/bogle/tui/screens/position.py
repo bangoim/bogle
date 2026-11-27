@@ -23,6 +23,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 from textual.worker import get_current_worker
 
 from bogle import format as fmt
+from bogle.glide_path import marked_target
 from bogle.position import price_provenance
 from bogle.reports.snapshot import PortfolioSnapshot
 from bogle.reports.valuation import with_reasons
@@ -133,7 +134,7 @@ class PositionScreen(Screen[None]):
                 cells.money(p.price),
                 cells.money(p.market_value),
                 cells.pct(p.current_weight),
-                cells.pct(p.target_weight),
+                cells.right(marked_target(p.target_weight, p.ticker, snapshot.glide_tickers)),
                 cells.signed(p.drift, percent=True),
                 cells.signed(p.pnl, percent=False),
                 cells.signed(p.pnl_percent, percent=True),

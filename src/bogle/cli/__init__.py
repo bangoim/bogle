@@ -13,6 +13,7 @@ from bogle.cli import backup as backup_cli
 from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
 from bogle.cli import dividends as dividends_cli
+from bogle.cli import glide as glide_cli
 from bogle.cli import history as history_cli
 from bogle.cli import import_ as import_cli
 from bogle.cli import position as position_cli
@@ -86,6 +87,13 @@ config_app.command("set", help="Definir o valor de uma configuração.")(config_
 config_app.command("unset", help="Reverter uma configuração ao default.")(config_cli.unset)
 config_app.command("list", help="Listar todas as configurações.")(config_cli.list_settings)
 app.add_typer(config_app, name="config")
+
+glide_app = typer.Typer(help="Trajetória de alvos por idade, aplicada todo 01/01.", no_args_is_help=True)
+glide_app.command("set", help="Criar ou substituir o ponto de uma idade (TICKER=PESO; omitido = 0).")(glide_cli.set_)
+glide_app.command("remove", help="Remover o ponto de uma idade.")(glide_cli.remove)
+glide_app.command("show", help="Alvos ano a ano, do ano corrente até o último ponto.")(glide_cli.show)
+glide_app.command("clear", help="Apagar a trajetória; os alvos atuais ficam como estão.")(glide_cli.clear)
+app.add_typer(glide_app, name="glide")
 
 
 def _read_preferences() -> tuple[str, str | None]:

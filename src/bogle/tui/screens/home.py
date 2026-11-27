@@ -29,6 +29,7 @@ from bogle.tui import services
 from bogle.tui.errors import HANDLED, message_for
 from bogle.tui.screens.assets import AssetsScreen
 from bogle.tui.screens.config import ConfigScreen
+from bogle.tui.screens.glide import GlidePathScreen
 from bogle.tui.screens.menu import Entries, MenuScreen, items_of
 from bogle.tui.screens.position import PositionScreen
 from bogle.tui.screens.register import RegisterScreen
@@ -48,10 +49,11 @@ LOGO = r"""
 █▄▄▀ ▀▄▄▀ ▀▄▄▀ █▄▄▄ █▄▄▄
 """.strip("\n")
 
-# Seis itens, e nao oito: Status e Config viraram atalhos do rodape (`s` e `c`).
-# Sao as duas telas que se consulta de vez em quando, e o menu e o que decide a
-# altura da Home — com elas dentro, o resumo empurrava o logo para fora do scroll
-# em terminais de altura normal.
+# Status e Config viraram atalhos do rodape (`s` e `c`): sao as duas telas que se
+# consulta de vez em quando, e o menu e o que decide a altura da Home — com elas
+# dentro, o resumo empurrava o logo para fora do scroll em terminais de altura
+# normal. A Trajetoria (#79) entrou como setimo item: com ela a Home ainda cabe
+# em 80x24 sem scroll.
 _ENTRIES: Entries = (
     (MenuItem("1", "position", "Posição", "preços ao vivo, pesos e drift"), PositionScreen),
     (MenuItem("2", "register", "Registrar", "compra, venda, provento ou importação"), RegisterScreen),
@@ -59,13 +61,14 @@ _ENTRIES: Entries = (
     (MenuItem("4", "suggest", "Aporte", "como dividir para reduzir o drift"), SuggestScreen),
     (MenuItem("5", "reports", "Relatórios", "rentabilidade, histórico, proventos"), ReportsScreen),
     (MenuItem("6", "assets", "Ativos", "cadastrar, atualizar e remover"), AssetsScreen),
+    (MenuItem("7", "glide", "Trajetória", "alvos por idade, ano a ano"), GlidePathScreen),
 )
 
 MENU_ITEMS = items_of(_ENTRIES)
 
 _COLUMNS = 2
 """O menu e servido em duas colunas: cada item ocupa meia largura e o bloco
-inteiro cabe em tres linhas. Num terminal estreito as duas empilham (app.tcss),
+inteiro cabe em quatro linhas. Num terminal estreito as duas empilham (app.tcss),
 o que devolve a lista de uma coluna sem mudar nada aqui."""
 
 _LEFT = MENU_ITEMS[: (len(MENU_ITEMS) + 1) // _COLUMNS]

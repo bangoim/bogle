@@ -26,6 +26,7 @@ from bogle.tui import services
 from bogle.tui.screens.assets import AssetFormScreen, AssetsScreen, AssetUpdateScreen
 from bogle.tui.screens.compare import CompareScreen
 from bogle.tui.screens.config import ConfigScreen
+from bogle.tui.screens.glide import GlidePathScreen, GlidePointScreen
 from bogle.tui.screens.help import HelpModal, shortcuts_of
 from bogle.tui.screens.history import HistoryScreen
 from bogle.tui.screens.home import HomeScreen
@@ -42,6 +43,8 @@ from bogle.tui.screens.suggest import SuggestScreen
 from bogle.tui.screens.transactions import TransactionsScreen
 from bogle.tui.widgets.menu import Menu
 from tests.tui_fakes import (
+    GLIDE_POINTS,
+    GLIDE_TICKERS,
     make_app,
     make_asset,
     make_assets,
@@ -74,6 +77,8 @@ SCREENS: dict[str, Callable[[], Screen[None]]] = {
     "ativos": AssetsScreen,
     "cadastrar ativo": AssetFormScreen,
     "alterar ativo": lambda: AssetUpdateScreen(make_assets()[1]),
+    "trajetória": GlidePathScreen,
+    "ponto da trajetória": lambda: GlidePointScreen(GLIDE_TICKERS, points=GLIDE_POINTS),
     "status": StatusScreen,
     "config": ConfigScreen,
 }

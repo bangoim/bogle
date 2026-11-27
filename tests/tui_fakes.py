@@ -21,6 +21,7 @@ from textual.widgets import DataTable
 from bogle.closeout import ClearedTarget
 from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.transactions import Transaction, TransactionType
+from bogle.glide_path import ActiveGlidePath, GlideEdit, GlideView, glide_schedule
 from bogle.imports.b3 import RowError, Statement, Trade
 from bogle.imports.plan import ImportPlan, build_plan
 from bogle.position import PortfolioSummary, Position
@@ -102,6 +103,11 @@ def stub_services(monkeypatch: Any) -> None:
     # Importar (issue #34).
     monkeypatch.setattr(services, "preview_import", lambda path, **kwargs: make_import_plan(**kwargs))
     monkeypatch.setattr(services, "run_import", lambda plan: plan)
+    # Trajetoria (issue #79).
+    monkeypatch.setattr(services, "load_glide", lambda **_: make_glide_state())
+    monkeypatch.setattr(services, "save_glide_point", lambda age, weights, **_: GlideEdit(None, True, 3))
+    monkeypatch.setattr(services, "remove_glide_point", lambda age, **_: GlideEdit(None, True, 2))
+    monkeypatch.setattr(services, "clear_glide_path", lambda: 3)
 
 
 async def settle(pilot: Any) -> None:
@@ -645,6 +651,28 @@ def make_import_plan(*, fee_rate: Decimal | None = None, replace: bool = False, 
         Asset("VWRA11", Decimal("0.5"), AssetType.ETF),
     ]
     return build_plan(statement, assets=assets, ledger=ledger, fee_rate=fee_rate, replace=replace)
+
+
+GLIDE_POINTS: dict[int, dict[str, Decimal]] = {
+    39: {"MUND11": Decimal("0.70"), "NB1011": Decimal("0.25"), "B5P211": Decimal("0.05")},
+    59: {"MUND11": Decimal("0.45"), "NB1011": Decimal("0.10"), "B5P211": Decimal("0.45")},
+    71: {"MUND11": Decimal("0.30"), "B5P211": Decimal("0.70")},
+}
+GLIDE_TICKERS = ("B5P211", "MUND11", "NB1011", "PETR4")
+"""Registered tickers: the three of the trajectory and one out of it."""
+
+
+def make_glide_state(
+    *, birth_year: int | None = 1986, points: dict[int, dict[str, Decimal]] | None = None
+) -> services.GlideState:
+    """The trajectory of the issue for someone who is 40 in :data:`TODAY`."""
+    points = GLIDE_POINTS if points is None else points
+    schedule = None
+    if birth_year is not None and points:
+        schedule = glide_schedule(ActiveGlidePath(points=points, birth_year=birth_year), TODAY.year)
+    return services.GlideState(
+        view=GlideView(birth_year=birth_year, points=points, schedule=schedule), tickers=GLIDE_TICKERS
+    )
 
 
 class ToastSpy:

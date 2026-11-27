@@ -20,6 +20,7 @@ import psycopg
 from psycopg.rows import DictRow
 
 from bogle.data.dispatcher import PriceDispatcher
+from bogle.glide_path import active_glide_path
 from bogle.position import PortfolioSummary, get_portfolio_summary
 from bogle.reports.dividends import twelve_month_start
 from bogle.reports.periods import add_months
@@ -38,6 +39,8 @@ class PortfolioSnapshot:
     """Tickers left out of the month profit (see :mod:`bogle.reports.valuation`)."""
     excluded_reasons: dict[str, str] = field(default_factory=dict)
     """Why each of them is out."""
+    glide_tickers: frozenset[str] = frozenset()
+    """Tickers whose target comes from the trajectory in force (issue #79)."""
 
     @property
     def has_prices(self) -> bool:
@@ -77,10 +80,12 @@ def compute_snapshot(
         if value_start is not None and value_end is not None:
             month_profit = window_profit(valuation.transactions, value_start, value_end, start=month_start, end=today)
 
+    glide = active_glide_path(conn)
     return PortfolioSnapshot(
         summary=summary,
         month_profit=month_profit,
         income_12m=income_12m,
         excluded=excluded,
         excluded_reasons=excluded_reasons,
+        glide_tickers=glide.tickers if glide is not None else frozenset(),
     )

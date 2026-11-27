@@ -52,6 +52,12 @@ class GlidePathError(BogleError):
     """A trajectory the engine cannot use: the weights of an age do not add up to 1."""
 
 
+class GlidePointNotFoundError(BogleError):
+    def __init__(self, age: int) -> None:
+        self.age = age
+        super().__init__(f"A trajetória não tem ponto aos {age} anos.")
+
+
 class GlidePathTargetError(BogleError):
     """A manual edit of a target the trajectory sets (see :mod:`bogle.glide_path`)."""
 

@@ -13,6 +13,7 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Live position** — `bogle position` prices the whole portfolio on the fly and shows weight, drift vs target, PnL and time-weighted return (TWR) per ticker, plus the portfolio totals, the month profit and income received (12m).
 - **No-sell rebalancing** — `bogle suggest` splits a contribution across the laggards (whole shares for variable income, exact values for fixed income); `bogle status` tracks the evaluation cycle (6 or 12 months).
 - **Reports** — `bogle return` (TWR total/12m/1m, optionally vs indices), `bogle compare` (base-100 chart vs CDI/IBOV/...), `bogle history` (patrimony evolution), `bogle profit` (capital gain + income decomposition) and `bogle dividends` (income by month/ticker).
+- **Glide path** — `bogle glide` sets target weights by age (a few points, a straight line between them), applied on their own every 01/01. See [Glide path](#glide-path).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
 - **Backup and restore** — `bogle backup` writes the whole database to a file outside the repository; `bogle restore` puts it back, all or nothing, after a safety backup. See [Backup and restore](#backup-and-restore).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices and daily history from Tesouro Transparente, cached on disk and in the database. Private fixed income is marked to present value.
@@ -129,12 +130,13 @@ interface, since a full-screen interface needs a real terminal.
  │ 4  Aporte      como dividir para reduzir o drift                            │
  │ 5  Relatórios  rentabilidade, histórico, proventos                          │
  │ 6  Ativos      cadastrar, atualizar e remover                               │
+ │ 7  Trajetória  alvos por idade, ano a ano                                   │
  ╰─────────────────────────────────────────────────────────────────────────────╯
  q Sair  r Atualizar  s Status  c Config  h Valores  f1 Ajuda
 ```
 
-On a wide terminal (108 columns or more) the menu splits into two columns of
-three, so the summary and the logo fit without scrolling on a normal-height
+On a wide terminal (108 columns or more) the menu splits into two columns (four
+and three), so the summary and the logo fit without scrolling on a normal-height
 window; the side arrows move between the columns.
 
 The home screen opens on **today's quote (D-0)**: the price history comes from
@@ -155,6 +157,7 @@ arrives as a notification here instead of a line on stderr.
 | Aporte | Amount → suggested split; `p` sets the price of a limit order, `q` pins a ticker's purchase; recording the suggestion **is** the cycle's evaluation | `bogle suggest` |
 | Relatórios | Profitability, compare, history, profit and income; `t` switches the window, `i` the indices, `o` exports the interactive HTML | `bogle return` / `compare` / `history` / `profit` / `dividends` |
 | Ativos | List with the fixed-income metadata + forms; `a` registers, `u` changes weight/type, `d` removes | `bogle list` / `add` / `update` / `remove` |
+| Trajetória | Targets by age, year by year; `a` adds a point, `u` edits the selected year, `d` removes a point, `l` clears | `bogle glide show` / `set` / `remove` / `clear` |
 | Status (`s`) | The rebalance cycle: period, last and next evaluation | `bogle status` |
 | Config (`c`) | Every setting, editable in place (`e`) or back to its default (`d`); `b` writes a backup | `bogle config list` / `set` / `unset`, `bogle backup` |
 
@@ -503,6 +506,39 @@ bogle status
 # Próxima avaliação em 365 dia(s) (2027-07-22).
 ```
 
+### Glide path
+
+Target weights that follow your age, the logic of a target-date fund: a few
+points (an age and the weight of each ticker there), a straight line between two
+of them, the first point before it and the last one after it. On 01/01 (the
+first run of the year) the targets of your age are written to the assets and
+announced; everything else keeps reading the asset's target.
+
+```bash
+bogle config set birth_year 2000
+bogle glide set 39 MUND11=0.70 NB1011=0.25 B5P211=0.05   # creates or replaces the point of age 39
+bogle glide set 59 MUND11=0.45 NB1011=0.10 B5P211=0.45
+bogle glide set 71 MUND11=0.30 B5P211=0.70               # an omitted ticker is 0
+bogle glide remove 59
+bogle glide show                                          # year by year
+bogle glide clear                                         # asks first (--yes skips); targets stay as they are
+```
+
+- `set` replaces the whole point. Weights are fractions (`0.70` or `0,70`, up to
+  four places) of registered tickers and add up to exactly 1; the age goes from
+  0 to 120.
+- A `set` or `remove` that changes this year's targets — or the first point,
+  once `birth_year` is set — writes them right away, with the same notice as
+  01/01.
+- While the trajectory is active, the target of a ticker in it belongs to it:
+  `bogle update --weight` is refused. `clear` keeps the current targets and frees
+  the manual edit.
+- `show` lists the years from the current one (in bold) to the last point, with
+  `•` next to the ages that are points and the next step below
+  (`01/01/2040: MUND11 70,00% -> 68,75%, ...`).
+- `bogle position` and the Posição screen mark the targets set by the
+  trajectory with `↘`; the Trajetória screen (menu `7`) does all of the above.
+
 ### Reports
 
 Every report takes `--period` with a shared vocabulary (`12m`, `2y`, `5y`,
@@ -593,6 +629,8 @@ the Config screen applies it immediately instead of waiting for the next session
 | `hide_values` | bool | `false` | Amounts masked in the interactive interface (`h` toggles and remembers) |
 | `theme` | str | `textual-dark` | Theme of the interactive interface (the command palette also writes here) |
 | `last_rebalance_date` | date | — | Set automatically by `bogle suggest` |
+| `birth_year` | int | — | Year of birth; sets the age of the [glide path](#glide-path) |
+| `glide_path_applied_year` | int | — | Set automatically when the glide path writes a year's targets |
 
 ### Number format
 
