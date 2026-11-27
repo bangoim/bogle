@@ -11,6 +11,7 @@ from bogle import format as fmt
 from bogle.annual_rebalance import load_annual_state
 from bogle.cli import assets as assets_cli
 from bogle.cli import backup as backup_cli
+from bogle.cli import check as check_cli
 from bogle.cli import compare as compare_cli
 from bogle.cli import config as config_cli
 from bogle.cli import dividends as dividends_cli
@@ -65,6 +66,7 @@ app.command("rebalance", help="Plano da venda anual de rebalanceamento na aposen
     rebalance_cli.rebalance
 )
 app.command("status", help="Mostrar em que pé está o ciclo de avaliação de rebalanceamento.")(status_cli.status)
+app.command("check", help="Listar as pendências da carteira (para o launchd/cron).")(check_cli.check)
 app.command("dividends", help="Proventos recebidos, por mês ou por ticker.")(dividends_cli.dividends)
 app.command("return", help="Rentabilidade da carteira (TWR), opcionalmente vs índices.")(returns_cli.return_)
 app.command("compare", help="Comparar a carteira com índices (base 100).")(compare_cli.compare)
@@ -187,6 +189,11 @@ def _main(ctx: typer.Context) -> None:
         from bogle.tui import run_tui  # import tardio: comandos diretos nao pagam pelo textual
 
         run_tui()
+        return
+    if ctx.invoked_subcommand == "check":
+        # O `check` cuida de tudo sozinho (ver bogle.cli.check): migra dentro do
+        # proprio tratamento de erro, os avisos sao a saida dele e a trajetoria
+        # fica para a proxima execucao que alguem ve.
         return
     if ctx.invoked_subcommand in _AS_IS:
         # So o formato dos numeros: o lembrete de ciclo vencido seria ruido aqui,
