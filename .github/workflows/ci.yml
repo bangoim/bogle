@@ -36,6 +36,9 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: bogle_test
+          # Como no Postgres local: a senha não é conferida. Um teste de backup
+          # troca a senha da URL por uma falsa e espera conectar.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
@@ -48,11 +51,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Os testes de backup rodam pg_dump, pg_restore e psql de verdade, com
-      # major igual ou maior que o do servidor; o bogle acha em /usr/lib/postgresql/*/bin.
+      # major igual ou maior que o do servidor. Alguns chamam pelo PATH, onde o
+      # runner já traz o cliente 16, então o 18 vai na frente.
       - name: Instalar cliente do PostgreSQL 18
         run: |
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y --no-install-recommends postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
