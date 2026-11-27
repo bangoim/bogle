@@ -11,7 +11,9 @@ from psycopg.rows import DictRow
 
 from bogle.domain.errors import UnknownSettingError, ValidationError
 from bogle.settings import (
+    BIRTH_YEAR,
     DEFAULT_COMPARE_INDICES,
+    GLIDE_PATH_APPLIED_YEAR,
     HIDE_VALUES,
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
@@ -118,6 +120,8 @@ class TestUnsetAndList:
             DEFAULT_COMPARE_INDICES,
             WEIGHT_DRIFT_THRESHOLD,
             LAST_REBALANCE_DATE,
+            BIRTH_YEAR,
+            GLIDE_PATH_APPLIED_YEAR,
         }
         assert entries[WEIGHT_DRIFT_THRESHOLD].is_default is False
         assert entries[WEIGHT_DRIFT_THRESHOLD].updated_at is not None
@@ -163,3 +167,29 @@ class TestHideValues:
         # `bogle config get hide_values` mostra o que se digita, nao "True".
         assert format_value(True) == "true"
         assert format_value(False) == "false"
+
+
+class TestGlidePathKeys:
+    def test_both_default_to_none(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert get_setting(conn, BIRTH_YEAR) is None
+        assert get_setting(conn, GLIDE_PATH_APPLIED_YEAR) is None
+
+    def test_birth_year_round_trips_as_an_int(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert set_setting(conn, BIRTH_YEAR, " 2000 ") == 2000
+        assert get_setting(conn, BIRTH_YEAR) == 2000
+
+    @pytest.mark.parametrize("raw", ["1899", "26", "20000", str(date.today().year + 1)])
+    def test_birth_year_must_be_plausible(self, conn: psycopg.Connection[DictRow], raw: str) -> None:
+        with pytest.raises(ValidationError, match="Ano de nascimento deve estar entre 1900 e"):
+            set_setting(conn, BIRTH_YEAR, raw)
+
+    def test_birth_year_this_year_is_accepted(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert set_setting(conn, BIRTH_YEAR, str(date.today().year)) == date.today().year
+
+    def test_birth_year_rejects_non_int(self, conn: psycopg.Connection[DictRow]) -> None:
+        with pytest.raises(ValidationError, match="não é um ano válido"):
+            set_setting(conn, BIRTH_YEAR, "dois mil")
+
+    def test_applied_year_is_written_by_code(self, conn: psycopg.Connection[DictRow]) -> None:
+        set_value(conn, GLIDE_PATH_APPLIED_YEAR, 2040)
+        assert get_setting(conn, GLIDE_PATH_APPLIED_YEAR) == 2040

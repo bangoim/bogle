@@ -31,6 +31,7 @@ from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import AssetNotFoundError
 from bogle.domain.transactions import Transaction, TransactionType
 from bogle.domain.validation import validate_asset_metadata, validate_type_change
+from bogle.glide_path import application_notice, apply_glide_path_if_due, check_manual_target, failure_notice
 from bogle.imports.b3 import read_statement
 from bogle.imports.plan import ImportPlan, apply_import, plan_import
 from bogle.position import Position, get_allocation_summary, get_portfolio_summary
@@ -69,6 +70,7 @@ from bogle.settings import (
     unset_setting,
 )
 from bogle.tesouro_title import check_tesouro_title as _check_tesouro_title
+from bogle.tui.errors import message_for
 
 _ZERO = Decimal("0")
 
@@ -101,6 +103,27 @@ def update_schema() -> list[str]:
         return migrate_if_pending()
     except psycopg.OperationalError:
         return []
+
+
+def apply_glide_path(*, today: date | None = None) -> str | None:
+    """Apply the year's targets of the glide path, and say what changed.
+
+    Synchronous like :func:`update_schema`, and for the same reason: the Home's
+    workers read the targets this leaves behind. Returns the notice for the Home,
+    or ``None`` when there is nothing to say. A failure never keeps the interface
+    from opening: the year is not recorded, the next start tries again, and the
+    notice says it failed. A database that is down is the Home's to report.
+    """
+    try:
+        conn = get_connection()
+    except psycopg.OperationalError:
+        return None
+    try:
+        return application_notice(apply_glide_path_if_due(conn, _today(today)))
+    except Exception as exc:
+        return failure_notice(message_for(exc))
+    finally:
+        conn.close()
 
 
 def load_preferences() -> Preferences:
@@ -549,6 +572,10 @@ def update_asset(*, ticker: str, target_weight: Decimal | None = None, asset_typ
         asset = repo.get(ticker)
         if asset is None:
             raise AssetNotFoundError(ticker.upper())
+        if target_weight is not None:
+            # Mesma recusa do `bogle update`: com trajetoria ativa, o alvo de um
+            # ticker dela e da trajetoria.
+            check_manual_target(conn, asset.ticker, target_weight, date.today())
         # Os dois numa transacao so: mudar tipo e peso e uma alteracao, e metade
         # dela aplicada seria pior que nenhuma.
         with conn.transaction():

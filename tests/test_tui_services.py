@@ -813,7 +813,13 @@ class TestBackup:
         result = services.backup()
         assert result.path.parent == tmp_path / "bogle" / "backups"
         assert result.format is DumpFormat.CUSTOM
-        assert result.rows == {"assets": 0, "transactions": 0, "user_settings": 0, "price_history": 0}
+        assert result.rows == {
+            "assets": 0,
+            "transactions": 0,
+            "user_settings": 0,
+            "price_history": 0,
+            "glide_path_points": 0,
+        }
 
 
 class TestImport:

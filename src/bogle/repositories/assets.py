@@ -11,6 +11,7 @@ from bogle.domain.assets import Asset, AssetType, Indexer
 from bogle.domain.errors import (
     AssetAlreadyExistsError,
     AssetHasTransactionsError,
+    AssetInGlidePathError,
     AssetNotFoundError,
     ValidationError,
     WeightSumExceededError,
@@ -175,7 +176,10 @@ class AssetRepository:
                 cur.execute("DELETE FROM assets WHERE ticker = %s", (ticker,))
                 if cur.rowcount == 0:
                     raise AssetNotFoundError(ticker)
-        except pg_errors.ForeignKeyViolation:
+        except pg_errors.ForeignKeyViolation as exc:
+            # Duas tabelas apontam para assets: o ledger e a trajetoria.
+            if exc.diag.table_name == "glide_path_points":
+                raise AssetInGlidePathError(ticker) from None
             raise AssetHasTransactionsError(ticker) from None
 
     # ------------------------------------------------------------------

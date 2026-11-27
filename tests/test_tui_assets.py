@@ -11,7 +11,7 @@ import pytest
 from textual.widgets import Checkbox, DataTable, Select
 
 from bogle.domain.assets import AssetType, Indexer
-from bogle.domain.errors import AssetHasTransactionsError, WeightSumExceededError
+from bogle.domain.errors import AssetHasTransactionsError, GlidePathTargetError, WeightSumExceededError
 from bogle.tui import services
 from bogle.tui.screens.assets import AssetFormScreen, AssetsScreen, AssetUpdateScreen
 from bogle.tui.screens.modals import ConfirmModal
@@ -646,6 +646,32 @@ class TestUpdating:
             assert not isinstance(app.screen, ConfirmModal)
             assert spy.updated == []
             assert toasts.severity_of("Nada para atualizar") == "warning"
+
+    @pytest.mark.asyncio
+    async def test_a_target_of_the_glide_path_is_refused_on_the_form(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A recusa vem do servico (a mesma do `bogle update`); o formulario fica
+        # aberto, com o que foi digitado, e o erro aponta para `bogle glide`.
+        stub_services(monkeypatch)
+        spy = AssetsSpy(error=GlidePathTargetError("AUVP11", 2040, Decimal("0.3")))
+        monkeypatch.setattr(services, "list_assets", spy.list)
+        monkeypatch.setattr(services, "update_asset", spy.update)
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, AssetUpdateScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await open_screen(pilot, AssetsScreen())
+            await pilot.press("u")  # AUVP11, 30%
+            await settle(pilot)
+            form = app.screen
+            assert isinstance(form, AssetUpdateScreen)
+            form.field("weight").set_value("0.25")
+            await pilot.press("ctrl+s")
+            await settle(pilot)
+            await pilot.press("enter")
+            await settle(pilot)
+            assert app.screen is form
+            assert form.field("weight").value == "0.25"
+            assert toasts.severity_of("use 'bogle glide'") == "error"
 
     @pytest.mark.asyncio
     async def test_fixed_income_cannot_change_type_here(self, spy: AssetsSpy) -> None:

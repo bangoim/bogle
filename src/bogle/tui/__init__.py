@@ -32,4 +32,9 @@ def run_tui() -> None:
     fmt.configure(preferences.decimal_separator)
     fmt.hide_amounts(preferences.hide_amounts)
     notices = [migrated_notice(applied)] if applied else []
+    # Os alvos do ano antes da Home: ela le os alvos que isto deixar. Depois do
+    # separador, porque o aviso tem percentuais.
+    glide = services.apply_glide_path()
+    if glide is not None:
+        notices.append(glide)
     BogleApp(theme=preferences.theme, notices=notices).run()

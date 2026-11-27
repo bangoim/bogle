@@ -79,6 +79,7 @@ TABLES: tuple[tuple[str, str, str], ...] = (
     ("transactions", "transação", "transações"),
     ("user_settings", "configuração", "configurações"),
     ("price_history", "fechamento", "fechamentos"),
+    ("glide_path_points", "ponto da trajetória", "pontos da trajetória"),
 )
 """The tables a backup reports, with the words for one and for many."""
 
