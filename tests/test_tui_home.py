@@ -20,11 +20,12 @@ from bogle.format import MASK
 from bogle.reports.valuation import NOTHING_RETURNED, SHORT_SERIES, UNKNOWN_TITLE, series_starts_at
 from bogle.tui import services
 from bogle.tui.app import BogleApp
-from bogle.tui.screens.assets import AssetsScreen
 from bogle.tui.screens.config import ConfigScreen
+from bogle.tui.screens.glide import GlidePathScreen
 from bogle.tui.screens.help import HelpModal
 from bogle.tui.screens.home import HomeScreen
 from bogle.tui.screens.position import PositionScreen
+from bogle.tui.screens.rebalance import RebalanceScreen
 from bogle.tui.screens.register import RegisterScreen
 from bogle.tui.screens.status import StatusScreen
 from bogle.tui.widgets.menu import Menu
@@ -599,8 +600,8 @@ class TestNavigation:
 
     @pytest.mark.asyncio
     async def test_the_menu_splits_in_two_columns_on_a_wide_terminal(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Oito itens em quatro linhas: e o que faz o resumo e o logo caberem sem
-        # scroll num terminal de altura normal.
+        # Nove itens em cinco linhas (cinco a esquerda, quatro a direita): e o que
+        # faz o resumo e o logo caberem sem scroll num terminal de altura normal.
         use_overview(monkeypatch, make_overview())
         app = make_app()
         async with app.run_test(size=(148, 30)) as pilot:
@@ -608,8 +609,8 @@ class TestNavigation:
             home = app.screen
             assert isinstance(home, HomeScreen)
             assert home.has_class("-wide")
-            assert home.query_one("#menu").size.height == 4  # quatro linhas de itens
-            assert [menu.option_count for menu in home.query(Menu)] == [4, 4]
+            assert home.query_one("#menu").size.height == 5  # cinco linhas de itens
+            assert [menu.option_count for menu in home.query(Menu)] == [5, 4]
 
     @pytest.mark.asyncio
     async def test_a_narrower_terminal_keeps_the_single_column(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -622,14 +623,15 @@ class TestNavigation:
             home = app.screen
             assert isinstance(home, HomeScreen)
             assert not home.has_class("-wide")
-            assert home.query_one("#menu").size.height == 8  # os oito itens, um por linha
+            assert home.query_one("#menu").size.height == 9  # os nove itens, um por linha
 
     @pytest.mark.asyncio
     async def test_eighty_by_twenty_four_fits_the_logo_the_summary_and_the_menu(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Em 80 colunas o menu e uma coluna so, oito linhas: e o tamanho em que
-        # o oitavo item (Saque) mais aperta, e ainda nao pode pedir scroll.
+        # Em 80 colunas o menu e uma coluna so, nove linhas: e o tamanho em que
+        # o nono item (Rebalancear) mais aperta, e ainda nao pode pedir scroll.
+        # A linha dele saiu da margem sobre o logo (app.tcss).
         use_overview(monkeypatch, make_overview())
         app = make_app()
         async with app.run_test(size=(80, 24)) as pilot:
@@ -637,6 +639,7 @@ class TestNavigation:
             home = app.screen
             assert isinstance(home, HomeScreen)
             assert home.query_one("#logo").display
+            assert home.query_one("#menu").size.height == 9  # os nove itens, um por linha
             assert home.query_one("#home", VerticalScroll).max_scroll_y == 0
 
     @pytest.mark.asyncio
@@ -656,16 +659,38 @@ class TestNavigation:
             await pilot.press("right")
             await pilot.pause()
             assert right.has_focus
-            assert right.highlighted == 1  # Ativos, a segunda da direita
+            assert right.highlighted == 1  # Trajetoria, a segunda da direita
             await pilot.press("enter")
             await settle(pilot)
-            assert isinstance(app.screen, AssetsScreen)
+            assert isinstance(app.screen, GlidePathScreen)
 
             await pilot.press("escape")
             await settle(pilot)
             await pilot.press("left")
             await pilot.pause()
             assert left.has_focus
+
+    @pytest.mark.asyncio
+    async def test_the_last_row_of_the_left_lands_on_the_last_of_the_right(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Cinco a esquerda, quatro a direita: da quinta (Relatorios) a seta cai na
+        # quarta da direita (Rebalancear), e nao fora da lista.
+        use_overview(monkeypatch, make_overview())
+        app = make_app()
+        async with app.run_test(size=(148, 30)) as pilot:
+            await settle(pilot)
+            home = app.screen
+            assert isinstance(home, HomeScreen)
+            right = home.query_one("#menu-right", Menu)
+            await pilot.press("down", "down", "down", "down")
+            await pilot.press("right")
+            await pilot.pause()
+            assert right.has_focus
+            assert right.highlighted == 3
+            await pilot.press("enter")
+            await settle(pilot)
+            assert isinstance(app.screen, RebalanceScreen)
 
     @pytest.mark.asyncio
     async def test_q_quits_from_the_home_screen(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -798,6 +823,34 @@ class TestRebalanceReminder:
             await settle(pilot)
             assert toasts.messages == ["ciclo vencido desde 2026-07-01."]
             assert toasts.severity_of("ciclo vencido") == "warning"
+
+    @pytest.mark.asyncio
+    async def test_a_pending_annual_rebalance_is_a_warning_toast(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Issue #81: o mesmo lembrete do `aviso:` da CLI, apontando para a tela.
+        use_overview(monkeypatch, make_overview())
+        monkeypatch.setattr(services, "annual_notice", lambda **_: "rebalanceamento anual de 2061 pendente (menu 9)")
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, HomeScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert toasts.messages == ["rebalanceamento anual de 2061 pendente (menu 9)"]
+            assert toasts.severity_of("rebalanceamento anual") == "warning"
+
+    @pytest.mark.asyncio
+    async def test_both_reminders_come_one_toast_each(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        use_overview(monkeypatch, make_overview())
+        monkeypatch.setattr(services, "rebalance_notice", lambda **_: "ciclo vencido desde 2026-07-01.")
+        monkeypatch.setattr(services, "annual_notice", lambda **_: "rebalanceamento anual de 2061 pendente (menu 9)")
+        toasts = ToastSpy()
+        toasts.install(monkeypatch, HomeScreen)
+        app = make_app()
+        async with app.run_test() as pilot:
+            await settle(pilot)
+            assert toasts.messages == [
+                "ciclo vencido desde 2026-07-01.",
+                "rebalanceamento anual de 2061 pendente (menu 9)",
+            ]
 
     @pytest.mark.asyncio
     async def test_nothing_due_stays_quiet(self, monkeypatch: pytest.MonkeyPatch) -> None:

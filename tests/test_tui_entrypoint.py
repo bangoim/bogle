@@ -132,20 +132,42 @@ class TestPreferences:
         assert result.output == ""
 
     def test_a_command_applies_the_configured_separator(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (",", None))
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (",", None, None))
         assert CliRunner().invoke(app, ["list"]).exit_code == 0
         assert fmt.separators().decimal == ","
 
     def test_an_overdue_cycle_still_warns_on_stderr(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido desde 2026-07-01."))
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido desde 2026-07-01.", None))
         result = CliRunner().invoke(app, ["list"])
         assert result.exit_code == 0
         assert "aviso: ciclo vencido desde 2026-07-01." in result.output
 
     def test_status_does_not_repeat_the_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # `bogle status` ja reporta o ciclo por inteiro.
-        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido desde 2026-07-01."))
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido desde 2026-07-01.", None))
         result = CliRunner().invoke(app, ["status"])
+        assert "aviso:" not in result.output
+
+    # ---- Rebalanceamento anual (issue #81)
+
+    def test_a_pending_annual_rebalance_warns_on_stderr(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        notice = "rebalanceamento anual de 2061 pendente (bogle rebalance)"
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", None, notice))
+        result = CliRunner().invoke(app, ["list"])
+        assert result.exit_code == 0
+        assert f"aviso: {notice}" in result.output
+
+    @pytest.mark.parametrize("command", [["status"], ["rebalance", "--done"]])
+    def test_status_and_rebalance_do_not_repeat_the_annual_warning(
+        self, command: list[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # `status` mostra a pendencia; `rebalance` e a propria pendencia (e o
+        # `--done` a resolve, avisar antes diria o contrario).
+        notice = "rebalanceamento anual de 2061 pendente (bogle rebalance)"
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", None, notice))
+        monkeypatch.setattr("bogle.cli.rebalance.record_annual_rebalance", lambda conn, **_: 2061)
+        result = CliRunner().invoke(app, command)
+        assert result.exit_code == 0, result.output
         assert "aviso:" not in result.output
 
 

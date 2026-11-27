@@ -71,6 +71,43 @@ class TestClassification:
         assert [r.recommendation for r in recs] == [Recommendation.HOLD, Recommendation.BUY]
 
 
+class TestSellOnlyInRetirement:
+    """``SELL`` existe so na fase de aposentadoria (issue #81, excecao a 7.1)."""
+
+    @pytest.mark.parametrize("current", ["0.71", "0.76", "0.90", "1"])
+    def test_before_retirement_nothing_is_ever_sell(self, current: str) -> None:
+        # Nem com o ticker em saida na trajetoria: fora da aposentadoria a lista
+        # de saida nem e olhada.
+        recs = classify_positions([make_position("VWRA11", current, "0.70")], exiting={"VWRA11"})
+        assert [rec.recommendation for rec in recs] == [Recommendation.HOLD]
+
+    def test_in_retirement_beyond_the_tolerance_is_sell(self) -> None:
+        [rec] = classify_positions([make_position("VWRA11", "0.80", "0.70")], retired=True)
+        assert rec.recommendation is Recommendation.SELL
+        assert rec.reason == (
+            "Peso atual 80% está 10 p.p. acima do target de 70%, além da tolerância de 5 p.p.; vende até 75%."
+        )
+
+    def test_in_retirement_within_the_tolerance_is_hold(self) -> None:
+        [rec] = classify_positions([make_position("VWRA11", "0.75", "0.70")], retired=True)
+        assert rec.recommendation is Recommendation.HOLD
+        assert "dentro da tolerância de 5 p.p." in rec.reason
+        assert "no-sell" not in rec.reason
+
+    def test_in_retirement_an_exiting_ticker_sells_with_no_tolerance(self) -> None:
+        [rec] = classify_positions([make_position("NB1011", "0.11", "0.10")], retired=True, exiting={"nb1011"})
+        assert rec.recommendation is Recommendation.SELL
+        assert "em saída na trajetória" in rec.reason
+
+    def test_in_retirement_an_exiting_ticker_at_its_target_is_hold(self) -> None:
+        [rec] = classify_positions([make_position("NB1011", "0.10", "0.10")], retired=True, exiting={"NB1011"})
+        assert rec.recommendation is Recommendation.HOLD
+
+    def test_in_retirement_below_the_tolerance_is_still_buy(self) -> None:
+        [rec] = classify_positions([make_position("VWRA11", "0.60", "0.70")], retired=True)
+        assert rec.recommendation is Recommendation.BUY
+
+
 class TestMissingPrice:
     def test_unpriced_position_raises_with_tickers(self) -> None:
         positions = [

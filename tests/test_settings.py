@@ -15,6 +15,7 @@ from bogle.settings import (
     DEFAULT_COMPARE_INDICES,
     GLIDE_PATH_APPLIED_YEAR,
     HIDE_VALUES,
+    LAST_ANNUAL_REBALANCE_YEAR,
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
     RETIREMENT_AGE,
@@ -124,6 +125,7 @@ class TestUnsetAndList:
             BIRTH_YEAR,
             RETIREMENT_AGE,
             GLIDE_PATH_APPLIED_YEAR,
+            LAST_ANNUAL_REBALANCE_YEAR,
         }
         assert entries[WEIGHT_DRIFT_THRESHOLD].is_default is False
         assert entries[WEIGHT_DRIFT_THRESHOLD].updated_at is not None
@@ -195,6 +197,24 @@ class TestGlidePathKeys:
     def test_applied_year_is_written_by_code(self, conn: psycopg.Connection[DictRow]) -> None:
         set_value(conn, GLIDE_PATH_APPLIED_YEAR, 2040)
         assert get_setting(conn, GLIDE_PATH_APPLIED_YEAR) == 2040
+
+
+class TestAnnualRebalanceKey:
+    """``last_annual_rebalance_year`` (issue #81), no molde de ``glide_path_applied_year``."""
+
+    def test_defaults_to_none(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert get_setting(conn, LAST_ANNUAL_REBALANCE_YEAR) is None
+
+    def test_is_written_by_code_as_an_int(self, conn: psycopg.Connection[DictRow]) -> None:
+        set_value(conn, LAST_ANNUAL_REBALANCE_YEAR, 2061)
+        assert get_setting(conn, LAST_ANNUAL_REBALANCE_YEAR) == 2061
+
+    def test_can_be_set_by_hand(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert set_setting(conn, LAST_ANNUAL_REBALANCE_YEAR, " 2061 ") == 2061
+
+    def test_rejects_non_int(self, conn: psycopg.Connection[DictRow]) -> None:
+        with pytest.raises(ValidationError, match="não é um ano válido"):
+            set_setting(conn, LAST_ANNUAL_REBALANCE_YEAR, "ontem")
 
 
 class TestRetirementAge:

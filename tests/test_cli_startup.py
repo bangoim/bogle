@@ -28,7 +28,7 @@ def _never(*_args: Any, **_kwargs: Any) -> Any:
 class TestSchemaOnStartup:
     @pytest.fixture(autouse=True)
     def _quiet_preferences(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", None))
+        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", None, None))
 
     def test_a_command_applies_pending_migrations_before_reading_anything(
         self, monkeypatch: pytest.MonkeyPatch
@@ -39,9 +39,9 @@ class TestSchemaOnStartup:
             order.append("migrate")
             return ["006_allow_zero_target_weight"]
 
-        def preferences() -> tuple[str, None]:
+        def preferences() -> tuple[str, None, None]:
             order.append("preferences")
-            return (".", None)
+            return (".", None, None)
 
         monkeypatch.setattr(cli_mod, "migrate_if_pending", migrate)
         monkeypatch.setattr(cli_mod, "_read_preferences", preferences)

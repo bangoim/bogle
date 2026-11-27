@@ -50,7 +50,9 @@ class TestButtonRow:
         async with app.run_test() as pilot:
             await settle(pilot)
             assert isinstance(app.screen, HomeScreen)
-            assert app.screen.query_one("#home").styles.padding.top == 1
+            # A margem lateral: em 80 colunas a de cima saiu para o nono item do
+            # menu caber (#81), mas a regra e a mesma.
+            assert app.screen.query_one("#home").styles.padding.left == 2
 
 
 class TestArrowNavigation:

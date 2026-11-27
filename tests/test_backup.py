@@ -741,7 +741,9 @@ class TestNoMigrationBeforeTheseCommands:
             raise AssertionError("não deveria migrar antes de backup/restore")
 
         monkeypatch.setattr(cli_mod, "migrate_if_pending", never)
-        monkeypatch.setattr(cli_mod, "_read_preferences", lambda: (".", "ciclo vencido"))
+        monkeypatch.setattr(
+            cli_mod, "_read_preferences", lambda: (".", "ciclo vencido", "rebalanceamento anual de 2061 pendente")
+        )
         monkeypatch.setattr(backup_cli, "create_backup", lambda **_: _fake_result())
         monkeypatch.setattr(backup_cli, "plan_restore", lambda path: object())
         monkeypatch.setattr(
@@ -752,6 +754,7 @@ class TestNoMigrationBeforeTheseCommands:
         result = CliRunner().invoke(app, command)
         assert result.exit_code == 0, result.output
         assert "ciclo vencido" not in result.output  # o lembrete do ciclo tambem fica de fora
+        assert "rebalanceamento anual" not in result.output  # e o do rebalanceamento anual (#81)
 
 
 def _fake_result() -> BackupResult:

@@ -36,12 +36,15 @@ from bogle.domain.transactions import TransactionType
 from bogle.position import PortfolioSummary, Position
 from bogle.repositories.assets import AssetRepository
 from bogle.settings import (
+    BIRTH_YEAR,
     DECIMAL_SEPARATOR,
     DEFAULT_COMPARE_INDICES,
     DEFAULT_THEME,
     HIDE_VALUES,
+    LAST_ANNUAL_REBALANCE_YEAR,
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
+    RETIREMENT_AGE,
     THEME,
     get_setting,
     set_value,
@@ -747,6 +750,88 @@ class TestWithdrawal:
     def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(self, priced: None) -> None:
         services.load_withdrawal(Decimal("100"), refresh=True, today=date(2026, 3, 20))
         assert self.built[-1] == {"ignore_cached_quotes": True}
+
+
+class TestAnnualRebalance:
+    """Rebalanceamento anual (issue #81): o plano, o registro e o lembrete."""
+
+    @pytest.fixture
+    def retired(self, seeded: None, conn: psycopg.Connection[DictRow], monkeypatch: pytest.MonkeyPatch) -> None:
+        set_value(conn, BIRTH_YEAR, 2000)
+        set_value(conn, RETIREMENT_AGE, 60)
+        conn.commit()
+        summary = PortfolioSummary(
+            positions=[
+                Position(
+                    ticker="PETR4",
+                    asset_type=AssetType.STOCK,
+                    quantity=Decimal("10"),
+                    total_invested=Decimal("300"),
+                    target_weight=Decimal("0.4"),
+                    dividends=Decimal("0"),
+                    average_price=Decimal("30"),
+                    price=Decimal("32"),
+                    market_value=Decimal("320"),
+                    current_weight=Decimal("1"),
+                    drift=Decimal("0.6"),
+                )
+            ],
+            total_value=Decimal("320"),
+            total_invested=Decimal("300"),
+            total_pnl=Decimal("20"),
+            total_dividends=Decimal("0"),
+        )
+        self.built: list[dict[str, Any]] = []
+        monkeypatch.setattr(services, "default_dispatcher", lambda **kwargs: self.built.append(kwargs))
+        monkeypatch.setattr("bogle.annual_rebalance.get_allocation_summary", lambda conn, dispatcher, **_: summary)
+
+    def test_the_plan_records_nothing(self, retired: None, conn: psycopg.Connection[DictRow]) -> None:
+        plan = services.load_annual_rebalance(today=date(2061, 1, 5))
+        # PETR4 a 100% com alvo de 40%: vende ate 45%.
+        assert [(item.ticker, item.quantity) for item in plan.sales] == [("PETR4", Decimal("6"))]
+        assert get_setting(conn, LAST_ANNUAL_REBALANCE_YEAR) is None
+        assert get_setting(conn, LAST_REBALANCE_DATE) is None
+
+    def test_refresh_builds_a_dispatcher_that_skips_the_quote_cache(self, retired: None) -> None:
+        services.load_annual_rebalance(refresh=True, today=date(2061, 1, 5))
+        assert self.built[-1] == {"ignore_cached_quotes": True}
+
+    def test_before_the_phase_it_refuses(self, retired: None) -> None:
+        with pytest.raises(ValidationError, match="começa em 2061"):
+            services.load_annual_rebalance(today=date(2060, 6, 1))
+
+    def test_done_records_the_year_and_silences_the_notice(
+        self, retired: None, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        today = date(2061, 1, 5)
+        assert services.annual_notice(today=today) == "rebalanceamento anual de 2061 pendente (menu 9)"
+        assert services.record_annual_rebalance(today=today) == 2061
+        assert get_setting(conn, LAST_ANNUAL_REBALANCE_YEAR) == 2061
+        assert services.annual_notice(today=today) is None
+
+    def test_the_notice_is_quiet_before_the_phase_and_without_birth_year(
+        self, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        assert services.annual_notice(today=date(2061, 1, 5)) is None
+        set_value(conn, BIRTH_YEAR, 2000)
+        set_value(conn, RETIREMENT_AGE, 60)
+        conn.commit()
+        assert services.annual_notice(today=date(2060, 12, 31)) is None
+
+    def test_a_broken_database_never_blocks_the_interface(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def boom(*_args: object, **_kwargs: object) -> object:
+            raise psycopg.OperationalError("connection refused")
+
+        monkeypatch.setattr(services, "get_connection", boom)
+        assert services.annual_notice(today=date(2061, 1, 5)) is None
+
+    def test_the_cycle_carries_the_annual_state(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert services.load_cycle(today=date(2061, 1, 5)).annual is None
+        set_value(conn, BIRTH_YEAR, 2000)
+        set_value(conn, RETIREMENT_AGE, 60)
+        conn.commit()
+        annual = services.load_cycle(today=date(2061, 1, 5)).annual
+        assert annual is not None and annual.pending and annual.year == 2061
 
 
 class TestReportLoaders:
