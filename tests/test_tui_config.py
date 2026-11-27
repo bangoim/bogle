@@ -98,8 +98,9 @@ class TestTable:
         async with app.run_test() as pilot:
             screen = await open_screen(pilot, ConfigScreen())
             assert table_columns(screen) == ["Chave", "Valor", "Tipo", "Atualizado em", "Descrição"]
-            first = table_rows(screen)[0]
-            assert first[:4] == ["decimal_separator", ",", "str", "(default)"]
+            rows = table_rows(screen)
+            assert [row[0] for row in rows] == sorted(row[0] for row in rows)
+            assert rows[row_of(screen, "decimal_separator")][:4] == ["decimal_separator", ",", "str", "(default)"]
 
     @pytest.mark.asyncio
     async def test_an_unset_key_reads_as_undefined(self, spy: SettingsSpy) -> None:

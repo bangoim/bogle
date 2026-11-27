@@ -28,6 +28,8 @@ LAST_REBALANCE_DATE = "last_rebalance_date"
 DECIMAL_SEPARATOR = "decimal_separator"
 HIDE_VALUES = "hide_values"
 THEME = "theme"
+BIRTH_YEAR = "birth_year"
+GLIDE_PATH_APPLIED_YEAR = "glide_path_applied_year"
 
 DEFAULT_THEME = "textual-dark"
 
@@ -100,6 +102,27 @@ def _parse_date(raw: str) -> date:
         return date.fromisoformat(raw)
     except ValueError:
         raise ValidationError(f"'{raw}' não é uma data válida (formato YYYY-MM-DD).") from None
+
+
+_FIRST_BIRTH_YEAR = 1900
+
+
+def _parse_year(raw: str) -> int:
+    try:
+        return int(raw.strip())
+    except ValueError:
+        raise ValidationError(f"'{raw}' não é um ano válido.") from None
+
+
+def _parse_birth_year(raw: str) -> int:
+    # Plausivel: nao antes de 1900 e nao no futuro. A idade da trajetoria e
+    # `ano corrente - ano de nascimento`, e um ano digitado errado (26, 20000)
+    # moveria todos os alvos sem que ninguem notasse.
+    year = _parse_year(raw)
+    last = date.today().year
+    if not (_FIRST_BIRTH_YEAR <= year <= last):
+        raise ValidationError(f"Ano de nascimento deve estar entre {_FIRST_BIRTH_YEAR} e {last}, recebido {year}.")
+    return year
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +202,24 @@ SETTINGS: dict[str, SettingSpec] = {
             parse=_parse_date,
             to_json=date.isoformat,
             from_json=date.fromisoformat,
+        ),
+        SettingSpec(
+            key=BIRTH_YEAR,
+            type_name="int",
+            description="Ano de nascimento; a idade de cada ano define os alvos da trajetória.",
+            default=None,
+            parse=_parse_birth_year,
+            to_json=int,
+            from_json=int,
+        ),
+        SettingSpec(
+            key=GLIDE_PATH_APPLIED_YEAR,
+            type_name="int",
+            description="Último ano em que os alvos da trajetória foram aplicados (atualizado em 01/01).",
+            default=None,
+            parse=_parse_year,
+            to_json=int,
+            from_json=int,
         ),
     )
 }
