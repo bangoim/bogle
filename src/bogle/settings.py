@@ -29,6 +29,7 @@ DECIMAL_SEPARATOR = "decimal_separator"
 HIDE_VALUES = "hide_values"
 THEME = "theme"
 BIRTH_YEAR = "birth_year"
+RETIREMENT_AGE = "retirement_age"
 GLIDE_PATH_APPLIED_YEAR = "glide_path_applied_year"
 
 DEFAULT_THEME = "textual-dark"
@@ -125,6 +126,20 @@ def _parse_birth_year(raw: str) -> int:
     return year
 
 
+_MAX_RETIREMENT_AGE = 120
+"""A mesma idade maxima de um ponto da trajetoria (``glide_path.MAX_AGE``)."""
+
+
+def _parse_retirement_age(raw: str) -> int:
+    try:
+        age = int(raw.strip())
+    except ValueError:
+        raise ValidationError(f"'{raw}' não é uma idade válida.") from None
+    if not (1 <= age <= _MAX_RETIREMENT_AGE):
+        raise ValidationError(f"Idade de aposentadoria deve estar entre 1 e {_MAX_RETIREMENT_AGE}, recebido {age}.")
+    return age
+
+
 @dataclass(frozen=True, slots=True)
 class SettingSpec:
     key: str
@@ -209,6 +224,15 @@ SETTINGS: dict[str, SettingSpec] = {
             description="Ano de nascimento; a idade de cada ano define os alvos da trajetória.",
             default=None,
             parse=_parse_birth_year,
+            to_json=int,
+            from_json=int,
+        ),
+        SettingSpec(
+            key=RETIREMENT_AGE,
+            type_name="int",
+            description="Idade de aposentadoria; antes dela, 'bogle withdraw' avisa que a política é não vender.",
+            default=70,
+            parse=_parse_retirement_age,
             to_json=int,
             from_json=int,
         ),

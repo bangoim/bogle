@@ -17,6 +17,7 @@ from bogle.settings import (
     HIDE_VALUES,
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
+    RETIREMENT_AGE,
     WEIGHT_DRIFT_THRESHOLD,
     format_value,
     get_setting,
@@ -121,6 +122,7 @@ class TestUnsetAndList:
             WEIGHT_DRIFT_THRESHOLD,
             LAST_REBALANCE_DATE,
             BIRTH_YEAR,
+            RETIREMENT_AGE,
             GLIDE_PATH_APPLIED_YEAR,
         }
         assert entries[WEIGHT_DRIFT_THRESHOLD].is_default is False
@@ -193,3 +195,21 @@ class TestGlidePathKeys:
     def test_applied_year_is_written_by_code(self, conn: psycopg.Connection[DictRow]) -> None:
         set_value(conn, GLIDE_PATH_APPLIED_YEAR, 2040)
         assert get_setting(conn, GLIDE_PATH_APPLIED_YEAR) == 2040
+
+
+class TestRetirementAge:
+    def test_defaults_to_seventy(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert get_setting(conn, RETIREMENT_AGE) == 70
+
+    def test_round_trips_as_an_int(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert set_setting(conn, RETIREMENT_AGE, " 65 ") == 65
+        assert get_setting(conn, RETIREMENT_AGE) == 65
+
+    @pytest.mark.parametrize("raw", ["0", "121", "-5"])
+    def test_must_be_a_plausible_age(self, conn: psycopg.Connection[DictRow], raw: str) -> None:
+        with pytest.raises(ValidationError, match="Idade de aposentadoria deve estar entre 1 e 120"):
+            set_setting(conn, RETIREMENT_AGE, raw)
+
+    def test_rejects_non_int(self, conn: psycopg.Connection[DictRow]) -> None:
+        with pytest.raises(ValidationError, match="não é uma idade válida"):
+            set_setting(conn, RETIREMENT_AGE, "setenta")
