@@ -450,7 +450,7 @@ class TestRestore:
         conn.close()
         result = restore(plan_restore(dump.path, database_url=target), safety_backup=False)
         assert not has_table(target, "public.glide_path_points")
-        assert result.applied == ["007_price_history"]  # e a 007 aplica sem colidir
+        assert result.applied == ["007_price_history", "008_price_history_tesouro_source"]  # e aplicam sem colidir
         assert pending_migrations(target) == []
 
     def test_an_older_dump_is_migrated_forward(self, scratch: Callable[[], str], tmp_path: Path) -> None:
@@ -462,7 +462,7 @@ class TestRestore:
         dump = create_backup(database_url=source)
         target = scratch()
         result = restore(plan_restore(dump.path, database_url=target))
-        assert result.applied == ["007_price_history"]
+        assert result.applied == ["007_price_history", "008_price_history_tesouro_source"]
         assert tickers(target) == ["PETR4"]
         assert result.rows["price_history"] == 0
 
@@ -671,7 +671,7 @@ class TestCli:
         result = run_cli("restore", str(dump.path), "--force", url=scratch(), data_home=tmp_path / "data")
         assert result.returncode == 0, result.stderr
         assert result.stderr.count("banco de dados atualizado") == 1
-        assert "aviso: banco de dados atualizado: 007_price_history." in result.stderr
+        assert "aviso: banco de dados atualizado: 007_price_history, 008_price_history_tesouro_source." in result.stderr
 
     def test_the_password_is_never_printed(self, scratch: Callable[[], str], tmp_path: Path) -> None:
         url = seed(scratch())

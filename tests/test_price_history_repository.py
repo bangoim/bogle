@@ -100,6 +100,17 @@ class TestWrites:
         assert stored[TUE][2] == stored[WED][2] == TODAY
         assert rows(conn, "^BVSP")[TUE][2] == YESTERDAY
 
+    def test_the_tesouro_source_is_accepted_and_add_only(
+        self, history: PriceHistoryRepository, conn: psycopg.Connection[DictRow]
+    ) -> None:
+        history.save("TESOURO SELIC 2029", [close(TUE, "17000.10", "tesouro")], loaded_on=YESTERDAY)
+        history.save("TESOURO SELIC 2029", [close(TUE, "1.00", "tesouro")], loaded_on=TODAY)
+        assert rows(conn, "TESOURO SELIC 2029") == {TUE: (Decimal("17000.10"), "tesouro", YESTERDAY)}
+
+    def test_an_unknown_source_is_refused(self, history: PriceHistoryRepository) -> None:
+        with pytest.raises(pg_errors.CheckViolation):
+            history.save("B5P211", [close(TUE, "112.96", "bloomberg")], loaded_on=TODAY)
+
     def test_a_bad_row_takes_the_whole_batch_down(
         self, history: PriceHistoryRepository, conn: psycopg.Connection[DictRow]
     ) -> None:
