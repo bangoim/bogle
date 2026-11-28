@@ -282,3 +282,28 @@ class RuleApplication:
     rule_id: int
     applied_at: datetime
     changes: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExpenseLine:
+    """A line of ``spending.expenses`` as the analyses of #117 read it."""
+
+    account_id: int
+    local_date: date
+    value: Decimal
+    """Positive for money spent, negative for a refund, in reais."""
+    category_id: str | None
+    category: str | None
+    """The name of the category that counts."""
+    group: CategoryGroup
+    merchant: str
+    """Pluggy's merchant (``businessName``, else ``name``) when it sent one, else the description."""
+
+
+@dataclass(frozen=True, slots=True)
+class IncomeLine:
+    """A line of kind ``receita``: positive for money in, in reais."""
+
+    account_id: int
+    local_date: date
+    value: Decimal

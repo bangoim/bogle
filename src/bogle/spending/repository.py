@@ -29,6 +29,8 @@ from bogle.spending.models import (
     Category,
     CategoryGroup,
     DescriptionMatch,
+    ExpenseLine,
+    IncomeLine,
     ItemState,
     RuleApplication,
     RuleConditions,
@@ -1005,3 +1007,69 @@ def application_changes(conn: Connection, application_id: int) -> list[tuple[int
         (application_id,),
     ).fetchall()
     return [(row["transaction_id"], row["previous_rule_id"], row["previous_category_id"]) for row in rows]
+
+
+# ------------------------------------------------------------ analises (#117)
+
+
+def expense_lines(conn: Connection, account_ids: Sequence[int], since: date, until: date) -> list[ExpenseLine]:
+    """The lines of ``spending.expenses`` of the accounts from ``since`` to ``until``, both included."""
+    rows = conn.execute(
+        """
+        SELECT e.account_id, e.local_date, e.value, e.category_id, e.category,
+               g.id AS group_id, g.name AS group_name, g.nature, g.is_fallback,
+               t.merchant_business_name, t.merchant_name, t.description
+        FROM spending.expenses e
+        JOIN spending.transactions t ON t.id = e.transaction_id
+        JOIN spending.category_groups g ON g.id = e.group_id
+        WHERE e.account_id = ANY(%s) AND e.local_date BETWEEN %s AND %s
+        ORDER BY e.local_date, e.transaction_id
+        """,
+        (list(account_ids), since, until),
+    ).fetchall()
+    return [
+        ExpenseLine(
+            account_id=row["account_id"],
+            local_date=row["local_date"],
+            value=row["value"],
+            category_id=row["category_id"],
+            category=row["category"],
+            group=CategoryGroup(
+                id=row["group_id"], name=row["group_name"], nature=row["nature"], fallback=row["is_fallback"]
+            ),
+            merchant=_merchant(row),
+        )
+        for row in rows
+    ]
+
+
+def _merchant(row: DictRow) -> str:
+    for column in ("merchant_business_name", "merchant_name"):
+        name = (row[column] or "").strip()
+        if name:
+            return name
+    return row["description"]
+
+
+def income_lines(conn: Connection, account_ids: Sequence[int], since: date, until: date) -> list[IncomeLine]:
+    """The lines of kind ``receita`` of the accounts, as ``spending.expenses`` filters them (#115)."""
+    rows = conn.execute(
+        """
+        SELECT t.account_id, t.local_date,
+               CASE
+                   WHEN a.type = 'CREDIT' THEN -COALESCE(t.amount_in_account_currency, t.amount)
+                   ELSE COALESCE(t.amount_in_account_currency, t.amount)
+               END AS value
+        FROM spending.transactions t
+        JOIN spending.accounts a ON a.id = t.account_id
+        WHERE t.kind = 'receita'
+          AND t.account_id = ANY(%s) AND t.local_date BETWEEN %s AND %s
+          AND NOT EXISTS (
+              SELECT 1 FROM spending.duplicate_suggestions d
+              WHERE d.transaction_id = t.id AND d.status = 'PENDING'
+          )
+        ORDER BY t.local_date, t.id
+        """,
+        (list(account_ids), since, until),
+    ).fetchall()
+    return [IncomeLine(**row) for row in rows]
