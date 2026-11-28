@@ -789,6 +789,8 @@ bogle spending groups [--all]                # groups, their nature and categori
 bogle spending groups create|rename|nature|map|remove ...
 bogle spending rules                          # list the rules (the newest wins)
 bogle spending rules remove <id> | undo       # remove one; undo the last rule created
+bogle spending summary [--month AAAA-MM]      # the month by group and category, against the months before
+bogle spending trend [--months 12] [--group X] [--no-chart]   # monthly spending, table and chart
 ```
 
 - **Categories and groups:** Pluggy's 130 categories go into groups, each
@@ -803,6 +805,27 @@ bogle spending rules remove <id> | undo       # remove one; undo the last rule c
   (`--account`), all together. It shows how many stored lines it changes and
   asks before saving; then it applies to them and to every new line the sync
   brings. `rules undo` puts the lines back as they were and drops the rule.
+- **Summary and trend:** `summary` shows a month (the current one by default)
+  by group, opened by category, against the average of the 3 months before it
+  (`--compare N`); then the month in one line (income, fixed, variable, what is
+  left), the same month a year before, the share still in `Outros`, and the 5
+  merchants with the most purchases. Income is shown apart, never in the total.
+  The current month is compared up to the same day of the months before (its
+  pace), and only by its variable groups: fixed ones fall on set days. `trend`
+  is the spending of each month, every group's (fixed and variable) or one's
+  (`--group`). A line counts in the month the statement shows it, so a purchase
+  in 10 installments weighs a tenth in each month, and nothing dated after today
+  counts. An account counts from the month of its first transaction: a month
+  before it is left out, not shown as zero, and `trend` marks a month that
+  sums only some of the accounts (`sem <conta>`). The averages are taken
+  account by account, each over the months it is compared in, and summed;
+  an account is compared only from the month *after* its first transaction's,
+  since that first month is rarely whole (it still shows in `trend` and can be
+  summarized). Where an account with nothing to compare yet has spending, the
+  average is left blank instead of half made up. The same month a year before
+  takes only the accounts compared in it, against those same accounts now.
+  Both take `--account corrente` (checking accounts), `--account cartao`
+  (cards) or an account's name; the default is every account.
 
 Every `bogle spending` command syncs first when the last sync is more than
 24 h old (Pluggy itself refreshes once a day). If that fails — no credentials,

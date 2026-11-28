@@ -119,6 +119,10 @@ spending_app.command(
 spending_app.command(
     "categorize", help="Trocar a categoria de uma transação, acima da regra e da Pluggy (--rule cria uma regra)."
 )(spending_cli.categorize)
+spending_app.command("summary", help="Gastos do mês por grupo e categoria, contra a média dos meses anteriores.")(
+    spending_cli.summary
+)
+spending_app.command("trend", help="Gasto mês a mês, total ou de um grupo, em tabela e gráfico.")(spending_cli.trend)
 
 groups_app = typer.Typer(
     help="Grupos de categorias: sem subcomando, lista os grupos e as categorias sem grupo.",

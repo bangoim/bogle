@@ -13,20 +13,24 @@ import subprocess
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
 from psycopg.rows import DictRow
+from rich.console import Console
 from rich.text import Text
 from typer.testing import CliRunner, Result
 
 from bogle import cli as cli_mod
+from bogle import format as fmt
 from bogle.cli import app
 from bogle.cli import spending as spending_cli
 from bogle.data.pluggy import parse_category
 from bogle.domain.errors import NetworkError, ValidationError
 from bogle.settings import SPENDING_LAST_SYNC_AT, set_value
-from bogle.spending.models import AutoSync, TransactionKind
+from bogle.spending.analysis import CategorySpending, GroupSpending, MonthSummary, YearBefore
+from bogle.spending.models import AutoSync, CategoryGroup, TransactionKind
 from bogle.spending.sync import sync_if_due, sync_now
 from tests.pluggy_fakes import ENV, ITEM, FakePluggy, account, category_tree, item, no_client, tx
 
@@ -501,3 +505,303 @@ class TestWithoutConfiguration:
         checked = run_cli("check")
         assert checked.returncode == 0, checked.stderr
         assert checked.stdout == "Nenhuma pendência.\n"
+
+
+# ---- summary e trend (#117)
+
+TODAY = date(2026, 11, 20)
+GROCERIES = ("10000000", "Groceries")
+
+
+@pytest.fixture
+def months(pluggy: FakePluggy, monkeypatch: pytest.MonkeyPatch) -> FakePluggy:
+    """Card from August, account from October, and "today" on 2026-11-20.
+
+    Each account is compared from the month after its first: the card from
+    September, the account from November.
+    """
+    pluggy.categories = category_tree()
+
+    def market(tx_id: str, day: date, amount: str, name: str = "Mercado Bom") -> Any:
+        return tx(tx_id, "acc-card", day, amount, category=GROCERIES, business_name=name)
+
+    pluggy.set_transactions(
+        "acc-card",
+        market("aug", date(2026, 8, 10), "200"),
+        market("sep", date(2026, 9, 10), "200"),
+        market("oct", date(2026, 10, 10), "300"),
+        market("nov", date(2026, 11, 5), "240"),
+        tx("other", "acc-card", date(2026, 11, 8), "100", description="Coisa", category=("99999999", "Other")),
+    )
+    pluggy.set_transactions(
+        "acc-bank",
+        tx("sal-oct", "acc-bank", date(2026, 10, 1), "5000", kind="CREDIT", category=("01010000", "Salary")),
+        tx("sal-nov", "acc-bank", date(2026, 11, 1), "5000", kind="CREDIT", category=("01010000", "Salary")),
+        tx("rent", "acc-bank", date(2026, 11, 15), "-1500", description="Aluguel", category=("17000000", "Housing")),
+    )
+    monkeypatch.setattr(spending_cli, "_today", lambda: TODAY)
+    return pluggy
+
+
+class TestSummary:
+    def test_the_running_month(self, conn: Conn, months: FakePluggy) -> None:
+        result = spending("summary")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        for text in (
+            "Gastos de 2026-11 até o dia 20",
+            "Média até o dia 20",
+            "Alimentação",
+            "Supermercado",
+            "Moradia (fixo)",
+            "1.840,00",
+            "Estabelecimentos mais frequentes",
+            "Mercado Bom",
+        ):
+            assert text in out, text
+        assert (
+            "O mês em uma conta: entrou 5.000,00; fixos 1.500,00; variável 340,00; sobra +3.160,00.\n"
+            "Ritmo do variável: 340,00 até o dia 20, contra 250,00 na média de 2 meses até o mesmo dia (+36,00%).\n"
+            "Em Outros (sem grupo próprio): 5,43% do gasto do mês.\n"
+        ) in out
+        assert "2025-11" not in out  # o mesmo mes de 2025 esta fora da cobertura
+
+    def test_a_past_month(self, conn: Conn, months: FakePluggy) -> None:
+        result = spending("summary", "--month", "2026-10")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        assert "Gastos de 2026-10" in out
+        assert "Média de 1 mês" in out
+        assert "+50,00%" in out  # 300 contra 200
+        assert "Ritmo" not in out
+
+    def test_an_account(self, conn: Conn, months: FakePluggy) -> None:
+        result = spending("summary", "--account", "cartao")
+        assert result.exit_code == 0, result.output
+        assert "(Cartão)" in result.stdout
+        assert "Moradia" not in result.stdout
+        assert "entrou 0,00" in result.stdout
+
+    def test_an_invalid_month_is_refused_before_the_sync(self, conn: Conn, months: FakePluggy) -> None:
+        result = spending("summary", "--month", "2026-13")
+        assert isinstance(result.exception, ValidationError)
+        assert months.calls == []
+
+    def test_a_month_out_of_the_coverage(self, conn: Conn, months: FakePluggy) -> None:
+        result = spending("summary", "--month", "2026-07")
+        assert isinstance(result.exception, ValidationError)
+        assert str(result.exception) == "Mês 2026-07 fora da cobertura: os dados começam em 2026-08."
+
+    def test_nothing_yet(self, conn: Conn, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(spending_cli, "sync_if_due", lambda: AutoSync(ran=False))
+        for command in ("summary", "trend"):
+            result = spending(command)
+            assert result.exit_code == 0, result.output
+            assert result.stdout == f"{spending_cli.NO_ACCOUNTS}\n"
+
+    def test_pluggy_names_are_printed_without_control_characters(self, conn: Conn, months: FakePluggy) -> None:
+        months.set_transactions(
+            "acc-card",
+            tx("evil", "acc-card", date(2026, 11, 3), "10", category=GROCERIES, business_name="Loja\x1b[2J\nFalsa"),
+        )
+        spending("sync")
+        result = spending("summary")
+        assert result.exit_code == 0, result.output
+        assert "\x1b" not in result.stdout
+        assert "Loja[2JFalsa" in result.stdout
+
+    def test_the_same_month_a_year_before_and_a_group_of_one_category(self, capsys: pytest.CaptureFixture[str]) -> None:
+        food = CategoryGroup(1, "Alimentação", "variavel")
+        result = MonthSummary(
+            month=date(2026, 3, 1),
+            until=date(2026, 3, 10),
+            partial=True,
+            compared=(),
+            accounts=(),
+            groups=(
+                GroupSpending(
+                    food, Decimal("120"), None, (CategorySpending("1", "Supermercado", Decimal("120"), None),)
+                ),
+            ),
+            total=Decimal("120"),
+            total_average=None,
+            income=Decimal("0"),
+            fixed=Decimal("0"),
+            variable=Decimal("120"),
+            pace=None,
+            fallback="Outros",
+            fallback_value=Decimal("0"),
+            last_year=YearBefore(Decimal("100"), Decimal("120")),
+            merchants=(),
+        )
+        fmt.configure(",")
+        spending_cli._render_summary(result, Console(width=120))  # pyright: ignore[reportPrivateUsage]
+        out = capsys.readouterr().out
+        assert "Alimentação · Supermercado" in out
+        assert "Média" not in out
+        assert "Mesmo mês de 2025 até o dia 10: 100,00 (agora +20,00%).\n" in out
+        assert "Estabelecimentos" not in out
+
+    def test_account_names_in_the_title_are_not_markup(self, capsys: pytest.CaptureFixture[str]) -> None:
+        result = MonthSummary(
+            month=date(2026, 3, 1),
+            until=date(2026, 3, 31),
+            partial=False,
+            compared=(),
+            accounts=("Conta [/bold]x", "Cartao [red]R[/red]"),
+            groups=(),
+            total=Decimal("0"),
+            total_average=None,
+            income=Decimal("0"),
+            fixed=Decimal("0"),
+            variable=Decimal("0"),
+            pace=None,
+            fallback="Outros",
+            fallback_value=Decimal("0"),
+            last_year=None,
+            merchants=(),
+        )
+        spending_cli._render_summary(result, Console(width=120))  # pyright: ignore[reportPrivateUsage]
+        title = " ".join(capsys.readouterr().out.split())  # a tabela vazia é estreita e quebra o título
+        assert "Gastos de 2026-03 (Conta [/bold]x, Cartao [red]R[/red])" in title
+
+    @pytest.mark.parametrize("month", ["0000-05", "0001-01", "1899-12", "3000-01", "9999-12"])
+    def test_a_month_out_of_the_supported_years(self, conn: Conn, months: FakePluggy, month: str) -> None:
+        result = spending("summary", "--month", month)
+        assert isinstance(result.exception, ValidationError)
+        assert "ano vai de 1900 a 2999" in str(result.exception)
+        assert months.calls == []
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ("summary", "--compare", "121"),
+            ("summary", "--compare", "30000"),
+            ("trend", "--months", "121"),
+            ("trend", "--months", "30000"),
+            ("trend", "--months", "999999999999"),
+        ],
+    )
+    def test_too_many_months_is_a_usage_error(self, conn: Conn, months: FakePluggy, args: tuple[str, ...]) -> None:
+        result = spending(*args)
+        assert result.exit_code == 2
+        assert months.calls == []
+
+    def test_the_limits_still_work(self, conn: Conn, months: FakePluggy, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(spending_cli, "render_line_chart", lambda *args: None)
+        assert spending("summary", "--compare", "120").exit_code == 0
+        assert spending("trend", "--months", "120").exit_code == 0
+        result = spending("summary", "--month", "1900-01", "--compare", "120")
+        assert isinstance(result.exception, ValidationError)
+        assert "fora da cobertura" in str(result.exception)
+        result = spending("summary", "--month", "2999-12", "--compare", "120")
+        assert isinstance(result.exception, ValidationError)
+        assert "ainda não começou" in str(result.exception)
+
+    def test_says_which_accounts_a_comparison_leaves_out(
+        self, conn: Conn, pluggy: FakePluggy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The review's case: card since 2025 at 300 a month, account since March 2026 with 1500 of rent."""
+        pluggy.categories = category_tree()
+        card_months = [date(2025, month, 10) for month in range(1, 13)] + [date(2026, m, 10) for m in range(1, 12)]
+        pluggy.set_transactions(
+            "acc-card",
+            *(tx(f"c{day:%Y%m}", "acc-card", day, "300", category=GROCERIES) for day in card_months),
+        )
+        pluggy.set_transactions(
+            "acc-bank",
+            *(
+                tx(f"r{month}", "acc-bank", date(2026, month, 5), "-1500", category=("17000000", "Housing"))
+                for month in range(3, 12)
+            ),
+        )
+        monkeypatch.setattr(spending_cli, "_today", lambda: date(2026, 12, 5))
+        result = spending("summary", "--month", "2026-11")
+        assert result.exit_code == 0, result.output
+        assert "1.800,00" in result.stdout
+        # Em 2025 so o cartao existia: a linha diz quem ficou de fora e compara as mesmas contas.
+        assert "Mesmo mês de 2025 (sem Conta): 300,00, contra 300,00 agora (+0,00%).\n" in result.stdout
+        assert "média de" not in result.stdout  # as duas contas tem os 3 meses
+        result = spending("summary", "--month", "2026-11", "--compare", "12")
+        assert result.exit_code == 0, result.output
+        assert "Média de 12 meses" in result.stdout
+        assert "Conta: média de 7 meses.\n" in result.stdout  # comparada de abril a outubro
+
+    def test_left_out_account_names_are_filtered(self, capsys: pytest.CaptureFixture[str]) -> None:
+        evil = "Conta\x1b[2J\n[red]X"
+        result = MonthSummary(
+            month=date(2026, 11, 1),
+            until=date(2026, 11, 30),
+            partial=False,
+            compared=(date(2026, 10, 1), date(2026, 9, 1)),
+            accounts=(),
+            groups=(),
+            total=Decimal("0"),
+            total_average=Decimal("0"),
+            income=Decimal("0"),
+            fixed=Decimal("0"),
+            variable=Decimal("0"),
+            pace=None,
+            fallback="Outros",
+            fallback_value=Decimal("0"),
+            last_year=YearBefore(Decimal("300"), Decimal("300"), (evil,)),
+            merchants=(),
+            shorter=((evil, 1),),
+        )
+        fmt.configure(",")
+        spending_cli._render_summary(result, Console(width=120))  # pyright: ignore[reportPrivateUsage]
+        out = capsys.readouterr().out
+        assert "\x1b" not in out
+        assert "Conta[2J[red]X: média de 1 mês.\n" in out
+        assert "Mesmo mês de 2025 (sem Conta[2J[red]X): 300,00, contra 300,00 agora (+0,00%).\n" in out
+
+    def test_help_does_not_sync(self, conn: Conn, monkeypatch: pytest.MonkeyPatch) -> None:
+        def never() -> AutoSync:
+            raise AssertionError("o --help nao sincroniza")
+
+        monkeypatch.setattr(spending_cli, "sync_if_due", never)
+        for command in ("summary", "trend"):
+            result = spending(command, "--help")
+            assert result.exit_code == 0, result.output
+
+
+class TestTrend:
+    def test_table_of_the_covered_months(self, conn: Conn, months: FakePluggy) -> None:
+        result = spending("trend", "--no-chart")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        for text in (
+            "Gastos por mês",
+            "Fixos",
+            "Variável",
+            "2026-08 (sem Conta)",
+            "2026-09 (sem Conta)",
+            "2026-10 ",
+            "2026-11 (até o dia 20)",
+            "1.840,00",
+        ):
+            assert text in out, text
+        assert "2026-07" not in out
+        assert "2026-10 (sem" not in out
+
+    def test_the_chart(self, conn: Conn, months: FakePluggy, monkeypatch: pytest.MonkeyPatch) -> None:
+        drawn: list[tuple[Any, ...]] = []
+        monkeypatch.setattr(spending_cli, "render_line_chart", lambda *args: drawn.append(args))
+        result = spending("trend", "--months", "3")
+        assert result.exit_code == 0, result.output
+        assert drawn == [("Gastos por mês", ["2026-09", "2026-10", "2026-11"], [("Total", [200.0, 300.0, 1840.0])])]
+
+    def test_a_group(self, conn: Conn, months: FakePluggy, monkeypatch: pytest.MonkeyPatch) -> None:
+        drawn: list[tuple[Any, ...]] = []
+        monkeypatch.setattr(spending_cli, "render_line_chart", lambda *args: drawn.append(args))
+        result = spending("trend", "--group", "alimentacao", "--account", "Cartão")
+        assert result.exit_code == 0, result.output
+        assert "Gastos por mês: Alimentação" in result.stdout
+        assert "Fixos" not in result.stdout
+        assert drawn[0][0] == "Gastos por mês: Alimentação (Cartão)"
+        assert drawn[0][2] == [("Alimentação", [200.0, 200.0, 300.0, 240.0])]
+
+    def test_an_unknown_account(self, conn: Conn, months: FakePluggy) -> None:
+        result = spending("trend", "--account", "poupanca")
+        assert isinstance(result.exception, ValidationError)
+        assert "ou o nome de uma conta: Cartão, Conta." in str(result.exception)

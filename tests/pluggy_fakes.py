@@ -113,11 +113,13 @@ def tx(
     currency: str = "BRL",
     in_account_currency: str | None = None,
     merchant_cnpj: str | None = None,
+    business_name: str | None = None,
 ) -> PluggyTransaction:
     """A line on ``day``; ``at`` is the UTC time, milliseconds included.
 
     A purchase abroad comes in ``currency``, with its value in reais in
-    ``in_account_currency`` (``amountInAccountCurrency``).
+    ``in_account_currency`` (``amountInAccountCurrency``). ``business_name`` is
+    the merchant's ``businessName``.
 
     The real formats: the bank account sends instants (``14:32:07.512``); the
     card sends ``03:00:00.000`` (midnight in Sao Paulo), ``00:00:00.001`` and
@@ -130,6 +132,9 @@ def tx(
         card |= {"paymentType": "INSTALLMENT", "installmentNumber": installment, "totalInstallments": 10}
     if post_date is not None:
         card["billPostDate"] = post_date.isoformat()
+    merchant: dict[str, Any] | None = None
+    if merchant_cnpj or business_name:
+        merchant = {"name": "Loja", "cnpj": merchant_cnpj, "businessName": business_name}
     return parse_transaction(
         {
             "id": tx_id,
@@ -146,7 +151,7 @@ def tx(
             "categoryId": category[0],
             "operationType": operation,
             "paymentData": payment_data,
-            "merchant": {"name": "Loja", "cnpj": merchant_cnpj} if merchant_cnpj else None,
+            "merchant": merchant,
             "creditCardMetadata": card or None,
             "createdAt": iso(NOW),
             "updatedAt": iso(NOW),

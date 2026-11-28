@@ -8,7 +8,9 @@ account is and how far back it goes; ``mark`` sets what a transaction is
 (issue #115), over the rules, until ``--auto`` hands it back to them.
 ``categorize`` sets a transaction's category, optionally with a rule for the
 lines like it (with a preview to confirm); ``groups`` and ``rules`` list and
-edit the category groups and the rules (issue #116).
+edit the category groups and the rules (issue #116). ``summary`` and ``trend``
+show the month by group and category and the monthly series (issue #117); the
+sums live in :mod:`bogle.spending.analysis`, here they are only laid out.
 
 The call is in each command, not in the group's callback: the callback runs
 before the subcommand reads its own arguments, so ``status --help`` would go to
@@ -27,11 +29,24 @@ from rich.markup import escape
 from rich.table import Table
 
 from bogle import format as fmt
+from bogle.charts import render_line_chart
 from bogle.cli.parsing import parse_decimal
 from bogle.cli.prompts import confirmed
 from bogle.db import DEFAULT_TIMEZONE, get_connection
 from bogle.domain.errors import ValidationError
 from bogle.spending import repository
+from bogle.spending.analysis import (
+    COMPARE_MONTHS,
+    MAX_MONTHS,
+    TREND_MONTHS,
+    MonthSummary,
+    Trend,
+    change,
+    month_label,
+    month_summary,
+    parse_month,
+    spending_trend,
+)
 from bogle.spending.categories import (
     category_groups,
     create_group,
@@ -51,6 +66,7 @@ from bogle.spending.models import (
     Category,
     CategoryGroup,
     DescriptionMatch,
+    GroupNature,
     GroupSummary,
     ItemState,
     StoredRule,
@@ -521,3 +537,208 @@ def undo_rule() -> None:
         conn.close()
     noun = "transação voltou ao que era" if undone.restored == 1 else "transações voltaram ao que eram"
     typer.echo(f"Regra {undone.rule_id} desfeita e removida; {fmt.count(undone.restored)} {noun}.")
+
+
+# ------------------------------------------------------- analises (#117)
+
+
+def _today() -> date:
+    """Today in Sao Paulo: the day the analyses count up to."""
+    return datetime.now(_LOCAL_TZ).date()
+
+
+def summary(
+    month: str | None = typer.Option(None, "--month", help="Mês AAAA-MM (padrão: o corrente).", show_default=False),
+    account: str | None = typer.Option(
+        None, "--account", help="corrente, cartao ou o nome de uma conta (padrão: todas).", show_default=False
+    ),
+    compare: int = typer.Option(COMPARE_MONTHS, "--compare", min=1, max=MAX_MONTHS, help="Meses anteriores na média."),
+) -> None:
+    chosen = parse_month(month) if month is not None else None
+    auto_sync()
+    conn = get_connection()
+    try:
+        if not repository.accounts(conn):
+            typer.echo(NO_ACCOUNTS)
+            return
+        result = month_summary(conn, today=_today(), month=chosen, account=account, compare=compare)
+    finally:
+        conn.close()
+    _render_summary(result, _CONSOLE)
+
+
+def _accounts_suffix(accounts: tuple[str, ...]) -> str:
+    return f" ({', '.join(_printable(account) for account in accounts)})" if accounts else ""
+
+
+def _change(value: Decimal, base: Decimal | None) -> str:
+    return fmt.signed_pct(change(value, base))
+
+
+def _months(compared: tuple[date, ...]) -> str:
+    return _month_count(len(compared))
+
+
+def _month_count(count: int) -> str:
+    return "1 mês" if count == 1 else f"{count} meses"
+
+
+def _tenths(value: Decimal | None) -> str:
+    """An average count, one decimal place: ``2.333`` -> ``2,3``."""
+    if value is None:
+        return fmt.DASH
+    return f"{value:.1f}".replace(".", fmt.separators().decimal)
+
+
+def _render_summary(result: MonthSummary, console: Console) -> None:
+    label = month_label(result.month)
+    until = f" até o dia {result.until.day}" if result.partial else ""
+    table = Table(title=escape(f"Gastos de {label}{until}{_accounts_suffix(result.accounts)}"), title_style="bold")
+    table.add_column("Grupo", style="cyan")
+    table.add_column("No mês", justify="right")
+    compared = bool(result.compared)
+    if compared:
+        header = f"Média até o dia {result.until.day}" if result.partial else f"Média de {_months(result.compared)}"
+        table.add_column(header, justify="right")
+        table.add_column("Variação", justify="right")
+    for entry in result.groups:
+        name = _printable(entry.group.name)
+        categories = entry.categories
+        if len(categories) == 1:
+            # Uma categoria so repetiria os valores do grupo: ela vai no nome dele.
+            only = _printable(categories[0].name)
+            if only.casefold() != name.casefold():
+                name += f" · {only}"
+            categories = ()
+        if entry.group.nature == GroupNature.FIXED:
+            name += " (fixo)"
+        cells = [f"[bold]{escape(name)}[/bold]", fmt.money(entry.value)]
+        if compared:
+            cells += [fmt.money(entry.average), _change(entry.value, entry.average)]
+        table.add_row(*cells)
+        for category in categories:
+            cells = [f"  {escape(_printable(category.name))}", fmt.money(category.value)]
+            if compared:
+                cells += [fmt.money(category.average), _change(category.value, category.average)]
+            table.add_row(*cells, style="dim")
+    table.add_section()
+    cells = ["[bold]Total[/bold]", f"[bold]{fmt.money(result.total)}[/bold]"]
+    if compared:
+        cells += [fmt.money(result.total_average), _change(result.total, result.total_average)]
+    table.add_row(*cells)
+    console.print(table)
+
+    # Estas linhas vao por typer.echo, sem markup do Rich: o nome da conta so passa pelo filtro.
+    lines: list[str] = []
+    if compared and result.shorter:
+        # Conta mais nova que a janela: a media dela vem de menos meses que o cabecalho diz.
+        lines.append(
+            "; ".join(f"{_printable(name)}: média de {_month_count(count)}" for name, count in result.shorter) + "."
+        )
+    lines.append(
+        f"O mês em uma conta: entrou {fmt.money(result.income)}; fixos {fmt.money(result.fixed)}; "
+        f"variável {fmt.money(result.variable)}; sobra {fmt.signed_money(result.leftover)}."
+    )
+    if result.pace is not None:
+        pace = result.pace
+        lines.append(
+            f"Ritmo do variável: {fmt.money(pace.value)} até o dia {result.until.day}, contra "
+            f"{fmt.money(pace.average)} na média de {_months(result.compared)} até o mesmo dia "
+            f"({_change(pace.value, pace.average)})."
+        )
+    if result.last_year is not None:
+        last = result.last_year
+        same = f"Mesmo mês de {result.month.year - 1}{until}"
+        if last.missing:
+            # So parte das contas existia: o "agora" e o dessas contas, nao o total da tabela.
+            lines.append(
+                f"{same} (sem {', '.join(_printable(name) for name in last.missing)}): {fmt.money(last.value)}, "
+                f"contra {fmt.money(last.now)} agora ({_change(last.now, last.value)})."
+            )
+        else:
+            lines.append(f"{same}: {fmt.money(last.value)} (agora {_change(last.now, last.value)}).")
+    share = result.fallback_share
+    if share is not None:
+        lines.append(f"Em {_printable(result.fallback)} (sem grupo próprio): {fmt.pct(share)} do gasto do mês.")
+    for line in lines:
+        typer.echo(line)
+
+    if result.merchants:
+        table = Table(title="Estabelecimentos mais frequentes", title_style="bold")
+        table.add_column("Estabelecimento", style="cyan")
+        table.add_column("Vezes", justify="right")
+        if compared:
+            table.add_column("Média", justify="right")
+            table.add_column("Variação", justify="right")
+        table.add_column("Valor", justify="right")
+        for merchant in result.merchants:
+            cells = [escape(_printable(merchant.name)), fmt.count(merchant.count)]
+            if compared:
+                cells += [_tenths(merchant.average), _change(Decimal(merchant.count), merchant.average)]
+            table.add_row(*cells, fmt.money(merchant.value))
+        console.print(table)
+
+
+def trend(
+    months: int = typer.Option(TREND_MONTHS, "--months", min=1, max=MAX_MONTHS, help="Quantos meses, até o corrente."),
+    group: str | None = typer.Option(None, "--group", help="Só um grupo (padrão: todos).", show_default=False),
+    account: str | None = typer.Option(
+        None, "--account", help="corrente, cartao ou o nome de uma conta (padrão: todas).", show_default=False
+    ),
+    no_chart: bool = typer.Option(False, "--no-chart", help="Só a tabela, sem o gráfico de linha."),
+) -> None:
+    auto_sync()
+    conn = get_connection()
+    try:
+        if not repository.accounts(conn):
+            typer.echo(NO_ACCOUNTS)
+            return
+        result = spending_trend(conn, today=_today(), months=months, group=group, account=account)
+    finally:
+        conn.close()
+    if not result.points:
+        typer.echo("Nenhum mês com dados no período.")
+        return
+    _render_trend(result, _CONSOLE)
+    if not no_chart and len(result.points) > 1:
+        _render_trend_chart(result)
+
+
+def _trend_title(result: Trend) -> str:
+    title = "Gastos por mês"
+    if result.group is not None:
+        title += f": {_printable(result.group.name)}"
+    return title + _accounts_suffix(result.accounts)
+
+
+def _render_trend(result: Trend, console: Console) -> None:
+    table = Table(title=escape(_trend_title(result)), title_style="bold")
+    table.add_column("Mês", style="cyan", no_wrap=True)
+    split = result.group is None
+    if split:
+        table.add_column("Fixos", justify="right")
+        table.add_column("Variável", justify="right")
+        table.add_column("Total", justify="right")
+    else:
+        table.add_column("Gasto", justify="right")
+    last = len(result.points) - 1
+    for index, point in enumerate(result.points):
+        notes: list[str] = []
+        if index == last and result.partial:
+            notes.append(f"até o dia {result.today.day}")
+        if point.missing:
+            # A conta ainda nao tinha historico: o mes soma so as outras.
+            notes.append(f"sem {', '.join(_printable(name) for name in point.missing)}")
+        label = month_label(point.month) + (f" ({'; '.join(notes)})" if notes else "")
+        label = escape(label)
+        if split:
+            table.add_row(label, fmt.money(point.fixed), fmt.money(point.variable), fmt.money(point.total))
+        else:
+            table.add_row(label, fmt.money(point.total))
+    console.print(table)
+
+
+def _render_trend_chart(result: Trend) -> None:
+    labels = [month_label(point.month) for point in result.points]
+    name = _printable(result.group.name) if result.group is not None else "Total"
+    render_line_chart(_trend_title(result), labels, [(name, [float(point.total) for point in result.points])])
