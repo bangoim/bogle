@@ -328,6 +328,9 @@ class TestGuards:
             holder.execute("SELECT pg_advisory_lock(%s)", (repository.SYNC_LOCK,))
             with pytest.raises(SyncInProgressError):
                 sync(conn, pluggy)
+            # Solta explicitamente: fechar a conexao libera o lock so quando o
+            # backend termina, de forma assincrona, e o sync abaixo pode chegar antes
+            holder.execute("SELECT pg_advisory_unlock(%s)", (repository.SYNC_LOCK,))
         finally:
             holder.close()
         assert pluggy.calls == []
