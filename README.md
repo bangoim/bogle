@@ -89,20 +89,35 @@ sources (yfinance, Banco Central, Tesouro Transparente) need no token.
 
 Only for `bogle spending` (see [Spending (Meu Pluggy)](#spending-meu-pluggy)):
 `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` and `PLUGGY_ITEM_IDS` (the item ids
-of your connections, comma-separated, up to 5). Keep them in 1Password and run
-through `op run`, with a file of references instead of values:
+of your connections, comma-separated, up to 5). Put them in `.env`, like the
+brapi token, and lock the file:
+
+```bash
+cat >> .env <<'ENV'
+PLUGGY_CLIENT_ID=...
+PLUGGY_CLIENT_SECRET=...
+PLUGGY_ITEM_IDS=...
+ENV
+chmod 600 .env
+```
+
+On a headless server, a 1Password service account keeps them out of the disk
+without an approval prompt per command. The service account reads only the
+vaults it was granted, and never the built-in personal vault, so keep the item
+in a dedicated vault (here `bogle`). Export `OP_SERVICE_ACCOUNT_TOKEN` on the
+server and run through `op run`, with a file of references instead of values:
 
 ```bash
 cat > ~/.config/bogle/pluggy.env <<'ENV'
-PLUGGY_CLIENT_ID=op://Private/Pluggy/username
-PLUGGY_CLIENT_SECRET=op://Private/Pluggy/credential
-PLUGGY_ITEM_IDS=op://Private/Pluggy/item_ids
+PLUGGY_CLIENT_ID=op://bogle/Pluggy/username
+PLUGGY_CLIENT_SECRET=op://bogle/Pluggy/credential
+PLUGGY_ITEM_IDS=op://bogle/Pluggy/item_ids
 ENV
 op run --env-file ~/.config/bogle/pluggy.env -- bogle spending sync
 ```
 
-They can also go in `.env`, like the brapi token. Everything else in `bogle`
-works without them.
+A variable already in the environment wins over `.env`. Everything else in
+`bogle` works without them.
 
 ## Usage
 
@@ -740,8 +755,8 @@ Or with cron (`crontab -e`):
 `bogle check` does not apply the glide path of 01/01: its notice would reach
 nobody, so the next command you run applies it and says so.
 
-With the `PLUGGY_*` variables (add them to `EnvironmentVariables`, or wrap the
-command in `op run`), `bogle check` also runs the spending sync when the last one
+With the `PLUGGY_*` variables (in `.env`, in `EnvironmentVariables`, or with the
+command wrapped in `op run`), `bogle check` also runs the spending sync when the last one
 is older than 24 h, and checks each Meu Pluggy connection: a consent that
 expires in less than 30 days (or expired), a connection in error, and one that
 has not updated for 48 h. Without the variables it still reads the consent and
