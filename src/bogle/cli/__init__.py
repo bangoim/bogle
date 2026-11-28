@@ -116,6 +116,36 @@ spending_app.command("status", help="Último sync, última transação e cobertu
 spending_app.command(
     "mark", help="Marcar o que uma transação é (gasto, transferência própria, ignorada...), acima das regras."
 )(spending_cli.mark)
+spending_app.command(
+    "categorize", help="Trocar a categoria de uma transação, acima da regra e da Pluggy (--rule cria uma regra)."
+)(spending_cli.categorize)
+
+groups_app = typer.Typer(
+    help="Grupos de categorias: sem subcomando, lista os grupos e as categorias sem grupo.",
+    invoke_without_command=True,
+)
+groups_app.callback()(spending_cli.groups)
+groups_app.command("create", help="Criar um grupo (natureza: fixo ou variavel).")(spending_cli.create_group_)
+groups_app.command("rename", help="Renomear um grupo.")(spending_cli.rename_group_)
+groups_app.command("nature", help="Mudar a natureza de um grupo (fixo ou variavel).")(spending_cli.group_nature)
+groups_app.command("map", help="Pôr uma categoria (e as filhas dela) num grupo.")(spending_cli.map_category_)
+groups_app.command("remove", help="Remover um grupo; --to diz para onde vão as categorias dele.")(
+    spending_cli.remove_group_
+)
+spending_app.add_typer(groups_app, name="groups")
+
+rules_app = typer.Typer(
+    help="Regras de categoria: sem subcomando, lista as regras (a mais nova vence).",
+    invoke_without_command=True,
+)
+rules_app.callback()(spending_cli.rules)
+rules_app.command("remove", help="Remover uma regra; as transações dela voltam a outra regra ou à Pluggy.")(
+    spending_cli.remove_rule_
+)
+rules_app.command("undo", help="Desfazer a última regra criada: as transações voltam ao que eram.")(
+    spending_cli.undo_rule
+)
+spending_app.add_typer(rules_app, name="rules")
 app.add_typer(spending_app, name="spending")
 
 

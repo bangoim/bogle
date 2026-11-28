@@ -1,4 +1,5 @@
-"""Tests for ``bogle spending`` (issue #114): sync, status and the automatic sync before them.
+"""Tests for ``bogle spending`` (issue #114): sync, status and the automatic sync before them;
+``mark`` (#115); ``categorize``, ``groups`` and ``rules`` (#116).
 
 Pluggy is always the fake of :mod:`tests.pluggy_fakes`, injected by swapping the
 entry points the CLI module calls; the end-to-end runs go through the real
@@ -21,11 +22,12 @@ from typer.testing import CliRunner, Result
 from bogle import cli as cli_mod
 from bogle.cli import app
 from bogle.cli import spending as spending_cli
+from bogle.data.pluggy import parse_category
 from bogle.domain.errors import NetworkError, ValidationError
 from bogle.settings import SPENDING_LAST_SYNC_AT, set_value
 from bogle.spending.models import AutoSync, TransactionKind
 from bogle.spending.sync import sync_if_due, sync_now
-from tests.pluggy_fakes import ENV, ITEM, FakePluggy, account, item, no_client, tx
+from tests.pluggy_fakes import ENV, ITEM, FakePluggy, account, category_tree, item, no_client, tx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BOGLE_BIN = PROJECT_ROOT / ".venv" / "bin" / "bogle"
@@ -57,8 +59,8 @@ def pluggy(monkeypatch: pytest.MonkeyPatch) -> FakePluggy:
     return fake
 
 
-def spending(*args: str) -> Result:
-    return CliRunner().invoke(app, ["spending", *args])
+def spending(*args: str, input: str | None = None) -> Result:
+    return CliRunner().invoke(app, ["spending", *args], input=input)
 
 
 class TestSync:
@@ -223,6 +225,215 @@ class TestMark:
         shown = spending_cli._marked(entry)  # pyright: ignore[reportPrivateUsage]
         assert shown.isprintable()
         assert "(Conta, 2026-01-10, Compra[2JTransação 8 (Conta): falsa, " in shown
+
+
+IFOOD = "14.380.200/0001-21"
+
+
+@pytest.fixture
+def tree(pluggy: FakePluggy) -> FakePluggy:
+    """The CLI's fake with Pluggy's whole category tree and two lines of one merchant."""
+    pluggy.categories = category_tree()
+    pluggy.set_transactions(
+        "acc-card",
+        *pluggy.transactions["acc-card"],
+        tx(
+            "if1",
+            "acc-card",
+            date(2026, 10, 5),
+            "45.90",
+            description="IFOOD *Restaurante",
+            category=("11020000", "Food delivery"),
+            merchant_cnpj=IFOOD,
+        ),
+        tx(
+            "if2",
+            "acc-card",
+            date(2026, 10, 12),
+            "80",
+            description="IFOOD *Mercado",
+            category=("11020000", "Food delivery"),
+            merchant_cnpj=IFOOD,
+        ),
+    )
+    spending("sync")
+    return pluggy
+
+
+def line_id(conn: Conn, pluggy_id: str) -> int:
+    row = conn.execute("SELECT id FROM spending.transactions WHERE pluggy_id = %s", (pluggy_id,)).fetchone()
+    assert row is not None
+    return row["id"]
+
+
+def rule_ids(conn: Conn) -> list[int]:
+    return [row["id"] for row in conn.execute("SELECT id FROM spending.category_rules ORDER BY id").fetchall()]
+
+
+def rule_count(conn: Conn) -> int:
+    row = conn.execute("SELECT count(*) AS n FROM spending.category_rules").fetchone()
+    assert row is not None
+    return row["n"]
+
+
+class TestCategorize:
+    """``bogle spending categorize`` (issue #116): the user's category, over the rule and Pluggy."""
+
+    def test_sets_the_category_and_says_what_it_was(self, conn: Conn, tree: FakePluggy) -> None:
+        line = line_id(conn, "if1")
+        result = spending("categorize", str(line), "restaurantes, bares e lanchonetes")
+        assert result.exit_code == 0, result.output
+        assert result.stdout == (
+            f"Transação {line} (Cartão, 2026-10-05, IFOOD *Restaurante, +45,90): "
+            "Restaurantes, bares e lanchonetes (Alimentação), à mão; sem ela: Delivery de alimentos, da Pluggy\n"
+        )
+
+    def test_auto_hands_it_back(self, conn: Conn, tree: FakePluggy) -> None:
+        line = line_id(conn, "if1")
+        spending("categorize", str(line), "Lazer")
+        result = spending("categorize", str(line), "--auto")
+        assert result.exit_code == 0, result.output
+        assert result.stdout.endswith(": Delivery de alimentos, da Pluggy (Alimentação)\n")
+
+    def test_an_unknown_category(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending("categorize", str(line_id(conn, "if1")), "Restaurante")
+        assert isinstance(result.exception, ValidationError)
+        assert str(result.exception).startswith("Categoria 'Restaurante' não encontrada.")
+
+    @pytest.mark.parametrize("args", [(), ("Lazer", "--auto"), ("--auto", "--rule")])
+    def test_needs_exactly_one_of_a_category_or_auto(
+        self, conn: Conn, pluggy: FakePluggy, args: tuple[str, ...]
+    ) -> None:
+        result = spending("categorize", "1", *args)
+        assert result.exit_code == 2
+        assert result.stderr
+        assert pluggy.calls == []
+
+    def test_rule_options_need_rule(self, conn: Conn, pluggy: FakePluggy) -> None:
+        result = spending("categorize", "1", "Lazer", "--text", "ifood")
+        assert result.exit_code == 2
+        assert "só valem com --rule" in result.stderr
+
+    def test_a_rule_shows_its_preview_and_is_created_on_yes(self, conn: Conn, tree: FakePluggy) -> None:
+        line = line_id(conn, "if1")
+        result = spending("categorize", str(line), "11010000", "--rule", input="s\n")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        assert "Regra: documento 14.380.200/0001-21 -> Restaurantes, bares e lanchonetes\n" in out
+        assert "Muda 2 transações já gravadas.\n" in out
+        assert "Criar a regra? [s/N]" in out
+        assert f"Regra {rule_ids(conn)[0]} criada; 2 transações mudaram.\n" in out
+        rows = conn.execute(
+            "SELECT pluggy_id, effective_category_id, manual_category_id FROM spending.transactions "
+            "WHERE pluggy_id IN ('if1', 'if2') ORDER BY pluggy_id"
+        ).fetchall()
+        assert [tuple(row.values()) for row in rows] == [("if1", "11010000", "11010000"), ("if2", "11010000", None)]
+
+    def test_without_confirmation_nothing_changes(self, conn: Conn, tree: FakePluggy) -> None:
+        line = line_id(conn, "if1")
+        result = spending("categorize", str(line), "11010000", "--rule", "--text", "mercado", input="n\n")
+        assert result.exit_code == 1
+        assert 'descrição contém "mercado"' in result.stdout
+        assert "Muda 1 transação já gravada." in result.stdout
+        assert "nada foi alterado." in result.stderr
+        assert rule_count(conn) == 0
+        row = conn.execute("SELECT manual_category_id FROM spending.transactions WHERE id = %s", (line,)).fetchone()
+        assert row == {"manual_category_id": None}
+
+    def test_yes_skips_the_question(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending(
+            "categorize", str(line_id(conn, "if2")), "Supermercado", "--rule", "--text", "mercado", "--max", "100", "-y"
+        )
+        assert result.exit_code == 0, result.output
+        assert "Criar a regra?" not in result.stdout
+        assert f"Regra {rule_ids(conn)[0]} criada; 1 transação mudou." in result.stdout
+
+    def test_a_negative_bound_is_refused(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending("categorize", str(line_id(conn, "if2")), "Supermercado", "--rule", "--min", "-5", "-y")
+        assert isinstance(result.exception, ValidationError)
+        assert rule_count(conn) == 0
+
+
+class TestGroupsCommand:
+    def test_lists_the_groups_and_warns_of_the_unmapped(self, conn: Conn, tree: FakePluggy) -> None:
+        tree.categories.append(
+            parse_category({"id": "30000000", "description": "Brand new", "descriptionTranslated": "Novidade"})
+        )
+        spending("sync")
+        result = spending("groups")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        for text in ("Grupos", "Natureza", "Moradia", "fixo", "Outros (reserva)", "Supermercado, Alimentos e bebidas"):
+            assert text in out
+        assert "1. 1 categoria sem grupo (mapeie com 'bogle spending groups map" in out
+        assert "Novidade (30000000)" in out
+
+    def test_all_lists_every_category(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending("groups", "--all")
+        assert result.exit_code == 0, result.output
+        assert "200300000" in result.stdout
+        assert "Atenção" not in result.stdout
+
+    def test_create_needs_a_nature(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending("groups", "create", "Pets")
+        assert result.exit_code == 2
+        assert "Missing argument" in result.stderr
+        result = spending("groups", "create", "Pets", "mensal")
+        assert isinstance(result.exception, ValidationError)
+        result = spending("groups", "create", "Pets", "Variável")
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Grupo Pets criado (variavel).\n"
+
+    def test_rename_nature_and_map(self, conn: Conn, tree: FakePluggy) -> None:
+        assert spending("groups", "rename", "outros", "Diversos").stdout == "Grupo Outros agora se chama Diversos.\n"
+        assert spending("groups", "nature", "lazer", "fixo").stdout == "Grupo Lazer: fixo.\n"
+        result = spending("groups", "map", "Pharmacy", "Compras")
+        assert result.stdout == "Categoria Farmácia (18020000) no grupo Compras.\n"
+
+    def test_remove_needs_a_destination(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending("groups", "remove", "Lazer")
+        assert result.exit_code == 2
+        assert "--to" in result.stderr
+        result = spending("groups", "remove", "Lazer", "--to", "Outros")
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Grupo Lazer removido; 5 categorias foram para Outros.\n"
+
+    def test_the_reserve_group_stays(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending("groups", "remove", "Outros", "--to", "Lazer")
+        assert isinstance(result.exception, ValidationError)
+
+    def test_help_does_not_sync(self, conn: Conn, monkeypatch: pytest.MonkeyPatch) -> None:
+        def never() -> AutoSync:
+            raise AssertionError("o --help nao sincroniza")
+
+        monkeypatch.setattr(spending_cli, "sync_if_due", never)
+        for args in (("groups", "--help"), ("groups", "create", "--help"), ("rules", "undo", "--help")):
+            result = spending(*args)
+            assert result.exit_code == 0, result.output
+
+
+class TestRulesCommand:
+    def test_nothing_yet(self, conn: Conn, tree: FakePluggy) -> None:
+        result = spending("rules")
+        assert result.stdout == f"{spending_cli.NO_RULES}\n"
+
+    def test_lists_removes_and_undoes(self, conn: Conn, tree: FakePluggy) -> None:
+        line = line_id(conn, "if1")
+        spending("categorize", str(line), "11010000", "--rule", "-y")
+        spending("categorize", str(line_id(conn, "if2")), "Supermercado", "--rule", "--text", "mercado", "-y")
+        first, second = rule_ids(conn)
+        assert [rule.id for rule in spending_cli.list_rules(conn)] == [second, first]
+        listed = spending("rules")
+        assert listed.exit_code == 0, listed.output
+        for text in ("Regras (a mais nova vence)", "Condições", "Transações", "Supermercado", "mercado"):
+            assert text in listed.stdout
+        undone = spending("rules", "undo")
+        assert undone.stdout == f"Regra {second} desfeita e removida; 1 transação voltou ao que era.\n"
+        removed = spending("rules", "remove", str(first))
+        assert removed.stdout == f"Regra {first} removida; 2 transações voltam a outra regra ou à Pluggy.\n"
+        assert rule_count(conn) == 0
+        nothing = spending("rules", "undo")
+        assert isinstance(nothing.exception, ValidationError)
 
 
 class TestPortfolioNoticesStayOut:

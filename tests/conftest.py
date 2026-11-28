@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
@@ -66,6 +68,16 @@ for _name in CONFIG_VARS:
     os.environ[_name] = ""
 
 
+# Os grupos de categoria padrao (#116) sao gravados pela migracao 012: cada teste
+# volta a eles, lidos do proprio arquivo, e nao do banco (que um teste anterior
+# pode ter alterado).
+_CATEGORY_DEFAULTS = re.findall(
+    r"INSERT INTO spending\.category_group[^;]*;",
+    (Path(__file__).resolve().parent.parent / "src/bogle/migrations/012_category_groups.sql").read_text(),
+)
+assert len(_CATEGORY_DEFAULTS) == 2, "a 012 grava os grupos e o mapeamento padrao"
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_db() -> None:
     if XDIST_WORKER:
@@ -90,9 +102,13 @@ def conn() -> Iterator[psycopg.Connection[DictRow]]:
     with c.cursor() as cur:
         cur.execute("TRUNCATE transactions, glide_path_points, assets, user_settings, price_history CASCADE")
         cur.execute(
-            "TRUNCATE spending.duplicate_suggestions, spending.transactions, spending.bills, spending.accounts, "
+            "TRUNCATE spending.rule_application_changes, spending.rule_applications, spending.category_rules, "
+            "spending.duplicate_suggestions, spending.transactions, spending.bills, spending.accounts, "
             "spending.items, spending.categories CASCADE"
         )
+        cur.execute("TRUNCATE spending.category_group_map, spending.category_groups RESTART IDENTITY CASCADE")
+        for statement in _CATEGORY_DEFAULTS:
+            cur.execute(statement)
     c.commit()
     yield c
     c.close()
