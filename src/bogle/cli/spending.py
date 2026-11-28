@@ -11,6 +11,10 @@ lines like it (with a preview to confirm); ``groups`` and ``rules`` list and
 edit the category groups and the rules (issue #116). ``summary`` and ``trend``
 show the month by group and category and the monthly series (issue #117); the
 sums live in :mod:`bogle.spending.analysis`, here they are only laid out.
+``bills`` lists each card's bills with their reconciliation, the open one and
+the installments still to post, bill by bill, against the average income, or
+one bill by group and category; ``installments`` lists the purchases in
+installments still running (issue #118, :mod:`bogle.spending.bills`).
 
 The call is in each command, not in the group's callback: the callback runs
 before the subcommand reads its own arguments, so ``status --help`` would go to
@@ -47,6 +51,18 @@ from bogle.spending.analysis import (
     parse_month,
     spending_trend,
 )
+from bogle.spending.bills import (
+    INCOME_MONTHS,
+    BillDetail,
+    BillsOverview,
+    BillState,
+    InstallmentPlan,
+    base_description,
+    bill_detail,
+    bills_overview,
+    parse_bill_ref,
+)
+from bogle.spending.bills import installments as running_installments
 from bogle.spending.categories import (
     category_groups,
     create_group,
@@ -742,3 +758,244 @@ def _render_trend_chart(result: Trend) -> None:
     labels = [month_label(point.month) for point in result.points]
     name = _printable(result.group.name) if result.group is not None else "Total"
     render_line_chart(_trend_title(result), labels, [(name, [float(point.total) for point in result.points])])
+
+
+# ------------------------------------------------- faturas e parcelas (#118)
+
+CARD_HELP = "cartao ou o nome de um cartão (padrão: todos)."
+
+
+def bills(
+    bill: str | None = typer.Argument(
+        None, help="Uma fatura: mês de vencimento AAAA-MM ou o id (padrão: todas).", show_default=False
+    ),
+    account: str | None = typer.Option(None, "--account", help=CARD_HELP, show_default=False),
+) -> None:
+    ref = parse_bill_ref(bill) if bill is not None else None
+    auto_sync()
+    conn = get_connection()
+    try:
+        if not repository.accounts(conn):
+            typer.echo(NO_ACCOUNTS)
+            return
+        if ref is not None:
+            detail = bill_detail(conn, ref, today=_today(), account=account)
+            overview = None
+        else:
+            detail = None
+            overview = bills_overview(conn, today=_today(), account=account)
+    finally:
+        conn.close()
+    if detail is not None:
+        _render_bill(detail, _CONSOLE)
+    elif overview is not None:
+        _render_bills(overview, _CONSOLE)
+
+
+def _purchases(count: int) -> str:
+    return "1 compra" if count == 1 else f"{fmt.count(count)} compras"
+
+
+def _in_days(closing: date, today: date) -> str:
+    days = (closing - today).days
+    return "amanhã" if days == 1 else f"em {days} dias"
+
+
+def _render_bills(overview: BillsOverview, console: Console) -> None:
+    warnings: list[str] = []
+    for card in overview.cards:
+        name = _printable(card.card)
+        if card.closed:
+            table = Table(title=escape(f"Faturas de {name}"), title_style="bold")
+            # O fechamento fica no detalhe: com ele a tabela nao cabe em 80 colunas.
+            table.add_column("Id", justify="right", no_wrap=True)
+            table.add_column("Vencimento", style="cyan", no_wrap=True)
+            for header in ("Total", "Transações", "Diferença", "Pago"):
+                table.add_column(header, justify="right", no_wrap=True)
+            table.add_column("Estado")
+            for bill in card.closed:
+                check = bill.reconciliation
+                assert check is not None  # toda fatura fechada tem a conciliacao
+                table.add_row(
+                    str(bill.id),
+                    _day(bill.due),
+                    fmt.money(bill.total),
+                    fmt.money(check.lines),
+                    fmt.signed_money(check.difference),
+                    fmt.money(bill.paid),
+                    bill.state.value,
+                )
+                if check.unexplained:
+                    warnings.append(
+                        f"Fatura {month_label(bill.month)} de {name}: diferença não identificada de "
+                        f"{fmt.signed_money(check.unexplained)}; detalhe em 'bogle spending bills {bill.id}'"
+                    )
+            console.print(table)
+        else:
+            typer.echo(f"{name}: nenhuma fatura fechada na Pluggy.")
+        opened = card.open
+        if opened is None:
+            warnings.append(f"{name}: nenhuma data de fechamento conhecida, sem fatura aberta nem projeção")
+            continue
+        estimated = " (datas estimadas)" if opened.estimated else ""
+        assert opened.closing is not None  # a fatura aberta sempre tem o ciclo
+        typer.echo(
+            f"Fatura aberta de {name}: {fmt.money(opened.total)} em {_purchases(opened.purchases)}; "
+            f"fecha {_in_days(opened.closing, overview.today)} ({_day(opened.closing)}), "
+            f"vence em {_day(opened.due)}{estimated}."
+        )
+    _render_committed(overview, console)
+    if warnings:
+        console.print(fmt.attention(warnings))
+
+
+def _render_committed(overview: BillsOverview, console: Console) -> None:
+    if not overview.committed:
+        typer.echo("Nenhuma parcela a lançar.")
+        return
+    split = len(overview.cards) > 1
+    opened = {card.open.month for card in overview.cards if card.open is not None}
+    table = Table(title="Parcelas a lançar por fatura", title_style="bold")
+    table.add_column("Fatura", style="cyan", no_wrap=True)
+    if split:
+        for card in overview.cards:
+            table.add_column(escape(_printable(card.card)), justify="right")
+    table.add_column("Total" if split else "Parcelas", justify="right", no_wrap=True)
+    table.add_column("Da receita média", justify="right", no_wrap=True)
+    for entry in overview.committed:
+        label = month_label(entry.month) + (" (aberta)" if entry.month in opened else "")
+        cells = [label]
+        if split:
+            cells += [fmt.money(amount) for amount in entry.amounts]
+        cells += [fmt.money(entry.total), fmt.pct(overview.share(entry))]
+        table.add_row(*cells)
+    console.print(table)
+    if overview.income is not None:
+        typer.echo(f"Receita média dos {INCOME_MONTHS} meses anteriores: {fmt.money(overview.income)}.")
+    else:
+        typer.echo(f"Nenhuma receita nos {INCOME_MONTHS} meses anteriores.")
+
+
+def _render_bill(detail: BillDetail, console: Console) -> None:
+    bill = detail.bill
+    head = f"Fatura de {_printable(bill.card)} com vencimento em {_day(bill.due)}: {bill.state.value}"
+    if bill.closing is not None:
+        if bill.state == BillState.OPEN:
+            head += f"; fecha {_in_days(bill.closing, detail.today)} ({_day(bill.closing)})"
+        elif bill.state == BillState.FORECAST:
+            head += f"; fecha em {_day(bill.closing)}"
+        else:
+            head += f"; fechou em {_day(bill.closing)}"
+    if bill.state != BillState.FORECAST:
+        head += f"; {_purchases(bill.purchases)}"
+    typer.echo(head + (" (datas estimadas)." if bill.estimated else "."))
+
+    if detail.groups:
+        title = "Parcelas por grupo" if bill.state == BillState.FORECAST else "Gastos por grupo"
+        table = Table(title=title, title_style="bold")
+        table.add_column("Grupo", style="cyan")
+        table.add_column("Valor", justify="right", no_wrap=True)
+        for entry in detail.groups:
+            name = _printable(entry.group.name)
+            categories = entry.categories
+            if len(categories) == 1:
+                # Uma categoria so repetiria o valor do grupo: ela vai no nome dele.
+                only = _printable(categories[0].name)
+                if only.casefold() != name.casefold():
+                    name += f" · {only}"
+                categories = ()
+            table.add_row(f"[bold]{escape(name)}[/bold]", fmt.money(entry.value))
+            for category in categories:
+                table.add_row(f"  {escape(_printable(category.name))}", fmt.money(category.value), style="dim")
+        table.add_section()
+        table.add_row(
+            "[bold]Total[/bold]", f"[bold]{fmt.money(sum((g.value for g in detail.groups), Decimal(0)))}[/bold]"
+        )
+        console.print(table)
+    else:
+        typer.echo("Nenhum gasto nesta fatura.")
+
+    if detail.installments:
+        table = Table(title="Parcelas", title_style="bold")
+        table.add_column("Data", no_wrap=True)
+        table.add_column("Compra", style="cyan")
+        table.add_column("Parcela", justify="right", no_wrap=True)
+        table.add_column("Valor", justify="right", no_wrap=True)
+        for line in sorted(detail.installments, key=lambda line: (line.local_date, line.id)):
+            table.add_row(
+                _day(line.local_date),
+                escape(_printable(base_description(line.description))),
+                f"{line.installment_number}/{line.total_installments}",
+                fmt.money(line.amount),
+            )
+        console.print(table)
+
+    check = bill.reconciliation
+    if check is not None:
+        table = Table(title="Conciliação", title_style="bold")
+        table.add_column("", style="cyan")
+        table.add_column("Valor", justify="right", no_wrap=True)
+        table.add_row("Total da Pluggy", fmt.money(check.total))
+        table.add_row(f"Transações ({fmt.count(check.count)})", fmt.money(check.lines))
+        table.add_row("[bold]Diferença[/bold]", f"[bold]{fmt.signed_money(check.difference)}[/bold]")
+        if check.difference or check.explained:
+            for charge in check.explained:
+                table.add_row(f"  {escape(_printable(charge.name))}", fmt.signed_money(charge.amount), style="dim")
+            if check.unexplained:
+                table.add_row("  não identificado", fmt.signed_money(check.unexplained))
+        paid_on = f" em {_day(bill.paid_on)}" if bill.paid_on is not None else ""
+        table.add_section()
+        table.add_row(f"Pago{paid_on}", fmt.money(bill.paid))
+        console.print(table)
+
+
+def installments(
+    account: str | None = typer.Option(None, "--account", help=CARD_HELP, show_default=False),
+) -> None:
+    auto_sync()
+    conn = get_connection()
+    try:
+        if not repository.accounts(conn):
+            typer.echo(NO_ACCOUNTS)
+            return
+        plans = running_installments(conn, today=_today(), account=account)
+    finally:
+        conn.close()
+    if not plans:
+        typer.echo("Nenhuma compra parcelada em andamento.")
+        return
+    _render_installments(plans, _CONSOLE)
+
+
+def _render_installments(plans: tuple[InstallmentPlan, ...], console: Console) -> None:
+    split = len({plan.account_id for plan in plans}) > 1
+    table = Table(title="Parcelas em andamento", title_style="bold")
+    table.add_column("Compra", style="cyan")
+    if split:
+        table.add_column("Cartão")
+    table.add_column("Data da compra", no_wrap=True)
+    table.add_column("Parcela", justify="right", no_wrap=True)
+    table.add_column("Valor", justify="right", no_wrap=True)
+    table.add_column("Falta", justify="right", no_wrap=True)
+    table.add_column("Termina", no_wrap=True)
+    for plan in plans:
+        cells = [escape(_printable(plan.description))]
+        if split:
+            cells.append(escape(_printable(plan.card)))
+        cells += [
+            _day(plan.purchase_date),
+            plan.label,
+            fmt.money(plan.value),
+            fmt.money(plan.remaining),
+            month_label(plan.last_month),
+        ]
+        table.add_row(*cells)
+    table.add_section()
+    cells = ["[bold]Total[/bold]"] + ([""] if split else []) + ["", ""]
+    cells += [
+        fmt.money(sum((plan.value for plan in plans), Decimal(0))),
+        f"[bold]{fmt.money(sum((plan.remaining for plan in plans), Decimal(0)))}[/bold]",
+        "",
+    ]
+    table.add_row(*cells)
+    console.print(table)

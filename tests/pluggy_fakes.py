@@ -74,7 +74,10 @@ def account(
     number: str | None = "9999",
     name: str = "Cartão",
     tax_number: str | None = "000.000.000-00",
+    close_date: date | None = None,
+    due_date: date | None = None,
 ) -> PluggyAccount:
+    """An account; a card's ``close_date`` and ``due_date`` are ``balanceCloseDate`` and ``balanceDueDate``."""
     body: dict[str, Any] = {
         "id": account_id,
         "itemId": item_id,
@@ -88,6 +91,10 @@ def account(
     }
     if kind == "CREDIT":
         body["creditData"] = {"brand": "MASTERCARD", "level": "GOLD", "creditLimit": 5000}
+        if close_date is not None:
+            body["creditData"]["balanceCloseDate"] = close_date.isoformat()
+        if due_date is not None:
+            body["creditData"]["balanceDueDate"] = due_date.isoformat()
     else:
         body["bankData"] = {"transferNumber": f"0001/{number}"}
     return parse_account(body)
@@ -114,12 +121,17 @@ def tx(
     in_account_currency: str | None = None,
     merchant_cnpj: str | None = None,
     business_name: str | None = None,
+    installments: int = 10,
+    purchase_date: date | None = None,
+    purchase_total: str | None = None,
 ) -> PluggyTransaction:
     """A line on ``day``; ``at`` is the UTC time, milliseconds included.
 
     A purchase abroad comes in ``currency``, with its value in reais in
     ``in_account_currency`` (``amountInAccountCurrency``). ``business_name`` is
-    the merchant's ``businessName``.
+    the merchant's ``businessName``. An ``installment`` is the number of one of
+    ``installments``; ``purchase_date`` and ``purchase_total`` are the card's
+    ``purchaseDate`` and ``totalAmount`` (the whole purchase).
 
     The real formats: the bank account sends instants (``14:32:07.512``); the
     card sends ``03:00:00.000`` (midnight in Sao Paulo), ``00:00:00.001`` and
@@ -129,7 +141,11 @@ def tx(
     if bill_id is not None:
         card["billId"] = bill_id
     if installment is not None:
-        card |= {"paymentType": "INSTALLMENT", "installmentNumber": installment, "totalInstallments": 10}
+        card |= {"paymentType": "INSTALLMENT", "installmentNumber": installment, "totalInstallments": installments}
+    if purchase_date is not None:
+        card["purchaseDate"] = f"{purchase_date.isoformat()}T03:00:00.000Z"
+    if purchase_total is not None:
+        card["totalAmount"] = float(Decimal(purchase_total))
     if post_date is not None:
         card["billPostDate"] = post_date.isoformat()
     merchant: dict[str, Any] | None = None
@@ -159,15 +175,28 @@ def tx(
     )
 
 
-def bill(bill_id: str, due: date, total: str = "100", *, payments: Sequence[tuple[date, str]] = ()) -> PluggyBill:
-    """A bill; ``payments`` are ``(day, amount)``, shaped like Nubank's (``DEBIT_ACCOUNT``)."""
+def bill(
+    bill_id: str,
+    due: date,
+    total: str = "100",
+    *,
+    payments: Sequence[tuple[date, str]] = (),
+    closing: date | None = None,
+    charges: Sequence[tuple[str, str]] = (),
+) -> PluggyBill:
+    """A bill; ``payments`` are ``(day, amount)``, shaped like Nubank's (``DEBIT_ACCOUNT``);
+    ``closing`` is ``billClosingDate``; ``charges`` are ``financeCharges``, ``(type, amount)``."""
     return parse_bill(
         {
             "id": bill_id,
             "dueDate": f"{due.isoformat()}T00:00:00.000Z",
+            "billClosingDate": f"{closing.isoformat()}T00:00:00.000Z" if closing is not None else None,
             "totalAmount": float(Decimal(total)),
             "totalAmountCurrencyCode": "BRL",
-            "financeCharges": [],
+            "financeCharges": [
+                {"id": f"{bill_id}-fee-{n}", "type": kind, "amount": float(Decimal(amount)), "currencyCode": "BRL"}
+                for n, (kind, amount) in enumerate(charges)
+            ],
             "payments": [
                 {
                     "id": f"{bill_id}-pay-{n}",

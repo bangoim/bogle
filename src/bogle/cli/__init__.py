@@ -123,6 +123,12 @@ spending_app.command("summary", help="Gastos do mês por grupo e categoria, cont
     spending_cli.summary
 )
 spending_app.command("trend", help="Gasto mês a mês, total ou de um grupo, em tabela e gráfico.")(spending_cli.trend)
+spending_app.command(
+    "bills", help="Faturas do cartão: fechadas com conciliação, a aberta e as parcelas a lançar; ou uma fatura."
+)(spending_cli.bills)
+spending_app.command("installments", help="Compras parceladas em andamento: parcela atual, valor e quanto falta.")(
+    spending_cli.installments
+)
 
 groups_app = typer.Typer(
     help="Grupos de categorias: sem subcomando, lista os grupos e as categorias sem grupo.",
