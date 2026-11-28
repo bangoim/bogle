@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,16 @@ from typer.testing import CliRunner, Result
 from bogle.alerts import CheckResult, listing, notification_text, stale_prices_alert
 from bogle.cli import app
 from bogle.reports.overview import PortfolioOverview
-from bogle.settings import BIRTH_YEAR, GLIDE_PATH_APPLIED_YEAR, LAST_REBALANCE_DATE, get_setting, set_value
+from bogle.settings import (
+    BIRTH_YEAR,
+    GLIDE_PATH_APPLIED_YEAR,
+    LAST_REBALANCE_DATE,
+    SPENDING_LAST_SYNC_AT,
+    get_setting,
+    set_value,
+)
+from bogle.spending.health import SpendingCheck, check_spending
+from tests.pluggy_fakes import ENV, FakePluggy, account, item, tx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BOGLE_BIN = PROJECT_ROOT / ".venv" / "bin" / "bogle"
@@ -270,6 +279,90 @@ def run_cli(*args: str, database_url: str | None = None) -> subprocess.Completed
         cwd=str(PROJECT_ROOT),
         check=False,
     )
+
+
+# ---- Gastos (issue #114): o estagio das conexoes do Meu Pluggy, por ultimo.
+
+CONSENT = "Consentimento de Cartão vence em 10 dias (2026-12-07): renove em meu.pluggy.ai"
+
+
+@pytest.fixture
+def spending(monkeypatch: pytest.MonkeyPatch) -> Callable[[SpendingCheck | Exception], None]:
+    """Replace the spending stage: a result to return, or an exception to raise."""
+
+    def use(outcome: SpendingCheck | Exception) -> None:
+        def load(now: datetime) -> SpendingCheck:
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        monkeypatch.setattr("bogle.cli.check.load_spending_alerts", load)
+
+    return use
+
+
+class TestSpending:
+    def test_without_spending_the_output_is_the_same(self, clean: psycopg.Connection[DictRow], prices: Any) -> None:
+        result = check()
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Nenhuma pendência.\n"
+
+    def test_connection_lines_come_after_the_prices(
+        self, clean: psycopg.Connection[DictRow], prices: Any, spending: Any
+    ) -> None:
+        overdue(clean)
+        prices(STALE_OVERVIEW)
+        spending(SpendingCheck(alerts=[CONSENT]))
+        result = check()
+        assert result.exit_code == 1, result.output
+        assert result.stdout.splitlines() == [f"1. {CYCLE}", f"2. {STALE}", f"3. {CONSENT}"]
+
+    def test_a_failing_spending_stage_keeps_the_other_lines(
+        self, clean: psycopg.Connection[DictRow], prices: Any, spending: Any, osascript: list[list[str]]
+    ) -> None:
+        overdue(clean)
+        spending(RuntimeError("pluggy fora do ar"))
+        result = check("--notify")
+        assert result.exit_code == 3
+        assert result.stdout == f"{CYCLE}\n"
+        assert "erro: conexões de gastos não verificadas (RuntimeError: pluggy fora do ar)" in result.stderr
+        [command] = osascript
+        assert command[-1].endswith("Erro: conexões de gastos não verificadas (RuntimeError: pluggy fora do ar)")
+
+    def test_a_sync_error_is_an_error_and_its_alerts_stay(
+        self, clean: psycopg.Connection[DictRow], prices: Any, spending: Any
+    ) -> None:
+        spending(SpendingCheck(alerts=[CONSENT], errors=["gastos não sincronizados (sem rede)"]))
+        result = check()
+        assert result.exit_code == 3
+        assert result.stdout == f"{CONSENT}\n"
+        assert "erro: gastos não sincronizados (sem rede)" in result.stderr
+
+    def test_both_prices_and_spending_failing(
+        self, clean: psycopg.Connection[DictRow], prices: Any, spending: Any
+    ) -> None:
+        prices(RuntimeError("brapi fora do ar"))
+        spending(RuntimeError("pluggy fora do ar"))
+        result = check()
+        assert result.exit_code == 3
+        assert "preços não verificados" in result.stderr
+        assert "conexões de gastos não verificadas" in result.stderr
+
+    def test_the_check_runs_the_automatic_sync(
+        self, clean: psycopg.Connection[DictRow], prices: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakePluggy()
+        fake.add_item(item(), account("acc", name="Cartão"))
+        fake.set_transactions("acc", tx("t1", "acc", date(2026, 11, 20)))
+
+        def load(now: datetime) -> SpendingCheck:
+            return check_spending(now, env=ENV, client_factory=fake.factory())
+
+        monkeypatch.setattr("bogle.cli.check.load_spending_alerts", load)
+        result = check()
+        assert result.exit_code == 0, result.output
+        assert fake.requests("list_transactions") == [("list_transactions", "acc", None, None)]
+        assert get_setting(clean, SPENDING_LAST_SYNC_AT) is not None
 
 
 class TestEndToEnd:
