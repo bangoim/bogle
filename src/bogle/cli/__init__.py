@@ -113,6 +113,9 @@ spending_app = typer.Typer(
 )
 spending_app.command("sync", help="Sincronizar agora contas, transações e faturas.")(spending_cli.sync)
 spending_app.command("status", help="Último sync, última transação e cobertura de cada conta.")(spending_cli.status)
+spending_app.command(
+    "mark", help="Marcar o que uma transação é (gasto, transferência própria, ignorada...), acima das regras."
+)(spending_cli.mark)
 app.add_typer(spending_app, name="spending")
 
 

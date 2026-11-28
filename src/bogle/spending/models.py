@@ -144,3 +144,18 @@ class AccountStatus:
     last_synced_at: datetime | None
     last_transaction_date: date | None
     first_transaction_date: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionKind:
+    """A transaction and what it is (#115): the rules' kind, the user's, and the one that counts."""
+
+    id: int
+    account: str
+    local_date: date
+    description: str
+    amount: Decimal
+    kind: str | None
+    auto_kind: str | None
+    auto_reason: str | None
+    manual_kind: str | None

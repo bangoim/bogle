@@ -544,6 +544,7 @@ class TestRestore:
             "008_price_history_tesouro_source",
             "009_glide_path_points",
             "010_spending_schema",
+            "011_transaction_kinds",
         ]
         assert pending_migrations(target) == []
 
@@ -561,6 +562,7 @@ class TestRestore:
             "008_price_history_tesouro_source",
             "009_glide_path_points",
             "010_spending_schema",
+            "011_transaction_kinds",
         ]
         assert tickers(target) == ["PETR4"]
         assert result.rows["price_history"] == 0
@@ -581,7 +583,7 @@ class TestRestore:
         target = seed(scratch(), ticker="VALE3")
         assert spending_lines(target) != []
         result = restore(plan_restore(dump.path, database_url=target), safety_backup=False)
-        assert result.applied == ["010_spending_schema"]
+        assert result.applied == ["010_spending_schema", "011_transaction_kinds"]
         assert tickers(target) == ["PETR4"]
         assert spending_lines(target) == []
         assert {key: result.rows[key] for key in EMPTY_SPENDING} == EMPTY_SPENDING
@@ -810,7 +812,7 @@ class TestCli:
         assert result.stderr.count("banco de dados atualizado") == 1
         assert (
             "aviso: banco de dados atualizado: 007_price_history, 008_price_history_tesouro_source, "
-            "009_glide_path_points, 010_spending_schema." in result.stderr
+            "009_glide_path_points, 010_spending_schema, 011_transaction_kinds." in result.stderr
         )
 
     def test_the_password_is_never_printed(self, scratch: Callable[[], str], tmp_path: Path) -> None:

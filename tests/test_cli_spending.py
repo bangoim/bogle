@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
@@ -20,9 +21,9 @@ from typer.testing import CliRunner, Result
 from bogle import cli as cli_mod
 from bogle.cli import app
 from bogle.cli import spending as spending_cli
-from bogle.domain.errors import NetworkError
+from bogle.domain.errors import NetworkError, ValidationError
 from bogle.settings import SPENDING_LAST_SYNC_AT, set_value
-from bogle.spending.models import AutoSync
+from bogle.spending.models import AutoSync, TransactionKind
 from bogle.spending.sync import sync_if_due, sync_now
 from tests.pluggy_fakes import ENV, ITEM, FakePluggy, account, item, no_client, tx
 
@@ -158,6 +159,70 @@ class TestStatus:
         monkeypatch.setattr(spending_cli, "sync_if_due", never)
         result = spending("status", "--help")
         assert result.exit_code == 0, result.output
+
+
+class TestMark:
+    """``bogle spending mark`` (issue #115): the user's kind, over the rules."""
+
+    def bank_line(self, conn: Conn) -> int:
+        row = conn.execute("SELECT id FROM spending.transactions WHERE pluggy_id = 'b1'").fetchone()
+        assert row is not None
+        return row["id"]
+
+    def test_marks_a_line_and_says_what_the_rule_was(self, conn: Conn, pluggy: FakePluggy) -> None:
+        spending("sync")
+        line = self.bank_line(conn)
+        result = spending("mark", str(line), "ignorada")
+        assert result.exit_code == 0, result.output
+        assert result.stdout == (
+            f"Transação {line} (Conta, 2026-01-10, Compra, -20,00): ignorada, à mão; "
+            "pela regra seria gasto (débito na conta)\n"
+        )
+        row = conn.execute("SELECT kind FROM spending.transactions WHERE id = %s", (line,)).fetchone()
+        assert row == {"kind": "ignorada"}
+
+    def test_auto_hands_it_back(self, conn: Conn, pluggy: FakePluggy) -> None:
+        spending("sync")
+        line = self.bank_line(conn)
+        spending("mark", str(line), "ignorada")
+        result = spending("mark", str(line), "--auto")
+        assert result.exit_code == 0, result.output
+        assert result.stdout.endswith(": gasto (débito na conta), pela regra\n")
+
+    def test_an_unknown_kind_lists_the_valid_ones(self, conn: Conn, pluggy: FakePluggy) -> None:
+        spending("sync")
+        result = spending("mark", str(self.bank_line(conn)), "transferencia")
+        assert isinstance(result.exception, ValidationError)
+        assert "Tipo 'transferencia' inválido. Use um destes: gasto, receita" in str(result.exception)
+
+    @pytest.mark.parametrize("args", [(), ("ignorada", "--auto")])
+    def test_needs_exactly_one_of_a_kind_or_auto(self, conn: Conn, pluggy: FakePluggy, args: tuple[str, ...]) -> None:
+        result = spending("mark", "1", *args)
+        assert result.exit_code == 2
+        assert "Informe um tipo" in result.stderr
+        assert pluggy.calls == []
+
+    def test_an_unknown_transaction(self, conn: Conn, pluggy: FakePluggy) -> None:
+        result = spending("mark", "999999", "gasto")
+        assert isinstance(result.exception, ValidationError)
+        assert str(result.exception) == "Transação 999999 não encontrada."
+
+    def test_the_description_is_printed_without_control_characters(self) -> None:
+        """The description comes from Pluggy: an escape or a line break must not reach the terminal."""
+        entry = TransactionKind(
+            id=7,
+            account="Conta",
+            local_date=date(2026, 1, 10),
+            description="Compra\x1b[2J\nTransação 8 (Conta): falsa\r\x07",
+            amount=Decimal("-20"),
+            kind="gasto",
+            auto_kind="gasto",
+            auto_reason="débito na conta",
+            manual_kind=None,
+        )
+        shown = spending_cli._marked(entry)  # pyright: ignore[reportPrivateUsage]
+        assert shown.isprintable()
+        assert "(Conta, 2026-01-10, Compra[2JTransação 8 (Conta): falsa, " in shown
 
 
 class TestPortfolioNoticesStayOut:

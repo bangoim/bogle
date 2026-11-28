@@ -4,7 +4,8 @@ Thin: the sync, its rules and the automatic run live in :mod:`bogle.spending`.
 Every command of the group but ``sync`` starts with :func:`auto_sync` (past 24 h
 of the last sync), and goes on with what is stored when it fails, after one
 ``aviso:`` line on stderr. ``sync`` forces one; ``status`` says how fresh each
-account is and how far back it goes.
+account is and how far back it goes; ``mark`` sets what a transaction is
+(issue #115), over the rules, until ``--auto`` hands it back to them.
 
 The call is in each command, not in the group's callback: the callback runs
 before the subcommand reads its own arguments, so ``status --help`` would go to
@@ -13,7 +14,7 @@ the network first.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 import typer
@@ -23,7 +24,8 @@ from rich.table import Table
 from bogle import format as fmt
 from bogle.db import DEFAULT_TIMEZONE, get_connection
 from bogle.spending import repository
-from bogle.spending.models import AccountStatus, ItemState, SyncReport
+from bogle.spending.marking import KIND_NAMES, parse_kind, set_kind
+from bogle.spending.models import AccountStatus, ItemState, SyncReport, TransactionKind
 from bogle.spending.sync import sync_if_due, sync_now
 
 _CONSOLE = Console()
@@ -147,3 +149,35 @@ def _render_status(accounts: list[AccountStatus], items: list[ItemState], duplic
     warnings = _duplicates(duplicates)
     if warnings:
         console.print(fmt.attention(warnings))
+
+
+def mark(
+    transaction_id: int = typer.Argument(..., help="Id da transação."),
+    kind: str | None = typer.Argument(None, help=f"Tipo: {', '.join(KIND_NAMES)}.", show_default=False),
+    auto: bool = typer.Option(False, "--auto", help="Devolver a transação às regras automáticas."),
+) -> None:
+    if (kind is None) == (not auto):
+        typer.echo(f"Informe um tipo ({', '.join(KIND_NAMES)}) ou --auto, não os dois.", err=True)
+        raise typer.Exit(code=2)
+    chosen = parse_kind(kind) if kind is not None else None
+    auto_sync()
+    conn = get_connection()
+    try:
+        after = set_kind(conn, transaction_id, chosen, now=datetime.now(UTC))
+    finally:
+        conn.close()
+    typer.echo(_marked(after))
+
+
+def _marked(entry: TransactionKind) -> str:
+    """``Transação 42 (Conta, 2026-01-10, Compra, -20,00): ignorada, à mão; regra: ...``."""
+    # A descricao vem da Pluggy: sem caractere de controle (ESC, quebra de linha) no terminal.
+    description = "".join(char for char in entry.description if char.isprintable())
+    head = (
+        f"Transação {entry.id} ({entry.account}, {_day(entry.local_date)}, {description}, "
+        f"{fmt.signed_money(entry.amount)})"
+    )
+    rule = f"{entry.auto_kind} ({entry.auto_reason})" if entry.auto_kind is not None else "ainda sem regra aplicada"
+    if entry.manual_kind is not None:
+        return f"{head}: {entry.manual_kind}, à mão; pela regra seria {rule}"
+    return f"{head}: {rule}, pela regra"

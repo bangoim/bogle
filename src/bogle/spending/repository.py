@@ -6,11 +6,13 @@ one ``conn.transaction()``.
 
 Contract for #115 onward: a transaction with a PENDING duplicate suggestion in
 ``transaction_id`` stays out of every analysis (:func:`suspected_duplicate_ids`).
+Analyses read the view ``spending.expenses`` (migration 011), which applies that
+and keeps only the kinds that count as spending (#115).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
 
@@ -20,7 +22,15 @@ from psycopg.rows import DictRow
 from psycopg.types.json import Jsonb
 
 from bogle.data.pluggy import PluggyAccount, PluggyBill, PluggyCategory, PluggyItem, PluggyTransaction, dumps
-from bogle.spending.models import AccountStatus, ItemState, StoredAccount, StoredTransaction, account_label
+from bogle.spending.classify import BillPayment, Line, Verdict, digits, parse_bill_payments
+from bogle.spending.models import (
+    AccountStatus,
+    ItemState,
+    StoredAccount,
+    StoredTransaction,
+    TransactionKind,
+    account_label,
+)
 
 Connection = psycopg.Connection[DictRow]
 
@@ -537,8 +547,9 @@ def merge_duplicate(conn: Connection, suggestion_id: int) -> bool:
     """Fold the newer side of a PENDING suggestion into the older one.
 
     The older line keeps its local id (what anything else points at) and takes
-    every field of the newer one, its Pluggy id included; the newer line goes,
-    and the suggestion with it. ``False`` when there is no such PENDING suggestion.
+    every field of the newer one, its Pluggy id included, and the newer one's
+    kind set by hand when it has none of its own; the newer line goes, and the
+    suggestion with it. ``False`` when there is no such PENDING suggestion.
     """
     row = conn.execute(
         """
@@ -567,6 +578,15 @@ def merge_duplicate(conn: Connection, suggestion_id: int) -> bool:
         ),
         values | {"last_seen_at": newer["last_seen_at"], "id": row["duplicate_of_id"]},
     )
+    if newer["manual_kind"] is not None:
+        # O tipo dado a mao (#115) no lado novo vale quando o antigo nao tem um.
+        conn.execute(
+            """
+            UPDATE spending.transactions SET manual_kind = %s, manual_kind_at = %s
+            WHERE id = %s AND manual_kind IS NULL
+            """,
+            (newer["manual_kind"], newer["manual_kind_at"], row["duplicate_of_id"]),
+        )
     return True
 
 
@@ -578,5 +598,97 @@ def reject_duplicate(conn: Connection, suggestion_id: int) -> bool:
         WHERE id = %s AND status = 'PENDING'
         """,
         (suggestion_id,),
+    )
+    return cursor.rowcount == 1
+
+
+# ------------------------------------------------------------ marcacao (#115)
+
+
+def classification_lines(conn: Connection) -> list[Line]:
+    """Every stored transaction, as much of it as the rules of :mod:`bogle.spending.classify` read."""
+    rows = conn.execute(
+        """
+        SELECT t.id, t.account_id, a.type AS account_type, t.type, t.amount, t.local_date, t.description,
+               t.category_id, t.operation_type, t.payment_data, t.amount_in_account_currency
+        FROM spending.transactions t JOIN spending.accounts a ON a.id = t.account_id
+        ORDER BY t.id
+        """
+    ).fetchall()
+    return [Line(**row) for row in rows]
+
+
+def bill_payments(conn: Connection) -> list[BillPayment]:
+    """Every payment registered on a stored bill (``payments`` of ``/bills``)."""
+    rows = conn.execute("SELECT account_id, due_date, payments FROM spending.bills ORDER BY id").fetchall()
+    return [
+        payment for row in rows for payment in parse_bill_payments(row["account_id"], row["due_date"], row["payments"])
+    ]
+
+
+def own_documents(conn: Connection) -> set[str]:
+    """The user's tax numbers, digits only: the ones of the connected accounts."""
+    rows = conn.execute("SELECT DISTINCT tax_number FROM spending.accounts WHERE tax_number IS NOT NULL").fetchall()
+    return {doc for doc in (digits(row["tax_number"]) for row in rows) if doc}
+
+
+def write_classifications(conn: Connection, verdicts: Mapping[int, Verdict]) -> int:
+    """Store the rules' verdicts; only the lines whose verdict changed are written.
+
+    ``manual_kind`` is never touched. Returns how many lines changed.
+    """
+    rows = conn.execute(
+        "SELECT id, auto_kind, auto_reason, paired_transaction_id FROM spending.transactions"
+    ).fetchall()
+    current = {row["id"]: (row["auto_kind"], row["auto_reason"], row["paired_transaction_id"]) for row in rows}
+    changed = [
+        (str(verdict.kind), verdict.reason, verdict.paired_id, transaction_id)
+        for transaction_id, verdict in verdicts.items()
+        if transaction_id in current
+        and current[transaction_id] != (str(verdict.kind), verdict.reason, verdict.paired_id)
+    ]
+    if changed:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                UPDATE spending.transactions
+                SET auto_kind = %s, auto_reason = %s, paired_transaction_id = %s
+                WHERE id = %s
+                """,
+                changed,
+            )
+    return len(changed)
+
+
+def transaction_kind(conn: Connection, transaction_id: int) -> TransactionKind | None:
+    row = conn.execute(
+        """
+        SELECT t.id, a.name, a.marketing_name, t.local_date, t.description, t.amount,
+               t.kind, t.auto_kind, t.auto_reason, t.manual_kind
+        FROM spending.transactions t JOIN spending.accounts a ON a.id = t.account_id
+        WHERE t.id = %s
+        """,
+        (transaction_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return TransactionKind(
+        id=row["id"],
+        account=account_label(row["name"], row["marketing_name"]),
+        local_date=row["local_date"],
+        description=row["description"],
+        amount=row["amount"],
+        kind=row["kind"],
+        auto_kind=row["auto_kind"],
+        auto_reason=row["auto_reason"],
+        manual_kind=row["manual_kind"],
+    )
+
+
+def set_manual_kind(conn: Connection, transaction_id: int, kind: str | None, *, now: datetime) -> bool:
+    """The user's kind for the line (``None`` gives it back to the rules); ``False`` when there is no such line."""
+    cursor = conn.execute(
+        "UPDATE spending.transactions SET manual_kind = %s, manual_kind_at = %s WHERE id = %s",
+        (kind, now if kind is not None else None, transaction_id),
     )
     return cursor.rowcount == 1

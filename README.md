@@ -780,6 +780,8 @@ ids in `PLUGGY_ITEM_IDS` (see [setup](#6-optional-pluggy-credentials-for-spendin
 bogle spending sync          # sync now
 bogle spending sync --full   # ask for the whole history again
 bogle spending status        # per account: last sync, last transaction, coverage start
+bogle spending mark <id> <tipo>   # set what a transaction is (gasto, ignorada...), over the rules
+bogle spending mark <id> --auto   # hand it back to the rules
 ```
 
 Every `bogle spending` command syncs first when the last sync is more than
