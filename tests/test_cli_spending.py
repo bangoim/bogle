@@ -1,5 +1,6 @@
 """Tests for ``bogle spending`` (issue #114): sync, status and the automatic sync before them;
-``mark`` (#115); ``categorize``, ``groups`` and ``rules`` (#116).
+``mark`` (#115); ``categorize``, ``groups`` and ``rules`` (#116); ``summary`` and ``trend`` (#117);
+``bills`` and ``installments`` (#118).
 
 Pluggy is always the fake of :mod:`tests.pluggy_fakes`, injected by swapping the
 entry points the CLI module calls; the end-to-end runs go through the real
@@ -32,7 +33,8 @@ from bogle.settings import SPENDING_LAST_SYNC_AT, set_value
 from bogle.spending.analysis import CategorySpending, GroupSpending, MonthSummary, YearBefore
 from bogle.spending.models import AutoSync, CategoryGroup, TransactionKind
 from bogle.spending.sync import sync_if_due, sync_now
-from tests.pluggy_fakes import ENV, ITEM, FakePluggy, account, category_tree, item, no_client, tx
+from tests.pluggy_fakes import ENV, ITEM, FakePluggy, account, bill, category_tree, item, no_client, tx
+from tests.test_spending_bills import history as card_history
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BOGLE_BIN = PROJECT_ROOT / ".venv" / "bin" / "bogle"
@@ -805,3 +807,205 @@ class TestTrend:
         result = spending("trend", "--account", "poupanca")
         assert isinstance(result.exception, ValidationError)
         assert "ou o nome de uma conta: Cartão, Conta." in str(result.exception)
+
+
+# ---- faturas e parcelas (#118)
+
+
+@pytest.fixture
+def cards(pluggy: FakePluggy, monkeypatch: pytest.MonkeyPatch) -> FakePluggy:
+    """The card of :mod:`tests.test_spending_bills` (closes on the 3rd, due on the 10th), "today" on 2026-11-28."""
+    pluggy.categories = category_tree()
+    lines, bills = card_history()
+    pluggy.set_transactions("acc-card", *lines)
+    pluggy.set_bills("acc-card", *bills)
+    pluggy.set_transactions(
+        "acc-bank",
+        *(
+            tx(f"sal-{month}", "acc-bank", date(2026, month, 1), "5000", kind="CREDIT", category=("01010000", "Salary"))
+            for month in (8, 9, 10, 11)
+        ),
+    )
+    monkeypatch.setattr(spending_cli, "_today", lambda: date(2026, 11, 28))
+    return pluggy
+
+
+def bill_local_id(conn: Conn, pluggy_id: str) -> int:
+    row = conn.execute("SELECT id FROM spending.bills WHERE pluggy_id = %s", (pluggy_id,)).fetchone()
+    assert row is not None
+    return row["id"]
+
+
+class TestBills:
+    def test_closed_bills_the_open_one_and_what_is_committed(self, conn: Conn, cards: FakePluggy) -> None:
+        result = spending("bills")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        for text in (
+            "Faturas de Cartão",
+            "Vencimento",
+            "Transações",
+            "Diferença",
+            "2026-10-10",
+            "515,00",
+            "200,00",
+            "+315,00",
+            "paga parcial",
+            "vencida",
+            "Parcelas a lançar por fatura",
+            "2026-12 (aberta)",
+            "Da receita média",
+            "1,50%",
+            "2027-04",
+        ):
+            assert text in out, text
+        assert (
+            "Fatura aberta de Cartão: 305,00 em 4 compras; fecha em 5 dias (2026-12-03), "
+            "vence em 2026-12-10 (datas estimadas).\n"
+        ) in out
+        assert "Receita média dos 3 meses anteriores: 5.000,00.\n" in out
+        november = bill_local_id(conn, "bill-nov")
+        assert (
+            f"1. Fatura 2026-11 de Cartão: diferença não identificada de +10,00; "
+            f"detalhe em 'bogle spending bills {november}'"
+        ) in " ".join(out.split())
+
+    def test_one_bill_with_its_reconciliation(self, conn: Conn, cards: FakePluggy) -> None:
+        result = spending("bills", "2026-10")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        assert out.startswith(
+            "Fatura de Cartão com vencimento em 2026-10-10: paga parcial; fechou em 2026-10-03; 2 compras.\n"
+        )
+        for text in (
+            "Gastos por grupo",
+            "Compras",
+            "500,00",
+            "Geladeira",
+            "1/3",
+            "Conciliação",
+            "Total da Pluggy",
+            "Transações (3)",
+            "pagamentos lançados (saldo anterior)",
+            "IOF",
+            "Pago em 2026-10-09",
+        ):
+            assert text in out, text
+        assert "não identificado" not in out
+        by_id = spending("bills", str(bill_local_id(conn, "bill-oct")))
+        assert by_id.stdout == out
+
+    def test_the_open_bill_and_a_forecast(self, conn: Conn, cards: FakePluggy) -> None:
+        opened = spending("bills", "2026-12")
+        assert opened.exit_code == 0, opened.output
+        assert opened.stdout.startswith(
+            "Fatura de Cartão com vencimento em 2026-12-10: aberta; fecha em 5 dias (2026-12-03); "
+            "4 compras (datas estimadas).\n"
+        )
+        assert "Gastos por grupo" in opened.stdout
+        assert "2026-12-02 │ Tênis" in opened.stdout  # a parcela a lancar ate o fechamento
+        assert "Conciliação" not in opened.stdout
+        forecast = spending("bills", "2027-01")
+        assert forecast.exit_code == 0, forecast.output
+        assert "prevista; fecha em 2027-01-03 (datas estimadas)." in forecast.stdout
+        assert "Parcelas por grupo" in forecast.stdout
+        assert "3/4" in forecast.stdout
+
+    def test_two_cards(self, conn: Conn, cards: FakePluggy) -> None:
+        black = account("acc-black", name="Black", number="1111")
+        cards.add_item(item(), *cards.accounts[ITEM], black)
+        cards.set_transactions(
+            "acc-black",
+            tx("k1", "acc-black", date(2026, 11, 2), "10", bill_id="black-nov"),
+            tx("k2", "acc-black", date(2026, 12, 20), "40", status="PENDING", installment=2, installments=2),
+        )
+        cards.set_bills("acc-black", bill("black-nov", date(2026, 11, 15), "10", closing=date(2026, 11, 5)))
+        spending("sync")
+        result = spending("bills")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        assert "Faturas de Black" in out
+        assert "Fatura aberta de Black: 0,00 em 0 compras; fecha em 7 dias (2026-12-05)" in out
+        # Uma coluna por cartao e o total: a parcela do Black (20/12) fecha em 05/01, vence em 15/01.
+        row = next(line for line in out.splitlines() if line.startswith("│ 2027-01"))
+        assert [cell.strip() for cell in row.split("│")[1:-1]] == ["2027-01", "125,00", "40,00", "165,00", "3,30%"]
+        ambiguous = spending("bills", "2026-11")
+        assert isinstance(ambiguous.exception, ValidationError)
+        assert "Escolha um com --account" in str(ambiguous.exception)
+        chosen = spending("bills", "2026-11", "--account", "black")
+        assert chosen.exit_code == 0, chosen.output
+        assert chosen.stdout.startswith("Fatura de Black com vencimento em 2026-11-15: vencida;")
+
+    @pytest.mark.parametrize("ref", ["2026-13", "abc", "0000-01"])
+    def test_an_invalid_bill_is_refused_before_the_sync(self, conn: Conn, cards: FakePluggy, ref: str) -> None:
+        result = spending("bills", ref)
+        assert isinstance(result.exception, ValidationError)
+        assert cards.calls == []
+
+    @pytest.mark.parametrize("ref", ["99999999999999999999999999", "9223372036854775807", "2031-01"])
+    def test_an_unknown_bill(self, conn: Conn, cards: FakePluggy, ref: str) -> None:
+        result = spending("bills", ref)
+        assert isinstance(result.exception, ValidationError)
+
+    def test_only_cards(self, conn: Conn, cards: FakePluggy) -> None:
+        for command in ("bills", "installments"):
+            result = spending(command, "--account", "corrente")
+            assert isinstance(result.exception, ValidationError)
+            assert "não é um cartão" in str(result.exception)
+
+    def test_nothing_yet(self, conn: Conn, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(spending_cli, "sync_if_due", lambda: AutoSync(ran=False))
+        for command in ("bills", "installments"):
+            result = spending(command)
+            assert result.exit_code == 0, result.output
+            assert result.stdout == f"{spending_cli.NO_ACCOUNTS}\n"
+
+    def test_help_does_not_sync(self, conn: Conn, monkeypatch: pytest.MonkeyPatch) -> None:
+        def never() -> AutoSync:
+            raise AssertionError("o --help nao sincroniza")
+
+        monkeypatch.setattr(spending_cli, "sync_if_due", never)
+        for command in ("bills", "installments"):
+            result = spending(command, "--help")
+            assert result.exit_code == 0, result.output
+
+    def test_pluggy_text_is_printed_without_control_characters_or_markup(self, conn: Conn, cards: FakePluggy) -> None:
+        cards.accounts[ITEM][0] = account("acc-card", name="Cartão\x1b[2J [red]X")
+        lines, bills = card_history()
+        evil = tx(
+            "evil",
+            "acc-card",
+            date(2026, 11, 26),
+            "10",
+            description="Loja\x1b[2J\n[bold]Falsa 1/2",
+            installment=1,
+            installments=2,
+        )
+        cards.set_transactions("acc-card", *lines, evil)
+        cards.set_bills("acc-card", *bills)
+        spending("sync")
+        for args in (("bills",), ("bills", "2026-12"), ("bills", "2026-10"), ("installments",)):
+            result = spending(*args)
+            assert result.exit_code == 0, result.output
+            assert "\x1b" not in result.stdout, args
+        for args in (("bills",), ("bills", "2026-12"), ("bills", "2026-10")):
+            assert "Cartão[2J [red]X" in " ".join(spending(*args).stdout.split()), args
+        assert "Loja[2J[bold]Falsa" in spending("installments").stdout
+        assert "Loja[2J[bold]Falsa" in spending("bills", "2026-12").stdout
+
+
+class TestInstallmentsCommand:
+    def test_the_running_purchases(self, conn: Conn, cards: FakePluggy) -> None:
+        result = spending("installments")
+        assert result.exit_code == 0, result.output
+        out = result.stdout
+        for text in ("Parcelas em andamento", "CURSO ONLINE", "2/10", "400,00", "2027-07", "Tênis", "1/4", "625,00"):
+            assert text in out, text
+        assert "Geladeira" not in out  # a ultima parcela ja foi lancada
+        assert "Cartão" not in out.split("Parcelas em andamento")[1]  # um cartao so: sem a coluna
+
+    def test_nothing_running(self, conn: Conn, pluggy: FakePluggy, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(spending_cli, "_today", lambda: date(2026, 11, 28))
+        result = spending("installments")
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Nenhuma compra parcelada em andamento.\n"

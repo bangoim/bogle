@@ -26,6 +26,7 @@ from bogle.data.pluggy import PluggyAccount, PluggyBill, PluggyCategory, PluggyI
 from bogle.spending.classify import BillPayment, Line, Verdict, counterpart_document, digits, parse_bill_payments
 from bogle.spending.models import (
     AccountStatus,
+    CardLine,
     Category,
     CategoryGroup,
     DescriptionMatch,
@@ -36,6 +37,7 @@ from bogle.spending.models import (
     RuleConditions,
     RuleLine,
     StoredAccount,
+    StoredBill,
     StoredRule,
     StoredTransaction,
     TransactionCategory,
@@ -1012,21 +1014,39 @@ def application_changes(conn: Connection, application_id: int) -> list[tuple[int
 # ------------------------------------------------------------ analises (#117)
 
 
+_EXPENSE_LINES = """
+    SELECT e.account_id, e.local_date, e.value, e.category_id, e.category,
+           g.id AS group_id, g.name AS group_name, g.nature, g.is_fallback,
+           t.merchant_business_name, t.merchant_name, t.description
+    FROM spending.expenses e
+    JOIN spending.transactions t ON t.id = e.transaction_id
+    JOIN spending.category_groups g ON g.id = e.group_id
+"""
+
+
 def expense_lines(conn: Connection, account_ids: Sequence[int], since: date, until: date) -> list[ExpenseLine]:
     """The lines of ``spending.expenses`` of the accounts from ``since`` to ``until``, both included."""
     rows = conn.execute(
-        """
-        SELECT e.account_id, e.local_date, e.value, e.category_id, e.category,
-               g.id AS group_id, g.name AS group_name, g.nature, g.is_fallback,
-               t.merchant_business_name, t.merchant_name, t.description
-        FROM spending.expenses e
-        JOIN spending.transactions t ON t.id = e.transaction_id
-        JOIN spending.category_groups g ON g.id = e.group_id
+        _EXPENSE_LINES
+        + """
         WHERE e.account_id = ANY(%s) AND e.local_date BETWEEN %s AND %s
         ORDER BY e.local_date, e.transaction_id
         """,
         (list(account_ids), since, until),
     ).fetchall()
+    return _expense_lines(rows)
+
+
+def expense_lines_of(conn: Connection, transaction_ids: Sequence[int]) -> list[ExpenseLine]:
+    """The lines of ``spending.expenses`` among the given transactions (a bill's, #118)."""
+    rows = conn.execute(
+        _EXPENSE_LINES + " WHERE e.transaction_id = ANY(%s) ORDER BY e.local_date, e.transaction_id",
+        (list(transaction_ids),),
+    ).fetchall()
+    return _expense_lines(rows)
+
+
+def _expense_lines(rows: Sequence[DictRow]) -> list[ExpenseLine]:
     return [
         ExpenseLine(
             account_id=row["account_id"],
@@ -1073,3 +1093,48 @@ def income_lines(conn: Connection, account_ids: Sequence[int], since: date, unti
         (list(account_ids), since, until),
     ).fetchall()
     return [IncomeLine(**row) for row in rows]
+
+
+# ------------------------------------------------- faturas e parcelas (#118)
+
+
+def card_lines(conn: Connection, account_ids: Sequence[int]) -> list[CardLine]:
+    """Every line of the card accounts, in reais, but the newer side of a PENDING duplicate suggestion."""
+    rows = conn.execute(
+        """
+        SELECT t.id, t.account_id, t.local_date, t.status, COALESCE(t.amount_in_account_currency, t.amount) AS amount,
+               t.description, t.bill_id, t.kind, t.installment_number, t.total_installments,
+               t.installments_total_amount, t.purchase_date
+        FROM spending.transactions t
+        JOIN spending.accounts a ON a.id = t.account_id
+        WHERE a.type = 'CREDIT' AND t.account_id = ANY(%s)
+          AND NOT EXISTS (
+              SELECT 1 FROM spending.duplicate_suggestions d
+              WHERE d.transaction_id = t.id AND d.status = 'PENDING'
+          )
+        ORDER BY t.local_date, t.id
+        """,
+        (list(account_ids),),
+    ).fetchall()
+    return [CardLine(**row) for row in rows]
+
+
+def stored_bills(conn: Connection, account_ids: Sequence[int]) -> list[StoredBill]:
+    rows = conn.execute(
+        """
+        SELECT id, pluggy_id, account_id, due_date, closing_date, total_amount, finance_charges, payments
+        FROM spending.bills WHERE account_id = ANY(%s)
+        ORDER BY account_id, due_date, id
+        """,
+        (list(account_ids),),
+    ).fetchall()
+    return [StoredBill(**row) for row in rows]
+
+
+def card_cycle_dates(conn: Connection, account_ids: Sequence[int]) -> dict[int, tuple[date | None, date | None]]:
+    """The closing and due dates of the running bill, as the card account last came (``creditData``)."""
+    rows = conn.execute(
+        "SELECT id, balance_close_date, balance_due_date FROM spending.accounts WHERE id = ANY(%s)",
+        (list(account_ids),),
+    ).fetchall()
+    return {row["id"]: (row["balance_close_date"], row["balance_due_date"]) for row in rows}

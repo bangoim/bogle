@@ -791,6 +791,8 @@ bogle spending rules                          # list the rules (the newest wins)
 bogle spending rules remove <id> | undo       # remove one; undo the last rule created
 bogle spending summary [--month AAAA-MM]      # the month by group and category, against the months before
 bogle spending trend [--months 12] [--group X] [--no-chart]   # monthly spending, table and chart
+bogle spending bills [AAAA-MM | id] [--account X]   # card bills, the open one, installments ahead; or one bill
+bogle spending installments [--account X]     # purchases in installments still running
 ```
 
 - **Categories and groups:** Pluggy's 130 categories go into groups, each
@@ -826,6 +828,25 @@ bogle spending trend [--months 12] [--group X] [--no-chart]   # monthly spending
   takes only the accounts compared in it, against those same accounts now.
   Both take `--account corrente` (checking accounts), `--account cartao`
   (cards) or an account's name; the default is every account.
+- **Bills and installments:** `bills` lists each card's closed bills (due date,
+  Pluggy's total, the sum of their lines, the difference and what was paid) with
+  their state: `paga`, `paga parcial`, `fechada a vencer` (closed, nothing paid,
+  not yet due) or `vencida`. Only the `payments` of Pluggy's bill count as paid.
+  Then the open bill (what posted since the last closing, how many purchases,
+  when it closes and is due; dates estimated from the last bill's days when the
+  bank sends none), and the installments still to post, bill by bill, with the
+  share of the average monthly income of the 3 months before (every account's,
+  each over the months it covers) they already take. An installment goes to the
+  bill whose closing is the first on or after its date, and one already posted
+  is never projected again. `bills 2026-12` (the month it is due, or its id)
+  opens one bill by group and category, lists its installments (`3/10`) and,
+  for a closed one, reconciles it: Pluggy's total against its lines, the
+  difference explained by the bill payments posted on it (the previous balance)
+  and the bill's charges (IOF, interest, fees), and whatever is left shown as
+  unexplained. `installments` lists the purchases in installments still
+  running: the installment it is on, its value, what is left and when it ends;
+  one whose last installment posted leaves the list. Both take `--account`
+  (`cartao` or a card's name).
 
 Every `bogle spending` command syncs first when the last sync is more than
 24 h old (Pluggy itself refreshes once a day). If that fails — no credentials,

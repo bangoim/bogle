@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,3 +308,41 @@ class IncomeLine:
     account_id: int
     local_date: date
     value: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class CardLine:
+    """A card transaction as the bills and installments of #118 read it.
+
+    ``amount`` is in reais, with the card's sign: positive for a purchase,
+    negative for a refund, a credit or a bill payment.
+    """
+
+    id: int
+    account_id: int
+    local_date: date
+    amount: Decimal
+    description: str
+    bill_id: str | None = None
+    """Pluggy's id of the bill the bank posted the line to."""
+    kind: str | None = None
+    status: str = "POSTED"
+    installment_number: int | None = None
+    total_installments: int | None = None
+    installments_total_amount: Decimal | None = None
+    """The whole purchase, when Pluggy sends it (``creditCardMetadata.totalAmount``)."""
+    purchase_date: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StoredBill:
+    """A card bill of ``/bills`` as stored; ``finance_charges`` and ``payments`` as Pluggy sent them."""
+
+    id: int
+    pluggy_id: str
+    account_id: int
+    due_date: date
+    closing_date: date | None
+    total_amount: Decimal
+    finance_charges: Any = ()
+    payments: Any = ()
