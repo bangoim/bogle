@@ -1,0 +1,110 @@
+{
+  "results": [
+    {
+      "id": "c0000000-0000-4000-8000-000000000001",
+      "description": "Mercado Exemplo",
+      "descriptionRaw": "MERCADO EXEMPLO SP",
+      "currencyCode": "BRL",
+      "amount": 89.9,
+      "amountInAccountCurrency": null,
+      "date": "2026-11-20T03:00:00.000Z",
+      "type": "DEBIT",
+      "balance": null,
+      "providerCode": null,
+      "providerId": null,
+      "status": "POSTED",
+      "category": "Groceries",
+      "categoryId": "07010000",
+      "operationType": null,
+      "paymentData": null,
+      "merchant": {"name": "Mercado Exemplo", "businessName": "MERCADO EXEMPLO LTDA", "cnpj": "00000000000000", "cnae": "4711302", "category": "Supermercados"},
+      "creditCardMetadata": {
+        "paymentType": "SINGLE",
+        "feeType": null,
+        "otherCreditsType": null,
+        "payeeMCC": 5411,
+        "cardNumber": "9999",
+        "billId": "b0000000-0000-4000-8000-000000000011",
+        "billPostDate": "2026-11-20",
+        "billForecastDate": "2026-12",
+        "transactionDateTime": "2026-11-20T15:42:10.000Z"
+      },
+      "accountId": "a0000000-0000-4000-8000-00000000000c",
+      "order": 1,
+      "createdAt": "2026-11-21T06:00:00.000Z",
+      "updatedAt": "2026-11-21T06:00:00.000Z"
+    },
+    {
+      "id": "c0000000-0000-4000-8000-000000000003",
+      "description": "Estorno IOF",
+      "currencyCode": "BRL",
+      "amount": -1.23,
+      "date": "2026-11-18T00:00:00.001Z",
+      "type": "CREDIT",
+      "providerCode": null,
+      "providerId": null,
+      "status": "POSTED",
+      "category": "Taxes",
+      "categoryId": "16000000",
+      "creditCardMetadata": {
+        "paymentType": "SINGLE",
+        "billId": "b0000000-0000-4000-8000-000000000011",
+        "billPostDate": "2026-11-18",
+        "billForecastDate": "2026-12",
+        "transactionDateTime": "2026-11-18T00:00:00.001Z"
+      },
+      "accountId": "a0000000-0000-4000-8000-00000000000c",
+      "createdAt": "2026-11-19T06:00:00.000Z",
+      "updatedAt": "2026-11-19T06:00:00.000Z"
+    },
+    {
+      "id": "c0000000-0000-4000-8000-000000000004",
+      "description": "Ajuste",
+      "currencyCode": "BRL",
+      "amount": 2.5,
+      "date": "2026-11-10T12:00:00.001Z",
+      "type": "DEBIT",
+      "providerCode": null,
+      "providerId": null,
+      "status": "POSTED",
+      "category": "Taxes",
+      "categoryId": "16000000",
+      "creditCardMetadata": {
+        "paymentType": "SINGLE",
+        "billId": "b0000000-0000-4000-8000-000000000011",
+        "billPostDate": "2026-11-10",
+        "billForecastDate": "2026-12"
+      },
+      "accountId": "a0000000-0000-4000-8000-00000000000c",
+      "createdAt": "2026-11-11T06:00:00.000Z",
+      "updatedAt": "2026-11-11T06:00:00.000Z"
+    },
+    {
+      "id": "c0000000-0000-4000-8000-000000000002",
+      "description": "Loja Exemplo 3/10",
+      "descriptionRaw": null,
+      "currencyCode": "BRL",
+      "amount": 150,
+      "date": "2027-01-20T03:00:00.000Z",
+      "type": "DEBIT",
+      "providerCode": null,
+      "providerId": null,
+      "status": "PENDING",
+      "category": "Shopping",
+      "categoryId": "08000000",
+      "creditCardMetadata": {
+        "paymentType": "INSTALLMENT",
+        "installmentNumber": 3,
+        "totalInstallments": 10,
+        "purchaseDate": "2026-11-20T03:00:00.000Z",
+        "payeeMCC": 742,
+        "billPostDate": "2027-01-20",
+        "billForecastDate": "2027-02"
+      },
+      "accountId": "a0000000-0000-4000-8000-00000000000c",
+      "createdAt": "2026-11-21T06:00:00.000Z",
+      "updatedAt": "2026-11-21T06:00:00.000Z"
+    }
+  ],
+  "next": null
+}

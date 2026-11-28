@@ -22,6 +22,7 @@ from bogle.cli import position as position_cli
 from bogle.cli import profit as profit_cli
 from bogle.cli import rebalance as rebalance_cli
 from bogle.cli import returns as returns_cli
+from bogle.cli import spending as spending_cli
 from bogle.cli import status as status_cli
 from bogle.cli import suggest as suggest_cli
 from bogle.cli import transactions as transactions_cli
@@ -105,6 +106,14 @@ glide_app.command("remove", help="Remover o ponto de uma idade.")(glide_cli.remo
 glide_app.command("show", help="Alvos ano a ano, do ano corrente até o último ponto.")(glide_cli.show)
 glide_app.command("clear", help="Apagar a trajetória; os alvos atuais ficam como estão.")(glide_cli.clear)
 app.add_typer(glide_app, name="glide")
+
+spending_app = typer.Typer(
+    help="Gastos do Meu Pluggy (sincroniza sozinho depois de 24 h).",
+    no_args_is_help=True,
+)
+spending_app.command("sync", help="Sincronizar agora contas, transações e faturas.")(spending_cli.sync)
+spending_app.command("status", help="Último sync, última transação e cobertura de cada conta.")(spending_cli.status)
+app.add_typer(spending_app, name="spending")
 
 
 def _read_preferences() -> tuple[str, str | None, str | None]:
@@ -207,6 +216,9 @@ def _main(ctx: typer.Context) -> None:
     # Depois do schema (a tabela da trajetoria pode ter acabado de chegar) e do
     # separador (o aviso tem percentuais).
     _apply_glide_path()
+    if ctx.invoked_subcommand == "spending":
+        # Os lembretes sao da carteira: num comando de gastos seriam ruido.
+        return
     # `status` ja reporta o ciclo por inteiro; avisar de novo seria ruido.
     if notice is not None and ctx.invoked_subcommand != "status":
         typer.echo(f"aviso: {notice}", err=True)
@@ -225,7 +237,9 @@ def _run() -> None:
     a bug to dump as a traceback. Anything else *is* a bug and keeps its traceback.
     Same mapping as :func:`bogle.error_messages.message_for`.
     """
-    load_dotenv()  # picks up BRAPI_TOKEN (and future secrets) from a local .env
+    # BRAPI_TOKEN and the PLUGGY_* of the spending sync, from a local .env. A
+    # variable already in the environment wins, even empty (`op run` sets them).
+    load_dotenv()
     try:
         app()
     except BogleError as exc:

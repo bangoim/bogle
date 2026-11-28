@@ -944,6 +944,9 @@ class TestBackup:
             "user_settings": 0,
             "price_history": 0,
             "glide_path_points": 0,
+            "spending.accounts": 0,
+            "spending.transactions": 0,
+            "spending.bills": 0,
         }
 
 

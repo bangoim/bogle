@@ -1,0 +1,45 @@
+{
+  "results": [
+    {
+      "id": "d0000000-0000-4000-8000-000000000001",
+      "description": "Pix enviado",
+      "descriptionRaw": "PIX ENVIADO",
+      "currencyCode": "BRL",
+      "amount": -45.5,
+      "date": "2026-11-19T14:32:07.512Z",
+      "type": "DEBIT",
+      "balance": 1520.35,
+      "providerCode": null,
+      "providerId": null,
+      "status": "POSTED",
+      "category": "Transfers",
+      "categoryId": "05000000",
+      "operationType": "PIX",
+      "paymentData": {"paymentMethod": "PIX", "reason": null},
+      "merchant": null,
+      "creditCardMetadata": null,
+      "accountId": "a0000000-0000-4000-8000-00000000000b",
+      "createdAt": "2026-11-20T06:00:00.000Z",
+      "updatedAt": "2026-11-20T06:00:00.000Z"
+    },
+    {
+      "id": "d0000000-0000-4000-8000-000000000002",
+      "description": "Pix recebido",
+      "currencyCode": "BRL",
+      "amount": 30,
+      "date": "2026-11-20T01:15:42.120Z",
+      "type": "CREDIT",
+      "providerCode": null,
+      "providerId": null,
+      "status": "POSTED",
+      "category": "Transfers",
+      "categoryId": "05000000",
+      "operationType": "PIX",
+      "paymentData": {"paymentMethod": "PIX"},
+      "accountId": "a0000000-0000-4000-8000-00000000000b",
+      "createdAt": "2026-11-20T06:00:00.000Z",
+      "updatedAt": "2026-11-20T06:00:00.000Z"
+    }
+  ],
+  "next": null
+}

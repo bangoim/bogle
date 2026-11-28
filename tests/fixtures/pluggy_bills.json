@@ -1,0 +1,18 @@
+{
+  "page": 1,
+  "total": 1,
+  "totalPages": 1,
+  "results": [
+    {
+      "id": "b0000000-0000-4000-8000-000000000011",
+      "dueDate": "2026-12-10T00:00:00.000Z",
+      "billClosingDate": "2026-12-03T00:00:00.000Z",
+      "totalAmount": 812.4,
+      "totalAmountCurrencyCode": "BRL",
+      "minimumPaymentAmount": 120.5,
+      "allowsInstallments": true,
+      "financeCharges": [],
+      "payments": [{"id": "p1", "valueType": "FULL_PAYMENT", "paymentDate": "2026-11-10", "amount": 700, "currencyCode": "BRL"}]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "page": 1,
+  "total": 3,
+  "totalPages": 1,
+  "results": [
+    {"id": "07000000", "description": "Shopping", "descriptionTranslated": "Compras"},
+    {"id": "07010000", "description": "Groceries", "descriptionTranslated": "Supermercado", "parentId": "07000000", "parentDescription": "Shopping"},
+    {"id": "05000000", "description": "Transfers", "descriptionTranslated": "Transferências"}
+  ]
+}

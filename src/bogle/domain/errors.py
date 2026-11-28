@@ -222,3 +222,39 @@ class NetworkError(MarketDataError):
         if detail:
             message += f" ({detail})"
         super().__init__(message, provider=provider)
+
+
+class PluggyError(BogleError):
+    """A failure talking to the Pluggy API (issue #114) that is not the network's.
+
+    ``code`` carries Pluggy's own ``codeDescription`` (``ITEM_NOT_FOUND``,
+    ``CLIENT_SECRET_EXPIRED``) when the response had one. Network failures and
+    an exhausted 429 reuse :class:`NetworkError` and :class:`RateLimitError` with
+    the provider ``"pluggy"``. Messages never carry the credentials.
+    """
+
+    def __init__(self, message: str, *, code: str = "") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class PluggyAuthError(PluggyError):
+    """Pluggy refused the credentials, or refused the API key it had just issued."""
+
+
+class PluggyNotConfiguredError(PluggyError):
+    """The environment lacks what the Pluggy client needs, or holds it malformed.
+
+    ``missing`` names the variables that are absent (empty counts as absent).
+    """
+
+    def __init__(self, message: str, *, missing: tuple[str, ...] = ()) -> None:
+        self.missing = missing
+        super().__init__(message)
+
+
+class SyncInProgressError(BogleError):
+    """Another process holds the spending sync lock."""
+
+    def __init__(self) -> None:
+        super().__init__("outra sincronização de gastos está em andamento.")
