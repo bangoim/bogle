@@ -17,6 +17,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from psycopg.rows import DictRow
+from rich.text import Text
 from typer.testing import CliRunner, Result
 
 from bogle import cli as cli_mod
@@ -393,7 +394,8 @@ class TestGroupsCommand:
     def test_remove_needs_a_destination(self, conn: Conn, tree: FakePluggy) -> None:
         result = spending("groups", "remove", "Lazer")
         assert result.exit_code == 2
-        assert "--to" in result.stderr
+        # No CI (GITHUB_ACTIONS) o Typer força cor e o Rich pinta o nome da opção.
+        assert "Missing option '--to'" in Text.from_ansi(result.stderr).plain
         result = spending("groups", "remove", "Lazer", "--to", "Outros")
         assert result.exit_code == 0, result.output
         assert result.stdout == "Grupo Lazer removido; 5 categorias foram para Outros.\n"
