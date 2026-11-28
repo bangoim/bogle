@@ -16,7 +16,8 @@ FIIs, BDRs, ETFs, Tesouro Direto and private fixed income.
 - **Glide path** — `bogle glide` sets target weights by age (a few points, a straight line between them), applied on their own every 01/01. See [Glide path](#glide-path).
 - **Withdrawal in retirement** — `bogle withdraw` suggests which tickers to sell for a withdrawal (the ones the glide path is taking out first), with the estimated income tax of each sale. See [Withdrawal in retirement](#withdrawal-in-retirement).
 - **Annual rebalance in retirement** — `bogle rebalance` plans the once-a-year sale of what drifted out of the band, with its income tax, and the purchases made with the net; a reminder shows up every year until `--done`. See [Annual rebalance in retirement](#annual-rebalance-in-retirement).
-- **Scheduled alerts** — `bogle check` lists what is pending (cycle, annual rebalance, stale prices) for launchd or cron, optionally as a macOS notification. See [Scheduled alerts](#scheduled-alerts).
+- **Scheduled alerts** — `bogle check` lists what is pending (cycle, annual rebalance, stale prices, Meu Pluggy connections) for launchd or cron, optionally as a macOS notification. See [Scheduled alerts](#scheduled-alerts).
+- **Spending** — `bogle spending` syncs bank accounts, card transactions and bills from [Meu Pluggy](https://meu.pluggy.ai) into their own schema, on its own once a day. See [Spending (Meu Pluggy)](#spending-meu-pluggy).
 - **User settings** — `bogle config` persists preferences (rebalance period, drift threshold, default comparison indices, number format).
 - **Backup and restore** — `bogle backup` writes the whole database to a file outside the repository; `bogle restore` puts it back, all or nothing, after a safety backup. See [Backup and restore](#backup-and-restore).
 - **Market data** — quotes and history from brapi and yfinance, macro series (CDI/IPCA/SELIC) from the Banco Central, and Tesouro Direto prices and daily history from Tesouro Transparente, cached on disk and in the database. Private fixed income is marked to present value.
@@ -83,6 +84,25 @@ echo 'BRAPI_TOKEN=your-token-here' > .env
 
 Without a token you can still run `bogle position --no-prices`, and the other
 sources (yfinance, Banco Central, Tesouro Transparente) need no token.
+
+### 6. (Optional) Pluggy credentials for spending
+
+Only for `bogle spending` (see [Spending (Meu Pluggy)](#spending-meu-pluggy)):
+`PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` and `PLUGGY_ITEM_IDS` (the item ids
+of your connections, comma-separated, up to 5). Keep them in 1Password and run
+through `op run`, with a file of references instead of values:
+
+```bash
+cat > ~/.config/bogle/pluggy.env <<'ENV'
+PLUGGY_CLIENT_ID=op://Private/Pluggy/username
+PLUGGY_CLIENT_SECRET=op://Private/Pluggy/credential
+PLUGGY_ITEM_IDS=op://Private/Pluggy/item_ids
+ENV
+op run --env-file ~/.config/bogle/pluggy.env -- bogle spending sync
+```
+
+They can also go in `.env`, like the brapi token. Everything else in `bogle`
+works without them.
 
 ## Usage
 
@@ -720,6 +740,57 @@ Or with cron (`crontab -e`):
 `bogle check` does not apply the glide path of 01/01: its notice would reach
 nobody, so the next command you run applies it and says so.
 
+With the `PLUGGY_*` variables (add them to `EnvironmentVariables`, or wrap the
+command in `op run`), `bogle check` also runs the spending sync when the last one
+is older than 24 h, and checks each Meu Pluggy connection: a consent that
+expires in less than 30 days (or expired), a connection in error, and one that
+has not updated for 48 h. Without the variables it still reads the consent and
+the error from what the last sync stored; with no spending set up at all, it
+says nothing about it.
+
+```
+3. Consentimento de Nubank vence em 12 dias (2027-11-20): renove em meu.pluggy.ai
+4. Conexão Nubank sem atualizar desde 2027-11-02 06:10
+```
+
+### Spending (Meu Pluggy)
+
+`bogle spending` keeps the accounts, card transactions, bills and categories of
+your [Meu Pluggy](https://meu.pluggy.ai) connections in the `spending` schema of
+the same database, apart from the portfolio. Connect the banks at meu.pluggy.ai,
+authorize them for your application in the Pluggy Dashboard, and put the item
+ids in `PLUGGY_ITEM_IDS` (see [setup](#6-optional-pluggy-credentials-for-spending)).
+
+```bash
+bogle spending sync          # sync now
+bogle spending sync --full   # ask for the whole history again
+bogle spending status        # per account: last sync, last transaction, coverage start
+```
+
+Every `bogle spending` command syncs first when the last sync is more than
+24 h old (Pluggy itself refreshes once a day). If that fails — no credentials,
+no network, a connection in error — the command goes on with what is stored,
+after one `aviso:` line saying what failed and how old the data is.
+
+- **Idempotent:** lines are matched by Pluggy's id, then by the bank's
+  `providerId` (when it sends one; Meu Pluggy has sent none so far), then by
+  their exact instant, amount, description and installment, one to one, so
+  identical lines that really are repeated stay repeated. Running it twice
+  inserts nothing. Future installments come as
+  `PENDING` and are replaced at every sync, so one that vanished at the bank
+  vanishes here too.
+- **Incremental:** the first sync of an account asks for everything Pluggy has;
+  the next ones from 35 days before the last sync. `PENDING` lines are only
+  ever pruned inside what was asked for, and never on an empty answer.
+- **Renewed consent:** the yearly renewal creates a new item, with new ids for
+  everything. Put the new item id in `PLUGGY_ITEM_IDS`: its accounts inherit the
+  old ones (same type, number, branch or card brand), keep their history, and
+  their lines are remapped the same way. What still has no match but looks the
+  same (day, amount, description) is kept apart as a probable duplicate until
+  confirmed; `status` counts them.
+- **Freshness and coverage:** each account records its last sync, its last
+  transaction and its first one, which `sync` and `status` show.
+
 ### Reports
 
 Every report takes `--period` with a shared vocabulary (`12m`, `2y`, `5y`,
@@ -977,11 +1048,11 @@ bogle restore backup.dump --force     # no confirmation
 ```
 
 **What a backup holds:** the whole database — the assets, the ledger, the
-settings, the stored daily closes (`price_history`) and the migration
-bookkeeping. The closes are kept on purpose: they look like a cache, but brapi
+settings, the stored daily closes (`price_history`), the spending schema and the
+migration bookkeeping. The closes are kept on purpose: they look like a cache, but brapi
 only corrects the last 30 sessions and Yahoo skips some, so loading them again
-would not give back the same table. Two things stay out: your `.env`
-(`BRAPI_TOKEN`) and `~/.cache/bogle` (quotes and macro series, which rebuild
+would not give back the same table (and Pluggy keeps only about a year of
+spending). Two things stay out: your `.env` (`BRAPI_TOKEN`, `PLUGGY_*`) and `~/.cache/bogle` (quotes and macro series, which rebuild
 themselves).
 
 The file goes to `~/.local/share/bogle/backups/` (`$XDG_DATA_HOME` if set),
