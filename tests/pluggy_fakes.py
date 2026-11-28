@@ -8,7 +8,7 @@ it. Every id, name and number here is made up.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -104,8 +104,17 @@ def tx(
     at: str = "00:00:00.000",
     installment: int | None = None,
     post_date: date | None = None,
+    kind: str = "DEBIT",
+    category: tuple[str, str] = ("07000000", "Shopping"),
+    operation: str | None = None,
+    payment_data: dict[str, Any] | None = None,
+    currency: str = "BRL",
+    in_account_currency: str | None = None,
 ) -> PluggyTransaction:
     """A line on ``day``; ``at`` is the UTC time, milliseconds included.
+
+    A purchase abroad comes in ``currency``, with its value in reais in
+    ``in_account_currency`` (``amountInAccountCurrency``).
 
     The real formats: the bank account sends instants (``14:32:07.512``); the
     card sends ``03:00:00.000`` (midnight in Sao Paulo), ``00:00:00.001`` and
@@ -125,12 +134,15 @@ def tx(
             "date": f"{day.isoformat()}T{at}Z",
             "description": description,
             "amount": float(Decimal(amount)),
-            "currencyCode": "BRL",
-            "type": "DEBIT",
+            "currencyCode": currency,
+            "amountInAccountCurrency": float(Decimal(in_account_currency)) if in_account_currency else None,
+            "type": kind,
             "status": status,
             "providerId": provider_id,
-            "category": "Shopping",
-            "categoryId": "07000000",
+            "category": category[1],
+            "categoryId": category[0],
+            "operationType": operation,
+            "paymentData": payment_data,
             "creditCardMetadata": card or None,
             "createdAt": iso(NOW),
             "updatedAt": iso(NOW),
@@ -138,7 +150,8 @@ def tx(
     )
 
 
-def bill(bill_id: str, due: date, total: str = "100") -> PluggyBill:
+def bill(bill_id: str, due: date, total: str = "100", *, payments: Sequence[tuple[date, str]] = ()) -> PluggyBill:
+    """A bill; ``payments`` are ``(day, amount)``, shaped like Nubank's (``DEBIT_ACCOUNT``)."""
     return parse_bill(
         {
             "id": bill_id,
@@ -146,7 +159,17 @@ def bill(bill_id: str, due: date, total: str = "100") -> PluggyBill:
             "totalAmount": float(Decimal(total)),
             "totalAmountCurrencyCode": "BRL",
             "financeCharges": [],
-            "payments": [],
+            "payments": [
+                {
+                    "id": f"{bill_id}-pay-{n}",
+                    "valueType": "FULL_PAYMENT",
+                    "paymentDate": f"{day.isoformat()}T00:00:00.000Z",
+                    "paymentMode": "DEBIT_ACCOUNT",
+                    "amount": amount,
+                    "currencyCode": "BRL",
+                }
+                for n, (day, amount) in enumerate(payments)
+            ],
         }
     )
 

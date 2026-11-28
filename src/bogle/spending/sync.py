@@ -26,6 +26,9 @@ longer consent wins; an item whose accounts were already taken over is skipped.
 
 Each account is fetched in full first and written in one transaction, so a
 failure leaves it exactly as it was, and the other accounts go on.
+
+**Kinds.** Last, every stored line is classified again (issue #115,
+:func:`~bogle.spending.marking.reclassify`); the user's own kind is kept.
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ from bogle.domain.errors import BogleError, SyncInProgressError, ValidationError
 from bogle.error_messages import message_for
 from bogle.settings import SPENDING_LAST_SYNC_AT, get_setting, set_value
 from bogle.spending import repository
+from bogle.spending.marking import reclassify
 from bogle.spending.matching import (
     default_window,
     pair_by_natural_key,
@@ -139,6 +143,10 @@ def run_sync(
             account_report = _sync_account(conn, client, plan, now=now, full=full, window=window, report=report)
             if account_report is not None:
                 report.accounts.append(account_report)
+        # A marcacao (#115) e refeita sobre tudo o que esta gravado, mesmo sem
+        # conta aplicada: o casamento de fatura e transferencia precisa dos dois lados.
+        with conn.transaction():
+            reclassify(conn)
         if report.applied:
             set_value(conn, SPENDING_LAST_SYNC_AT, now)
         report.pending_duplicates = repository.pending_duplicates(conn)
@@ -442,6 +450,7 @@ def confirm_duplicate(conn: Connection, suggestion_id: int) -> None:
     with conn.transaction():
         if not repository.merge_duplicate(conn, suggestion_id):
             raise ValidationError(f"Sugestão de duplicata {suggestion_id} não encontrada ou já resolvida.")
+        reclassify(conn)
 
 
 def reject_duplicate(conn: Connection, suggestion_id: int) -> None:
