@@ -6,15 +6,16 @@ meta-command and carries its rows as ``COPY ... FROM stdin``, and only ``psql``
 reads either. So this module finds ``pg_dump``/``pg_restore``/``psql``, runs them
 against the database ``BOGLE_DATABASE_URL`` points at, and checks what came out.
 
-**What a backup carries** is the whole database, two schemas: ``public`` (the
+**What a backup carries** is the whole database, three schemas: ``public`` (the
 ledger, the settings and ``price_history`` — which looks like a cache and is not
 one: brapi revalidates only the last 30 sessions and Yahoo skips some, so a table
-loaded again would differ from the one brapi corrected) and ``migrations``
-(yoyo's bookkeeping, without which every migration looks pending and the next
-start tries to create tables that exist). ``~/.cache/bogle`` and ``.env`` stay
-out, and the README says so.
+loaded again would differ from the one brapi corrected), ``spending`` (the Meu
+Pluggy lines, issue #114 — Pluggy keeps about a year, so what is older exists
+only here) and ``migrations`` (yoyo's bookkeeping, without which every migration
+looks pending and the next start tries to create tables that exist).
+``~/.cache/bogle`` and ``.env`` stay out, and the README says so.
 
-**A restore replaces, it never merges.** Both schemas are dropped and the dump
+**A restore replaces, it never merges.** Every schema is dropped and the dump
 replayed in one transaction, which commits only if the result is a bogle database
 this version of the code knows. ``pg_dump --clean`` alone would not do: it drops
 what the *dump* has, so an older dump over a newer database left the newer tables
@@ -80,8 +81,17 @@ TABLES: tuple[tuple[str, str, str], ...] = (
     ("user_settings", "configuração", "configurações"),
     ("price_history", "fechamento", "fechamentos"),
     ("glide_path_points", "ponto da trajetória", "pontos da trajetória"),
+    ("spending.accounts", "conta de gastos", "contas de gastos"),
+    ("spending.transactions", "lançamento de gastos", "lançamentos de gastos"),
+    ("spending.bills", "fatura", "faturas"),
 )
-"""The tables a backup reports, with the words for one and for many."""
+"""The tables a backup reports, with the words for one and for many.
+
+A bare name is in ``public`` (the keys of ``--json`` predate the other schema);
+the spending tables go qualified, and are left out of the sentence while empty:
+most backups have none, and "0 faturas" would be noise in every one of them."""
+
+_OPTIONAL_SCHEMAS = ("spending.",)
 
 _SCHEMA_TABLES = ("public.assets", "public.transactions")
 """What makes a database a bogle database, as far as a backup is concerned."""
@@ -99,6 +109,7 @@ _PREPARE = """
 SET client_min_messages = warning;
 SET lock_timeout = '5s';
 DROP SCHEMA IF EXISTS migrations CASCADE;
+DROP SCHEMA IF EXISTS spending CASCADE;
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 """
@@ -138,8 +149,15 @@ def describe_rows(rows: Mapping[str, int]) -> str:
 
 def _counted(rows: Mapping[str, int]) -> list[str]:
     return [
-        f"{fmt.count(rows[table])} {one if rows[table] == 1 else many}" for table, one, many in TABLES if table in rows
+        f"{fmt.count(rows[table])} {one if rows[table] == 1 else many}"
+        for table, one, many in TABLES
+        if table in rows and (rows[table] or not table.startswith(_OPTIONAL_SCHEMAS))
     ]
+
+
+def _qualified(table: str) -> tuple[str, str]:
+    schema, _, name = table.rpartition(".")
+    return schema or "public", name
 
 
 # ------------------------------------------------------------------ conexao
@@ -193,9 +211,10 @@ def table_counts(conn: psycopg.Connection[DictRow]) -> dict[str, int]:
     """Rows in each table of :data:`TABLES` the database has (an old one may lack some)."""
     counts: dict[str, int] = {}
     for table, _one, _many in TABLES:
-        if not _exists(conn, f"public.{table}"):
+        schema, name = _qualified(table)
+        if not _exists(conn, f"{schema}.{name}"):
             continue
-        row = conn.execute(sql.SQL("SELECT count(*) AS n FROM {}").format(sql.Identifier("public", table))).fetchone()
+        row = conn.execute(sql.SQL("SELECT count(*) AS n FROM {}").format(sql.Identifier(schema, name))).fetchone()
         counts[table] = row["n"] if row else 0
     return counts
 
@@ -522,7 +541,7 @@ def restore(plan: RestorePlan, *, safety_backup: bool = True, now: Callable[[], 
 
     Order: the safety backup (only when there is something to save), the archive
     turned into SQL (custom only, into a private temp file), then one ``psql``
-    transaction — empty the two schemas, replay the dump, check the result — and
+    transaction — empty the schemas, replay the dump, check the result — and
     only after it commits, the migrations a dump older than the code is missing.
     """
     safety = (

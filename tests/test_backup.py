@@ -25,6 +25,7 @@ import psycopg
 import pytest
 from psycopg import errors as pg_errors
 from psycopg import sql
+from psycopg.rows import DictRow
 from typer.testing import CliRunner
 
 from bogle import backup as backup_mod
@@ -97,8 +98,8 @@ def scratch() -> Iterator[Callable[[], str]]:
     admin.close()
 
 
-def seed(url: str, *, ticker: str = "PETR4") -> str:
-    """A small but complete bogle database: every table has rows."""
+def seed(url: str, *, ticker: str = "PETR4", spending: str = "Conta") -> str:
+    """A small but complete bogle database: every table has rows, the spending ones too."""
     run_migrations(_guarded(url))
     conn = get_connection(url)
     try:
@@ -114,9 +115,62 @@ def seed(url: str, *, ticker: str = "PETR4") -> str:
             "(%s, '2026-03-10', 30.10, 'yfinance', '2026-03-11'), (%s, '2026-03-11', 30.55, 'brapi', '2026-03-11')",
             (ticker, ticker),
         )
+        seed_spending(conn, spending)
     finally:
         conn.close()
     return url
+
+
+SPENDING_ITEM = "00000000-0000-4000-8000-000000000001"
+
+
+def seed_spending(conn: psycopg.Connection[DictRow], name: str) -> None:
+    """One connection, one card with one bill and two lines (issue #114)."""
+    conn.execute(
+        "INSERT INTO spending.items (id, status, checked_at) VALUES (%s, 'UPDATED', %s)", (SPENDING_ITEM, WHEN)
+    )
+    account = conn.execute(
+        "INSERT INTO spending.accounts (pluggy_id, item_id, type, subtype, number, name, currency_code, raw) "
+        "VALUES (%s, %s, 'CREDIT', 'CREDIT_CARD', '1234', %s, 'BRL', '{}') RETURNING id",
+        (f"acc-{name}", SPENDING_ITEM, name),
+    ).fetchone()
+    assert account is not None
+    conn.execute(
+        "INSERT INTO spending.bills (pluggy_id, account_id, due_date, total_amount, currency_code, raw) "
+        "VALUES (%s, %s, '2026-03-10', 150.25, 'BRL', '{}')",
+        (f"bill-{name}", account["id"]),
+    )
+    for index, amount in enumerate(("100.25", "50")):
+        conn.execute(
+            "INSERT INTO spending.transactions (pluggy_id, account_id, date, local_date, status, type, amount, "
+            "currency_code, description, bill_id, raw) VALUES (%s, %s, %s, %s, 'POSTED', 'DEBIT', %s, 'BRL', %s, %s, "
+            "'{\"id\": 1}')",
+            (
+                f"tx-{name}-{index}",
+                account["id"],
+                WHEN,
+                WHEN.date(),
+                Decimal(amount),
+                f"{name} {index}",
+                f"bill-{name}",
+            ),
+        )
+
+
+SPENDING_ROWS = {"spending.accounts": 1, "spending.transactions": 2, "spending.bills": 1}
+EMPTY_SPENDING = dict.fromkeys(SPENDING_ROWS, 0)
+
+
+def spending_lines(url: str) -> list[tuple[object, ...]]:
+    conn = get_connection(_guarded(url))
+    try:
+        rows = conn.execute(
+            "SELECT a.name, t.pluggy_id, t.amount, t.local_date, t.bill_id, t.raw "
+            "FROM spending.transactions t JOIN spending.accounts a ON a.id = t.account_id ORDER BY t.pluggy_id"
+        ).fetchall()
+    finally:
+        conn.close()
+    return [tuple(row.values()) for row in rows]
 
 
 def counts(url: str) -> dict[str, int]:
@@ -233,6 +287,16 @@ class TestDefaults:
     def test_rows_skip_the_tables_an_older_database_lacks(self) -> None:
         assert describe_rows({"assets": 2, "transactions": 1}) == "2 ativos, 1 transação"
 
+    def test_rows_name_the_spending_tables_only_when_they_have_rows(self) -> None:
+        portfolio = {"assets": 1, "transactions": 2}
+        assert describe_rows({**portfolio, **EMPTY_SPENDING}) == "1 ativo, 2 transações"
+        assert describe_rows({**portfolio, **SPENDING_ROWS}) == (
+            "1 ativo, 2 transações, 1 conta de gastos, 2 lançamentos de gastos, 1 fatura"
+        )
+        assert describe_rows({**portfolio, "spending.accounts": 2, "spending.transactions": 0}) == (
+            "1 ativo, 2 transações, 2 contas de gastos"
+        )
+
 
 class TestFindTool:
     def test_bogle_pg_bin_wins(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -316,11 +380,12 @@ class TestBackup:
             "user_settings": 1,
             "price_history": 2,
             "glide_path_points": 1,
+            **SPENDING_ROWS,
         }
         assert result.rows == counts(url)
         assert list(backups.iterdir()) == [result.path]  # nenhum .tmp sobrando
 
-    def test_the_custom_archive_lists_both_schemas(self, scratch: Callable[[], str]) -> None:
+    def test_the_custom_archive_lists_every_schema(self, scratch: Callable[[], str]) -> None:
         result = create_backup(database_url=seed(scratch()))
         listing = subprocess.run(["pg_restore", "--list", str(result.path)], capture_output=True, text=True, check=True)
         for table in (
@@ -329,6 +394,9 @@ class TestBackup:
             "public user_settings",
             "public price_history",
             "public glide_path_points",
+            "spending accounts",
+            "spending transactions",
+            "spending bills",
         ):
             assert f"TABLE {table}" in listing.stdout
         assert "TABLE migrations yoyo_migration" in listing.stdout
@@ -421,6 +489,7 @@ class TestRestore:
         assert result.applied == []
         assert result.rows == dump.rows == counts(target)
         assert ledger(target) == ledger(source)
+        assert spending_lines(target) == spending_lines(source) != []
         assert pending_migrations(target) == []
 
     def test_plain_round_trips_too(self, scratch: Callable[[], str]) -> None:
@@ -429,20 +498,24 @@ class TestRestore:
         target = scratch()
         restore(plan_restore(dump.path, database_url=target))
         assert ledger(target) == ledger(source)
+        assert spending_lines(target) == spending_lines(source) != []
         assert counts(target) == dump.rows
 
     def test_it_replaces_and_never_merges_and_keeps_a_safety_backup(
         self, scratch: Callable[[], str], backups: Path
     ) -> None:
-        source = seed(scratch(), ticker="PETR4")
+        source = seed(scratch(), ticker="PETR4", spending="Origem")
         dump = create_backup(database_url=source)
-        target = seed(scratch(), ticker="VALE3")
+        target = seed(scratch(), ticker="VALE3", spending="Alvo")
         plan = plan_restore(dump.path, database_url=target)
         assert plan.has_schema
         assert plan.rows == counts(target)
         result = restore(plan)
         assert tickers(target) == ["PETR4"]
         assert ledger(target) == ledger(source)
+        # Os gastos tambem sao substituidos, nunca somados.
+        assert spending_lines(target) == spending_lines(source)
+        assert {line[0] for line in spending_lines(target)} == {"Origem"}
         # O backup de seguranca e o banco de antes, inteiro.
         assert result.safety is not None
         assert result.safety.path.parent == backups
@@ -463,8 +536,15 @@ class TestRestore:
         conn.close()
         result = restore(plan_restore(dump.path, database_url=target), safety_backup=False)
         assert not has_table(target, "public.future_table")
+        # Os gastos do alvo saem com o resto; a 010 recria o schema vazio.
+        assert spending_lines(target) == []
         # A 009 cria glide_path_points, que o alvo ja tinha: aplica sem colidir.
-        assert result.applied == ["007_price_history", "008_price_history_tesouro_source", "009_glide_path_points"]
+        assert result.applied == [
+            "007_price_history",
+            "008_price_history_tesouro_source",
+            "009_glide_path_points",
+            "010_spending_schema",
+        ]
         assert pending_migrations(target) == []
 
     def test_an_older_dump_is_migrated_forward(self, scratch: Callable[[], str], tmp_path: Path) -> None:
@@ -476,10 +556,35 @@ class TestRestore:
         dump = create_backup(database_url=source)
         target = scratch()
         result = restore(plan_restore(dump.path, database_url=target))
-        assert result.applied == ["007_price_history", "008_price_history_tesouro_source", "009_glide_path_points"]
+        assert result.applied == [
+            "007_price_history",
+            "008_price_history_tesouro_source",
+            "009_glide_path_points",
+            "010_spending_schema",
+        ]
         assert tickers(target) == ["PETR4"]
         assert result.rows["price_history"] == 0
         assert result.rows["glide_path_points"] == 0
+        assert {key: result.rows[key] for key in EMPTY_SPENDING} == EMPTY_SPENDING
+
+    def test_a_dump_from_before_spending_over_a_database_with_spending(
+        self, scratch: Callable[[], str], tmp_path: Path
+    ) -> None:
+        # Um backup de antes da 010 restaurado num banco que ja tem gastos: o
+        # schema spending sai inteiro e volta vazio pela migracao.
+        source = scratch()
+        migrate_until(source, "009_glide_path_points", tmp_path)
+        conn = get_connection(source)
+        AssetRepository(conn).add("PETR4", Decimal("0.5"))
+        conn.close()
+        dump = create_backup(database_url=source)
+        target = seed(scratch(), ticker="VALE3")
+        assert spending_lines(target) != []
+        result = restore(plan_restore(dump.path, database_url=target), safety_backup=False)
+        assert result.applied == ["010_spending_schema"]
+        assert tickers(target) == ["PETR4"]
+        assert spending_lines(target) == []
+        assert {key: result.rows[key] for key in EMPTY_SPENDING} == EMPTY_SPENDING
 
     def test_a_dump_of_a_newer_bogle_is_refused_and_nothing_changes(self, scratch: Callable[[], str]) -> None:
         source = seed(scratch())
@@ -627,7 +732,8 @@ class TestCli:
         assert f"backup gravado em {written}" in result.stdout
         # O banco semeado grava decimal_separator = ",": o tamanho sai com virgula.
         assert re.search(
-            r"custom, \d+,\d kB: 1 ativo, 3 transações, 1 configuração, 2 fechamentos, 1 ponto da trajetória\.",
+            r"custom, \d+,\d kB: 1 ativo, 3 transações, 1 configuração, 2 fechamentos, 1 ponto da trajetória, "
+            r"1 conta de gastos, 2 lançamentos de gastos, 1 fatura\.",
             result.stdout,
         )
 
@@ -644,6 +750,7 @@ class TestCli:
             "user_settings": 1,
             "price_history": 2,
             "glide_path_points": 1,
+            **SPENDING_ROWS,
         }
 
     def test_backup_does_not_migrate_first(self, scratch: Callable[[], str], tmp_path: Path) -> None:
@@ -660,8 +767,8 @@ class TestCli:
         result = run_cli("restore", str(dump.path), url=target, data_home=tmp_path / "data", stdin="n\n")
         assert result.returncode == 1
         assert (
-            "substituindo 1 ativo, 3 transações, 1 configuração, 2 fechamentos e 1 ponto da trajetória."
-            in result.stdout
+            "substituindo 1 ativo, 3 transações, 1 configuração, 2 fechamentos, 1 ponto da trajetória, "
+            "1 conta de gastos, 2 lançamentos de gastos e 1 fatura." in result.stdout
         )
         assert "nada foi alterado." in result.stderr
         assert tickers(target) == ["VALE3"]
@@ -674,8 +781,8 @@ class TestCli:
         assert result.returncode == 0, result.stderr
         assert "backup de segurança: " in result.stdout
         assert (
-            "banco restaurado: 1 ativo, 3 transações, 1 configuração, 2 fechamentos, 1 ponto da trajetória."
-            in result.stdout
+            "banco restaurado: 1 ativo, 3 transações, 1 configuração, 2 fechamentos, 1 ponto da trajetória, "
+            "1 conta de gastos, 2 lançamentos de gastos, 1 fatura." in result.stdout
         )
         assert tickers(target) == ["PETR4"]
 
@@ -703,7 +810,7 @@ class TestCli:
         assert result.stderr.count("banco de dados atualizado") == 1
         assert (
             "aviso: banco de dados atualizado: 007_price_history, 008_price_history_tesouro_source, "
-            "009_glide_path_points." in result.stderr
+            "009_glide_path_points, 010_spending_schema." in result.stderr
         )
 
     def test_the_password_is_never_printed(self, scratch: Callable[[], str], tmp_path: Path) -> None:

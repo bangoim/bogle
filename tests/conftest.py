@@ -10,6 +10,7 @@ from psycopg import sql
 from psycopg.rows import DictRow
 
 from bogle import format as fmt
+from bogle.data.pluggy import CONFIG_VARS
 from bogle.db import get_connection, run_migrations
 from bogle.repositories.assets import AssetRepository
 from bogle.repositories.holdings import HoldingRepository
@@ -57,6 +58,14 @@ def _create_worker_database() -> None:
             admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(TEST_DATABASE_NAME)))
 
 
+# Nenhum teste fala com a Pluggy de verdade: as credenciais de quem roda a suite
+# (exportadas, ou num .env) somem. Vazio, e nao ausente: o `load_dotenv` dos
+# testes por subprocesso nao sobrescreve uma variavel que ja existe, e para o
+# bogle vazio e o mesmo que ausente.
+for _name in CONFIG_VARS:
+    os.environ[_name] = ""
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_db() -> None:
     if XDIST_WORKER:
@@ -80,6 +89,10 @@ def conn() -> Iterator[psycopg.Connection[DictRow]]:
     c = get_connection(TEST_DATABASE_URL)
     with c.cursor() as cur:
         cur.execute("TRUNCATE transactions, glide_path_points, assets, user_settings, price_history CASCADE")
+        cur.execute(
+            "TRUNCATE spending.duplicate_suggestions, spending.transactions, spending.bills, spending.accounts, "
+            "spending.items, spending.categories CASCADE"
+        )
     c.commit()
     yield c
     c.close()
