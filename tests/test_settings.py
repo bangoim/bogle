@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import psycopg
@@ -19,6 +19,7 @@ from bogle.settings import (
     LAST_REBALANCE_DATE,
     REBALANCE_PERIOD_MONTHS,
     RETIREMENT_AGE,
+    SPENDING_LAST_SYNC_AT,
     WEIGHT_DRIFT_THRESHOLD,
     format_value,
     get_setting,
@@ -126,6 +127,7 @@ class TestUnsetAndList:
             RETIREMENT_AGE,
             GLIDE_PATH_APPLIED_YEAR,
             LAST_ANNUAL_REBALANCE_YEAR,
+            SPENDING_LAST_SYNC_AT,
         }
         assert entries[WEIGHT_DRIFT_THRESHOLD].is_default is False
         assert entries[WEIGHT_DRIFT_THRESHOLD].updated_at is not None
@@ -233,3 +235,30 @@ class TestRetirementAge:
     def test_rejects_non_int(self, conn: psycopg.Connection[DictRow]) -> None:
         with pytest.raises(ValidationError, match="não é uma idade válida"):
             set_setting(conn, RETIREMENT_AGE, "setenta")
+
+
+class TestSpendingLastSyncAt:
+    """The mark of the automatic spending sync (issue #114): an instant, always with its zone."""
+
+    def test_defaults_to_none(self, conn: psycopg.Connection[DictRow]) -> None:
+        assert get_setting(conn, SPENDING_LAST_SYNC_AT) is None
+
+    def test_round_trips_the_instant_with_its_zone(self, conn: psycopg.Connection[DictRow]) -> None:
+        moment = datetime(2026, 11, 27, 8, 30, 15, 123456, tzinfo=UTC)
+        set_value(conn, SPENDING_LAST_SYNC_AT, moment)
+        stored = get_setting(conn, SPENDING_LAST_SYNC_AT)
+        assert stored == moment
+        assert stored.tzinfo is not None
+
+    def test_parses_iso_with_an_offset(self, conn: psycopg.Connection[DictRow]) -> None:
+        value = set_setting(conn, SPENDING_LAST_SYNC_AT, "2026-11-27T08:00:00-03:00")
+        assert value == datetime(2026, 11, 27, 8, tzinfo=timezone(timedelta(hours=-3)))
+        assert get_setting(conn, SPENDING_LAST_SYNC_AT) == datetime(2026, 11, 27, 11, tzinfo=UTC)
+
+    @pytest.mark.parametrize("raw", ["2026-11-27T08:00:00", "2026-11-27", "ontem"])
+    def test_refuses_an_instant_without_a_zone(self, conn: psycopg.Connection[DictRow], raw: str) -> None:
+        with pytest.raises(ValidationError):
+            set_setting(conn, SPENDING_LAST_SYNC_AT, raw)
+
+    def test_reads_as_iso(self) -> None:
+        assert format_value(datetime(2026, 11, 27, 8, tzinfo=UTC)) == "2026-11-27T08:00:00+00:00"

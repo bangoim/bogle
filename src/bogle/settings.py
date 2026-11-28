@@ -32,6 +32,7 @@ BIRTH_YEAR = "birth_year"
 RETIREMENT_AGE = "retirement_age"
 GLIDE_PATH_APPLIED_YEAR = "glide_path_applied_year"
 LAST_ANNUAL_REBALANCE_YEAR = "last_annual_rebalance_year"
+SPENDING_LAST_SYNC_AT = "spending_last_sync_at"
 
 DEFAULT_THEME = "textual-dark"
 
@@ -104,6 +105,18 @@ def _parse_date(raw: str) -> date:
         return date.fromisoformat(raw)
     except ValueError:
         raise ValidationError(f"'{raw}' não é uma data válida (formato YYYY-MM-DD).") from None
+
+
+def _parse_datetime(raw: str) -> datetime:
+    # Com fuso, sempre: um instante sem fuso seria lido no fuso de quem le, e a
+    # marca do sync automatico compara intervalos de horas.
+    try:
+        moment = datetime.fromisoformat(raw.strip())
+    except ValueError:
+        raise ValidationError(f"'{raw}' não é uma data e hora válida (ISO 8601 com fuso).") from None
+    if moment.tzinfo is None:
+        raise ValidationError(f"'{raw}' não tem fuso horário (ex: 2026-11-27T08:00:00-03:00).")
+    return moment
 
 
 _FIRST_BIRTH_YEAR = 1900
@@ -254,6 +267,15 @@ SETTINGS: dict[str, SettingSpec] = {
             parse=_parse_year,
             to_json=int,
             from_json=int,
+        ),
+        SettingSpec(
+            key=SPENDING_LAST_SYNC_AT,
+            type_name="datetime",
+            description="Último sync de gastos que gravou alguma conta (o automático espera 24 h depois dele).",
+            default=None,
+            parse=_parse_datetime,
+            to_json=datetime.isoformat,
+            from_json=datetime.fromisoformat,
         ),
     )
 }
