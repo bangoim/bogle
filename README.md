@@ -782,7 +782,27 @@ bogle spending sync --full   # ask for the whole history again
 bogle spending status        # per account: last sync, last transaction, coverage start
 bogle spending mark <id> <tipo>   # set what a transaction is (gasto, ignorada...), over the rules
 bogle spending mark <id> --auto   # hand it back to the rules
+bogle spending categorize <id> <categoria>   # set a transaction's category (Pluggy id or name)
+bogle spending categorize <id> <categoria> --rule   # ...and a rule for the lines like it (preview first)
+bogle spending categorize <id> --auto        # hand it back to the rule or Pluggy
+bogle spending groups [--all]                # groups, their nature and categories; unmapped ones warned
+bogle spending groups create|rename|nature|map|remove ...
+bogle spending rules                          # list the rules (the newest wins)
+bogle spending rules remove <id> | undo       # remove one; undo the last rule created
 ```
+
+- **Categories and groups:** Pluggy's 130 categories go into groups, each
+  `fixo` or `variavel` (Moradia, Serviços, Alimentação, Transporte, Saúde,
+  Lazer, Compras...). A category follows its parent unless mapped on its own;
+  one nobody maps falls in `Outros`, the reserve group, and is warned about by
+  `sync` and `groups`. Removing a group takes `--to`, where its categories go.
+- **Your category wins:** a category set with `categorize` beats a rule's, which
+  beats Pluggy's, and no sync overwrites it. A rule matches by the merchant's
+  CNPJ or the Pix payer's/receiver's CPF/CNPJ, by description (`--text`,
+  `--match contem|comeca|igual`), value range (`--min`, `--max`) and account
+  (`--account`), all together. It shows how many stored lines it changes and
+  asks before saving; then it applies to them and to every new line the sync
+  brings. `rules undo` puts the lines back as they were and drops the rule.
 
 Every `bogle spending` command syncs first when the last sync is more than
 24 h old (Pluggy itself refreshes once a day). If that fails — no credentials,

@@ -8,9 +8,11 @@ it. Every id, name and number here is made up.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from bogle.data.pluggy import (
@@ -110,6 +112,7 @@ def tx(
     payment_data: dict[str, Any] | None = None,
     currency: str = "BRL",
     in_account_currency: str | None = None,
+    merchant_cnpj: str | None = None,
 ) -> PluggyTransaction:
     """A line on ``day``; ``at`` is the UTC time, milliseconds included.
 
@@ -143,6 +146,7 @@ def tx(
             "categoryId": category[0],
             "operationType": operation,
             "paymentData": payment_data,
+            "merchant": {"name": "Loja", "cnpj": merchant_cnpj} if merchant_cnpj else None,
             "creditCardMetadata": card or None,
             "createdAt": iso(NOW),
             "updatedAt": iso(NOW),
@@ -175,6 +179,14 @@ def bill(bill_id: str, due: date, total: str = "100", *, payments: Sequence[tupl
 
 
 CATEGORIES = [parse_category({"id": "07000000", "description": "Shopping", "descriptionTranslated": "Compras"})]
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def category_tree() -> list[PluggyCategory]:
+    """Pluggy's whole tree (GET /categories, 130 categories), as published; public data, no one's."""
+    body = json.loads((FIXTURES / "pluggy_categories_tree.json").read_text())
+    return [parse_category(entry) for entry in body["results"]]
 
 
 class FakePluggy:

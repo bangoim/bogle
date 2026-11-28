@@ -68,7 +68,9 @@ __all__ = [
     "Line",
     "Verdict",
     "classify",
+    "counterpart_document",
     "digits",
+    "normalized",
     "parse_bill_payments",
     "spending_value",
 ]
@@ -195,7 +197,8 @@ def digits(value: str | None) -> str:
     return _NOT_DIGIT.sub("", value or "")
 
 
-def _normalized(text: str) -> str:
+def normalized(text: str) -> str:
+    """Casefolded, without accents, single spaces: how names and descriptions are compared."""
     decomposed = unicodedata.normalize("NFKD", text.casefold())
     return " ".join("".join(char for char in decomposed if not unicodedata.combining(char)).split())
 
@@ -205,11 +208,15 @@ def _day(value: date) -> str:
 
 
 def _counterpart_document(line: Line) -> str:
-    """The other party's document: the receiver of a debit, the payer of a credit."""
-    data = line.payment_data
+    return counterpart_document(line.type, line.payment_data)
+
+
+def counterpart_document(transaction_type: str, payment_data: object) -> str:
+    """The other party's document in ``paymentData``: the receiver of a debit, the payer of a credit."""
+    data = payment_data
     if not isinstance(data, Mapping):
         return ""
-    party = data.get("receiver" if line.type == "DEBIT" else "payer")
+    party = data.get("receiver" if transaction_type == "DEBIT" else "payer")
     if not isinstance(party, Mapping):
         return ""
     document = party.get("documentNumber")
@@ -339,7 +346,7 @@ def _names_another_person(line: Line, own: Collection[str]) -> bool:
 
 
 def _is_investment(line: Line) -> bool:
-    if line.operation_type == INVESTMENT_OPERATION or _normalized(line.description).startswith(INVESTMENT_DESCRIPTIONS):
+    if line.operation_type == INVESTMENT_OPERATION or normalized(line.description).startswith(INVESTMENT_DESCRIPTIONS):
         return True
     # Um credito em Investments sem marca de resgate e provento (dividendo,
     # JCP, rendimento): receita, nao resgate.

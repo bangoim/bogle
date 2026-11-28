@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +106,8 @@ class SyncReport:
     notices: list[str] = field(default_factory=list)
     """Connections skipped on purpose and ambiguous renewals: terse, one line each."""
     pending_duplicates: int = 0
+    unmapped_categories: list[str] = field(default_factory=list)
+    """Categories in the reserve group only because no group takes them (#116)."""
 
     @property
     def applied(self) -> bool:
@@ -159,3 +162,123 @@ class TransactionKind:
     auto_kind: str | None
     auto_reason: str | None
     manual_kind: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Category:
+    """A Pluggy category as stored; ``name`` is the Portuguese one when Pluggy sent it, else ``description``."""
+
+    id: str
+    name: str
+    description: str
+    parent_id: str | None = None
+
+
+class GroupNature(StrEnum):
+    """Whether a group's spending repeats every month; the values are what is stored and typed."""
+
+    FIXED = "fixo"
+    VARIABLE = "variavel"
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryGroup:
+    """A group of categories (#116): ``fixo`` or ``variavel``; ``fallback`` is the reserve group."""
+
+    id: int
+    name: str
+    nature: str
+    fallback: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GroupSummary:
+    """A group as ``bogle spending groups`` lists it."""
+
+    group: CategoryGroup
+    mapped: tuple[str, ...]
+    """The categories mapped to it by name (their children follow them)."""
+    categories: int
+    """How many known categories end up in it, children and unmapped ones included."""
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionCategory:
+    """A transaction and its category (#116): Pluggy's, a rule's, the user's, and the one that counts."""
+
+    id: int
+    account: str
+    local_date: date
+    description: str
+    amount: Decimal
+    category: str | None
+    """The name of the category that counts."""
+    group: str
+    pluggy_category: str | None
+    rule_category: str | None
+    rule_id: int | None
+    manual_category: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RuleLine:
+    """A stored transaction, as much of it as a category rule reads."""
+
+    id: int
+    account_id: int
+    value: Decimal
+    """The absolute amount, in reais."""
+    description: str
+    documents: tuple[str, ...]
+    """The merchant's CNPJ and the other party's document (``paymentData``), digits only, in that order."""
+    manual: bool = False
+    """It has a category set by hand, which keeps counting over the rule."""
+    rule_id: int | None = None
+    rule_category_id: str | None = None
+
+
+class DescriptionMatch(StrEnum):
+    """How a rule's text is compared with a description; the values are what is stored and typed."""
+
+    CONTAINS = "contem"
+    STARTS = "comeca"
+    EQUALS = "igual"
+    """The whole description, not a part of it."""
+
+
+@dataclass(frozen=True, slots=True)
+class RuleConditions:
+    """What a line must have for a category rule to take it; every condition given must hold (AND)."""
+
+    document: str | None = None
+    """Digits only: the merchant's CNPJ or the other party's CPF/CNPJ."""
+    description: str | None = None
+    match: DescriptionMatch | None = None
+    min_value: Decimal | None = None
+    max_value: Decimal | None = None
+    """Over the absolute value in reais, both ends included."""
+    account_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StoredRule:
+    """A category rule as stored, with the names it is shown with."""
+
+    id: int
+    category_id: str
+    category: str
+    conditions: RuleConditions
+    account: str | None
+    created_at: datetime
+    transactions: int = 0
+    """How many lines it categorizes now."""
+
+
+@dataclass(frozen=True, slots=True)
+class RuleApplication:
+    """The last application of a rule to the stored lines, as ``rules undo`` would undo it."""
+
+    id: int
+    rule_id: int
+    applied_at: datetime
+    changes: int

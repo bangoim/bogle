@@ -29,6 +29,11 @@ failure leaves it exactly as it was, and the other accounts go on.
 
 **Kinds.** Last, every stored line is classified again (issue #115,
 :func:`~bogle.spending.marking.reclassify`); the user's own kind is kept.
+
+**Categories.** The category rules run over the lines a sync inserts
+(issue #116, :func:`~bogle.spending.rules.apply_to_new`); Pluggy's category is
+rewritten on every line, the rule's and the user's never. The categories no
+group takes are reported, to be mapped.
 """
 
 from __future__ import annotations
@@ -57,6 +62,7 @@ from bogle.domain.errors import BogleError, SyncInProgressError, ValidationError
 from bogle.error_messages import message_for
 from bogle.settings import SPENDING_LAST_SYNC_AT, get_setting, set_value
 from bogle.spending import repository
+from bogle.spending.categories import unmapped_categories
 from bogle.spending.marking import reclassify
 from bogle.spending.matching import (
     default_window,
@@ -76,6 +82,7 @@ from bogle.spending.models import (
     SyncWindow,
     account_label,
 )
+from bogle.spending.rules import apply_to_new as apply_rules
 
 SYNC_INTERVAL = timedelta(hours=24)
 """Pluggy refreshes a Meu Pluggy item once a day: syncing more often reads the same data."""
@@ -147,6 +154,7 @@ def run_sync(
         # conta aplicada: o casamento de fatura e transferencia precisa dos dois lados.
         with conn.transaction():
             reclassify(conn)
+        report.unmapped_categories = [category.name for category in unmapped_categories(conn)]
         if report.applied:
             set_value(conn, SPENDING_LAST_SYNC_AT, now)
         report.pending_duplicates = repository.pending_duplicates(conn)
@@ -429,6 +437,9 @@ def _apply_transactions(
             )
         )
     counts.inserted = len(inserted)
+    # As regras de categoria (#116) valem para as linhas novas; as gravadas
+    # ficam com a que tinham.
+    apply_rules(conn, [row.id for row in inserted])
 
     already = repository.suggested_candidates(conn, account_id)
     candidates = [

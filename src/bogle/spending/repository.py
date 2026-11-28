@@ -6,8 +6,9 @@ one ``conn.transaction()``.
 
 Contract for #115 onward: a transaction with a PENDING duplicate suggestion in
 ``transaction_id`` stays out of every analysis (:func:`suspected_duplicate_ids`).
-Analyses read the view ``spending.expenses`` (migration 011), which applies that
-and keeps only the kinds that count as spending (#115).
+Analyses read the view ``spending.expenses`` (migrations 011 and 012), which
+applies that, keeps only the kinds that count as spending (#115), and carries the
+category that counts and its group (#116).
 """
 
 from __future__ import annotations
@@ -22,12 +23,20 @@ from psycopg.rows import DictRow
 from psycopg.types.json import Jsonb
 
 from bogle.data.pluggy import PluggyAccount, PluggyBill, PluggyCategory, PluggyItem, PluggyTransaction, dumps
-from bogle.spending.classify import BillPayment, Line, Verdict, digits, parse_bill_payments
+from bogle.spending.classify import BillPayment, Line, Verdict, counterpart_document, digits, parse_bill_payments
 from bogle.spending.models import (
     AccountStatus,
+    Category,
+    CategoryGroup,
+    DescriptionMatch,
     ItemState,
+    RuleApplication,
+    RuleConditions,
+    RuleLine,
     StoredAccount,
+    StoredRule,
     StoredTransaction,
+    TransactionCategory,
     TransactionKind,
     account_label,
 )
@@ -52,6 +61,12 @@ def try_lock(conn: Connection) -> bool:
 
 def unlock(conn: Connection) -> None:
     conn.execute("SELECT pg_advisory_unlock(%s)", (SYNC_LOCK,))
+
+
+def try_lock_for_transaction(conn: Connection) -> bool:
+    """The sync's lock until the current transaction ends; ``False`` while a sync holds it."""
+    row = conn.execute("SELECT pg_try_advisory_xact_lock(%s) AS locked", (SYNC_LOCK,)).fetchone()
+    return bool(row and row["locked"])
 
 
 # ----------------------------------------------------------- categorias
@@ -548,7 +563,7 @@ def merge_duplicate(conn: Connection, suggestion_id: int) -> bool:
 
     The older line keeps its local id (what anything else points at) and takes
     every field of the newer one, its Pluggy id included, and the newer one's
-    kind set by hand when it has none of its own; the newer line goes, and the
+    kind and category set by hand when it has none of its own; the newer line goes, and the
     suggestion with it. ``False`` when there is no such PENDING suggestion.
     """
     row = conn.execute(
@@ -586,6 +601,15 @@ def merge_duplicate(conn: Connection, suggestion_id: int) -> bool:
             WHERE id = %s AND manual_kind IS NULL
             """,
             (newer["manual_kind"], newer["manual_kind_at"], row["duplicate_of_id"]),
+        )
+    if newer["manual_category_id"] is not None:
+        # Idem para a categoria dada a mao (#116).
+        conn.execute(
+            """
+            UPDATE spending.transactions SET manual_category_id = %s, manual_category_at = %s
+            WHERE id = %s AND manual_category_id IS NULL
+            """,
+            (newer["manual_category_id"], newer["manual_category_at"], row["duplicate_of_id"]),
         )
     return True
 
@@ -692,3 +716,292 @@ def set_manual_kind(conn: Connection, transaction_id: int, kind: str | None, *, 
         (kind, now if kind is not None else None, transaction_id),
     )
     return cursor.rowcount == 1
+
+
+# ------------------------------------------------------- categorias (#116)
+
+
+def stored_categories(conn: Connection) -> list[Category]:
+    """Pluggy's categories as stored, named in Portuguese when Pluggy sent it."""
+    rows = conn.execute(
+        """
+        SELECT id, COALESCE(NULLIF(description_translated, ''), description) AS name, description, parent_id
+        FROM spending.categories ORDER BY id
+        """
+    ).fetchall()
+    return [Category(**row) for row in rows]
+
+
+def _group(row: DictRow) -> CategoryGroup:
+    return CategoryGroup(id=row["id"], name=row["name"], nature=row["nature"], fallback=row["is_fallback"])
+
+
+def category_groups(conn: Connection) -> list[CategoryGroup]:
+    """Every group by name, the reserve group last."""
+    rows = conn.execute("SELECT * FROM spending.category_groups ORDER BY is_fallback, lower(name), id").fetchall()
+    return [_group(row) for row in rows]
+
+
+def insert_group(conn: Connection, name: str, nature: str) -> CategoryGroup:
+    row = conn.execute(
+        "INSERT INTO spending.category_groups (name, nature) VALUES (%s, %s) RETURNING *", (name, nature)
+    ).fetchone()
+    assert row is not None  # INSERT ... RETURNING sempre devolve a linha
+    return _group(row)
+
+
+def update_group(conn: Connection, group_id: int, *, name: str | None = None, nature: str | None = None) -> None:
+    conn.execute(
+        """
+        UPDATE spending.category_groups
+        SET name = COALESCE(%s, name), nature = COALESCE(%s, nature)
+        WHERE id = %s
+        """,
+        (name, nature, group_id),
+    )
+
+
+def delete_group(conn: Connection, group_id: int, *, moving_to: int) -> int:
+    """Remove the group, its mappings moved to ``moving_to``; returns how many moved."""
+    moved = conn.execute(
+        "UPDATE spending.category_group_map SET group_id = %s WHERE group_id = %s", (moving_to, group_id)
+    ).rowcount
+    conn.execute("DELETE FROM spending.category_groups WHERE id = %s AND NOT is_fallback", (group_id,))
+    return moved
+
+
+def map_category(conn: Connection, category_id: str, group_id: int) -> None:
+    conn.execute(
+        """
+        INSERT INTO spending.category_group_map (category_id, group_id) VALUES (%s, %s)
+        ON CONFLICT (category_id) DO UPDATE SET group_id = EXCLUDED.group_id
+        """,
+        (category_id, group_id),
+    )
+
+
+def category_mappings(conn: Connection) -> dict[str, int]:
+    """The explicit mappings: category id -> group id."""
+    rows = conn.execute("SELECT category_id, group_id FROM spending.category_group_map").fetchall()
+    return {row["category_id"]: row["group_id"] for row in rows}
+
+
+def category_resolution(conn: Connection) -> list[tuple[str, int, str | None]]:
+    """Every known category, its group, and the category whose mapping decided it (``None``: unmapped)."""
+    rows = conn.execute(
+        "SELECT category_id, group_id, mapped_from FROM spending.category_group_of ORDER BY category_id"
+    ).fetchall()
+    return [(row["category_id"], row["group_id"], row["mapped_from"]) for row in rows]
+
+
+def transaction_category(conn: Connection, transaction_id: int) -> TransactionCategory | None:
+    row = conn.execute(
+        """
+        SELECT t.id, a.name, a.marketing_name, t.local_date, t.description, t.amount,
+               t.category, t.category_id, t.rule_id, t.rule_category_id, t.manual_category_id,
+               t.effective_category_id,
+               COALESCE(NULLIF(pc.description_translated, ''), pc.description, t.category) AS pluggy_name,
+               COALESCE(NULLIF(rc.description_translated, ''), rc.description) AS rule_name,
+               COALESCE(NULLIF(mc.description_translated, ''), mc.description) AS manual_name,
+               g.name AS group_name
+        FROM spending.transactions t
+        JOIN spending.accounts a ON a.id = t.account_id
+        LEFT JOIN spending.categories pc ON pc.id = t.category_id
+        LEFT JOIN spending.categories rc ON rc.id = t.rule_category_id
+        LEFT JOIN spending.categories mc ON mc.id = t.manual_category_id
+        LEFT JOIN spending.category_group_of r ON r.category_id = t.effective_category_id
+        LEFT JOIN spending.category_groups g ON g.id = COALESCE(
+            r.group_id, (SELECT id FROM spending.category_groups WHERE is_fallback)
+        )
+        WHERE t.id = %s
+        """,
+        (transaction_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    if row["manual_category_id"] is not None:
+        category = row["manual_name"] or row["manual_category_id"]
+    elif row["rule_category_id"] is not None:
+        category = row["rule_name"] or row["rule_category_id"]
+    else:
+        category = row["pluggy_name"]
+    return TransactionCategory(
+        id=row["id"],
+        account=account_label(row["name"], row["marketing_name"]),
+        local_date=row["local_date"],
+        description=row["description"],
+        amount=row["amount"],
+        category=category,
+        group=row["group_name"] or "",
+        pluggy_category=row["pluggy_name"],
+        rule_category=(row["rule_name"] or row["rule_category_id"]) if row["rule_category_id"] else None,
+        rule_id=row["rule_id"],
+        manual_category=(row["manual_name"] or row["manual_category_id"]) if row["manual_category_id"] else None,
+    )
+
+
+def set_manual_category(conn: Connection, transaction_id: int, category_id: str | None, *, now: datetime) -> bool:
+    """The user's category for the line (``None`` gives it back to the rule or Pluggy); ``False``: no such line."""
+    cursor = conn.execute(
+        "UPDATE spending.transactions SET manual_category_id = %s, manual_category_at = %s WHERE id = %s",
+        (category_id, now if category_id is not None else None, transaction_id),
+    )
+    return cursor.rowcount == 1
+
+
+# ------------------------------------------------------------ regras (#116)
+
+
+def rule_lines(conn: Connection, transaction_ids: Sequence[int] | None = None) -> list[RuleLine]:
+    """The stored lines (or only ``transaction_ids``) as the category rules read them."""
+    query = """
+        SELECT id, account_id, type, ABS(COALESCE(amount_in_account_currency, amount)) AS value, description,
+               merchant_cnpj, payment_data, manual_category_id IS NOT NULL AS manual, rule_id, rule_category_id
+        FROM spending.transactions
+    """
+    if transaction_ids is None:
+        rows = conn.execute(query + " ORDER BY id").fetchall()
+    else:
+        rows = conn.execute(query + " WHERE id = ANY(%s) ORDER BY id", (list(transaction_ids),)).fetchall()
+    return [
+        RuleLine(
+            id=row["id"],
+            account_id=row["account_id"],
+            value=row["value"],
+            description=row["description"],
+            documents=tuple(
+                dict.fromkeys(
+                    doc
+                    for doc in (digits(row["merchant_cnpj"]), counterpart_document(row["type"], row["payment_data"]))
+                    if doc
+                )
+            ),
+            manual=row["manual"],
+            rule_id=row["rule_id"],
+            rule_category_id=row["rule_category_id"],
+        )
+        for row in rows
+    ]
+
+
+def insert_rule(conn: Connection, category_id: str, conditions: RuleConditions, *, now: datetime) -> int:
+    row = conn.execute(
+        """
+        INSERT INTO spending.category_rules (
+            category_id, document, description, description_match, min_value, max_value, account_id, created_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """,
+        (
+            category_id,
+            conditions.document,
+            conditions.description,
+            conditions.match.value if conditions.match is not None else None,
+            conditions.min_value,
+            conditions.max_value,
+            conditions.account_id,
+            now,
+        ),
+    ).fetchone()
+    assert row is not None  # INSERT ... RETURNING sempre devolve a linha
+    return row["id"]
+
+
+def stored_rules(conn: Connection, rule_id: int | None = None) -> list[StoredRule]:
+    """Every rule (or just ``rule_id``), newest first: the order they win in."""
+    rows = conn.execute(
+        """
+        SELECT r.*, COALESCE(NULLIF(c.description_translated, ''), c.description) AS category_name,
+               a.name AS account_name, a.marketing_name,
+               (SELECT count(*) FROM spending.transactions t WHERE t.rule_id = r.id) AS transactions
+        FROM spending.category_rules r
+        JOIN spending.categories c ON c.id = r.category_id
+        LEFT JOIN spending.accounts a ON a.id = r.account_id
+        WHERE %(id)s::bigint IS NULL OR r.id = %(id)s::bigint
+        ORDER BY r.id DESC
+        """,
+        {"id": rule_id},
+    ).fetchall()
+    return [
+        StoredRule(
+            id=row["id"],
+            category_id=row["category_id"],
+            category=row["category_name"],
+            conditions=RuleConditions(
+                document=row["document"],
+                description=row["description"],
+                match=DescriptionMatch(row["description_match"]) if row["description_match"] else None,
+                min_value=row["min_value"],
+                max_value=row["max_value"],
+                account_id=row["account_id"],
+            ),
+            account=account_label(row["account_name"], row["marketing_name"]) if row["account_name"] else None,
+            created_at=row["created_at"],
+            transactions=row["transactions"],
+        )
+        for row in rows
+    ]
+
+
+def delete_rule(conn: Connection, rule_id: int) -> None:
+    """Remove the rule and its applications; no line may still point at it."""
+    conn.execute("DELETE FROM spending.category_rules WHERE id = %s", (rule_id,))
+
+
+def rule_transaction_ids(conn: Connection, rule_id: int) -> list[int]:
+    rows = conn.execute("SELECT id FROM spending.transactions WHERE rule_id = %s ORDER BY id", (rule_id,)).fetchall()
+    return [row["id"] for row in rows]
+
+
+def set_rule_categories(conn: Connection, assignments: Sequence[tuple[int, int | None, str | None]]) -> None:
+    """``(transaction, rule, category)``: the rule's category of each line (``None, None`` clears it)."""
+    if not assignments:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "UPDATE spending.transactions SET rule_id = %s, rule_category_id = %s WHERE id = %s",
+            [(rule_id, category_id, transaction_id) for transaction_id, rule_id, category_id in assignments],
+        )
+
+
+def insert_application(
+    conn: Connection, rule_id: int, changes: Sequence[tuple[int, int | None, str | None]], *, now: datetime
+) -> int:
+    """Record an application of the rule: each changed line with the ``(rule, category)`` it had."""
+    row = conn.execute(
+        "INSERT INTO spending.rule_applications (rule_id, applied_at) VALUES (%s, %s) RETURNING id", (rule_id, now)
+    ).fetchone()
+    assert row is not None  # INSERT ... RETURNING sempre devolve a linha
+    application_id = row["id"]
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO spending.rule_application_changes
+                (application_id, transaction_id, previous_rule_id, previous_category_id)
+            VALUES (%s, %s, %s, %s)
+            """,
+            [(application_id, *change) for change in changes],
+        )
+    return application_id
+
+
+def last_application(conn: Connection) -> RuleApplication | None:
+    row = conn.execute(
+        """
+        SELECT p.id, p.rule_id, p.applied_at,
+               (SELECT count(*) FROM spending.rule_application_changes c WHERE c.application_id = p.id) AS changes
+        FROM spending.rule_applications p ORDER BY p.id DESC LIMIT 1
+        """
+    ).fetchone()
+    return RuleApplication(**row) if row is not None else None
+
+
+def application_changes(conn: Connection, application_id: int) -> list[tuple[int, int | None, str | None]]:
+    """``(transaction, previous rule, previous category)`` of each line the application changed."""
+    rows = conn.execute(
+        """
+        SELECT transaction_id, previous_rule_id, previous_category_id
+        FROM spending.rule_application_changes WHERE application_id = %s ORDER BY transaction_id
+        """,
+        (application_id,),
+    ).fetchall()
+    return [(row["transaction_id"], row["previous_rule_id"], row["previous_category_id"]) for row in rows]
