@@ -1,0 +1,49 @@
+{
+  "page": 1,
+  "total": 2,
+  "totalPages": 1,
+  "results": [
+    {
+      "id": "a0000000-0000-4000-8000-00000000000b",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "number": "0001/12345-6",
+      "name": "Conta Exemplo",
+      "marketingName": null,
+      "balance": 1520.35,
+      "itemId": "0b5e1c3a-1111-4a2b-8c3d-000000000001",
+      "taxNumber": "000.000.000-00",
+      "owner": "Pessoa Exemplo",
+      "currencyCode": "BRL",
+      "bankData": {"transferNumber": "0001/12345-6", "closingBalance": 1520.35},
+      "creditData": null,
+      "createdAt": "2026-11-20T12:00:00.000Z",
+      "updatedAt": "2026-11-27T06:10:00.000Z"
+    },
+    {
+      "id": "a0000000-0000-4000-8000-00000000000c",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "number": "9999",
+      "name": "Cartao Exemplo",
+      "marketingName": "Cartão Exemplo Platinum",
+      "balance": 812.4,
+      "itemId": "0b5e1c3a-1111-4a2b-8c3d-000000000001",
+      "taxNumber": "000.000.000-00",
+      "owner": "Pessoa Exemplo",
+      "currencyCode": "BRL",
+      "bankData": null,
+      "creditData": {
+        "level": "PLATINUM",
+        "brand": "MASTERCARD",
+        "balanceCloseDate": "2026-12-03T00:00:00.000Z",
+        "balanceDueDate": "2026-12-10T00:00:00.000Z",
+        "availableCreditLimit": 4187.6,
+        "creditLimit": 5000,
+        "minimumPayment": 120.5
+      },
+      "createdAt": "2026-11-20T12:00:00.000Z",
+      "updatedAt": "2026-11-27T06:10:00.000Z"
+    }
+  ]
+}

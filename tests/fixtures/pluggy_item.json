@@ -1,0 +1,18 @@
+{
+  "id": "0b5e1c3a-1111-4a2b-8c3d-000000000001",
+  "connector": {
+    "id": 200,
+    "name": "MeuPluggy",
+    "type": "PERSONAL_BANK",
+    "isOpenFinance": true
+  },
+  "status": "UPDATED",
+  "executionStatus": "SUCCESS",
+  "error": null,
+  "createdAt": "2026-11-20T12:00:00.000Z",
+  "updatedAt": "2026-11-27T06:10:00.000Z",
+  "lastUpdatedAt": "2026-11-27T06:10:00.000Z",
+  "consentExpiresAt": "2027-11-20T12:00:00.000Z",
+  "nextAutoSyncAt": "2026-11-28T06:00:00.000Z",
+  "products": ["ACCOUNTS", "CREDIT_CARDS", "TRANSACTIONS"]
+}
